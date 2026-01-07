@@ -329,7 +329,8 @@ require_once '../includes/header.php';
 </style>
 
 <div class="container">
-    <div class="publish-page">
+    <div class="dev-layout">
+        <?php require_once 'includes/sidebar.php'; ?>
         <div style="margin-bottom: 30px;">
             <h1 style="font-size: 32px; margin-bottom: 10px;">
                 <i class="fas fa-plus-circle"></i> Publicar Novo Jogo
@@ -345,7 +346,7 @@ require_once '../includes/header.php';
             </div>
         <?php endif; ?>
         
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" enctype="multipart/form-data" >
             <!-- Informações Básicas -->
             <div class="form-section">
                 <h2><i class="fas fa-info-circle"></i> Informações Básicas</h2>

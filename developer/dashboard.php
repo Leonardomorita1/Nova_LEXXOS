@@ -299,7 +299,8 @@ require_once '../includes/header.php';
 </style>
 
 <div class="container">
-    <div class="dev-dashboard">
+    <div class="dev-layout">
+        <?php require_once 'includes/sidebar.php'; ?>
         <!-- Header -->
         <div style="margin-bottom: 30px;">
             <h1 style="font-size: 32px; margin-bottom: 10px;">
