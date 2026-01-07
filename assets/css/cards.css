@@ -1,15 +1,12 @@
-:root {
-    --card-bg: #1a1d24;        /* Azul bem escuro/Grafite */
-    --card-hover: #232730;     /* Um tom levemente mais claro para o hover */
-    --epic-green: #00df6e;     /* Verde Epic original */
-    --gold-stars: #f3e5ab;     /* Champanhe */
-    --text-dim: #94a3b8;       /* Texto secundário acinzentado */
-}
+@import url(main.css);
+/* ==========================================
+   CARTÕES DE JOGO
+   ========================================== */
 
 .lex-card {
     display: flex;
     flex-direction: column; /* Modo PC */
-    background: var(--card-bg);
+    background: var(--bg-primary);
     border: 1px solid rgba(255,255,255,0.05);
     border-radius: 12px;
     text-decoration: none !important;
@@ -20,7 +17,7 @@
 
 .lex-card:hover {
     transform: translateY(-4px);
-    background: var(--card-hover);
+    background: var(--bg-secondary);
     border-color: rgba(255,255,255,0.15);
 }
 
@@ -47,7 +44,7 @@
 }
 
 .lex-card-title {
-    color: #fff;
+    color: var(--text-primary);
     font-size: 16px;
     font-weight: 600;
     margin: 0;
@@ -57,11 +54,11 @@
 /* Estrelas */
 .lex-card-stars {
     font-size: 10px;
-    color: #334155;
+    color: var(--text-secondary);
     margin-top: 4px;
 }
 .lex-card-stars i.active {
-    color: var(--gold-stars);
+    color: var(--text-primary);
 }
 
 /* Preços */
@@ -72,7 +69,7 @@
 }
 
 .lex-price-badge {
-    background: var(--epic-green);
+    background: var(--success);
     color: #000;
     font-weight: 800;
     padding: 2px 6px;
@@ -88,11 +85,11 @@
 .lex-old-price {
     font-size: 11px;
     text-decoration: line-through;
-    color: var(--text-dim);
+    color: var(--accent);
 }
 
 .lex-current-price {
-    color: #fff;
+    color: var(--text-primary);
     font-weight: 700;
     font-size: 16px;
 }
@@ -115,11 +112,12 @@
     align-items: center;
     justify-content: center;
     border-radius: 3px;
-    background: #444;
+    background: var(--text-primary);
+    color: var(--bg-primary);
 }
 
 .lex-owned {
-    color: var(--epic-green);
+    color: var(--success);
     font-size: 11px;
     font-weight: 600;
 }
@@ -145,7 +143,7 @@
 }
 
 .lex-owned-status {
-    color: var(--epic-green);
+    color: var(--success);
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;

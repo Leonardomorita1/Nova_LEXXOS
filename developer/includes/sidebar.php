@@ -134,6 +134,13 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 Saldo e Saques
             </a>
         </li>
+        <li>
+            <a href="<?php echo SITE_URL; ?>/developer/avaliacoes.php" 
+               class="<?php echo $current_page == 'avaliacoes.php' ? 'active' : ''; ?>">
+                <i class="fas fa-comments"></i>
+                Avaliações
+            </a>
+        </li>
         
         <div class="dev-sidebar-divider"></div>
         

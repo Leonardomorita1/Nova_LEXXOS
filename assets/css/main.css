@@ -13,7 +13,7 @@
     --accent: #4C8BF5;
     --accent-hover: #3a7de8;
     --text-primary: #E3E3E3;
-    --text-secondary: #A0A0A0;
+    --text-secondary: #7e7e7e;
     --border: #2A2B2C;
     --success: #28a745;
     --warning: #ffc107;
@@ -25,8 +25,8 @@
     --bg-secondary: #FFFFFF;
     --accent: #4C8BF5;
     --accent-hover: #3a7de8;
-    --text-primary: #1E1F20;
-    --text-secondary: #6B6B6B;
+    --text-primary: #000000;
+    --text-secondary: #686868;
     --border: #E0E0E0;
 }
 

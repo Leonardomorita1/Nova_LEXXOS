@@ -28,7 +28,7 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         $pdo->beginTransaction();
-        
+
         // Dados básicos
         $titulo = trim($_POST['titulo']);
         $descricao_curta = trim($_POST['descricao_curta']);
@@ -38,54 +38,54 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $video_trailer = trim($_POST['video_trailer']);
         $requisitos_minimos = trim($_POST['requisitos_minimos']);
         $requisitos_recomendados = trim($_POST['requisitos_recomendados']);
-        
+
         // Validações
         if (empty($titulo) || empty($descricao_curta)) {
             throw new Exception('Preencha todos os campos obrigatórios');
         }
-        
+
         // Criar slug
         $slug = generateSlug($titulo);
-        
+
         // Verificar slug único
         $stmt = $pdo->prepare("SELECT id FROM jogo WHERE slug = ?");
         $stmt->execute([$slug]);
         if ($stmt->fetch()) {
             $slug = $slug . '-' . uniqid();
         }
-        
+
         // Diretório de uploads
         $upload_dir = '../uploads/jogos/' . $slug;
         if (!file_exists($upload_dir)) {
             mkdir($upload_dir, 0755, true);
         }
-        
+
         // Upload da capa (PROPORÇÃO 3:4 sugerida - ex: 600x800px)
         $capa_path = null;
         if (isset($_FILES['capa']) && $_FILES['capa']['error'] == 0) {
             $ext = pathinfo($_FILES['capa']['name'], PATHINFO_EXTENSION);
             $capa_filename = 'capa.' . $ext;
             $capa_path = $upload_dir . '/' . $capa_filename;
-            
+
             if (!move_uploaded_file($_FILES['capa']['tmp_name'], $capa_path)) {
                 throw new Exception('Erro ao fazer upload da capa');
             }
             $capa_path = '/uploads/jogos/' . $slug . '/' . $capa_filename;
         }
-        
+
         // Upload do banner (PROPORÇÃO 16:9 sugerida - ex: 1920x1080px)
         $banner_path = null;
         if (isset($_FILES['banner']) && $_FILES['banner']['error'] == 0) {
             $ext = pathinfo($_FILES['banner']['name'], PATHINFO_EXTENSION);
             $banner_filename = 'banner.' . $ext;
             $banner_path = $upload_dir . '/' . $banner_filename;
-            
+
             if (!move_uploaded_file($_FILES['banner']['tmp_name'], $banner_path)) {
                 throw new Exception('Erro ao fazer upload do banner');
             }
             $banner_path = '/uploads/jogos/' . $slug . '/' . $banner_filename;
         }
-        
+
         // Inserir jogo
         $stmt = $pdo->prepare("
             INSERT INTO jogo (
@@ -95,32 +95,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 status, criado_em
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'rascunho', NOW())
         ");
-        
+
         $stmt->execute([
-            $dev['id'], $titulo, $slug, $descricao_curta, $descricao_completa,
-            $preco_centavos, $capa_path, $banner_path, $video_trailer,
-            $requisitos_minimos, $requisitos_recomendados, $classificacao
+            $dev['id'],
+            $titulo,
+            $slug,
+            $descricao_curta,
+            $descricao_completa,
+            $preco_centavos,
+            $capa_path,
+            $banner_path,
+            $video_trailer,
+            $requisitos_minimos,
+            $requisitos_recomendados,
+            $classificacao
         ]);
-        
+
         $jogo_id = $pdo->lastInsertId();
-        
+
         // Upload de screenshots/imagens (PROPORÇÃO 16:9 sugerida - ex: 1920x1080px)
         if (isset($_FILES['screenshots']) && !empty($_FILES['screenshots']['name'][0])) {
             $screenshots_dir = $upload_dir . '/screenshots';
             if (!file_exists($screenshots_dir)) {
                 mkdir($screenshots_dir, 0755, true);
             }
-            
+
             $ordem = 1;
             foreach ($_FILES['screenshots']['tmp_name'] as $key => $tmp_name) {
                 if ($_FILES['screenshots']['error'][$key] == 0) {
                     $ext = pathinfo($_FILES['screenshots']['name'][$key], PATHINFO_EXTENSION);
                     $filename = time() . '-' . $ordem . '.' . $ext;
                     $file_path = $screenshots_dir . '/' . $filename;
-                    
+
                     if (move_uploaded_file($tmp_name, $file_path)) {
                         $db_path = '/uploads/jogos/' . $slug . '/screenshots/' . $filename;
-                        
+
                         $stmt = $pdo->prepare("
                             INSERT INTO jogo_imagens (jogo_id, imagem, ordem)
                             VALUES (?, ?, ?)
@@ -131,37 +140,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
             }
         }
-        
-        // Adicionar categorias
-        if (isset($_POST['categorias']) && is_array($_POST['categorias'])) {
-            foreach ($_POST['categorias'] as $cat_id) {
+
+        // Adicionar categorias (Vindo do campo oculto via JS)
+        if (!empty($_POST['categorias_selecionadas'])) {
+            $cats = explode(',', $_POST['categorias_selecionadas']);
+            foreach ($cats as $cat_id) {
                 $stmt = $pdo->prepare("INSERT INTO jogo_categoria (jogo_id, categoria_id) VALUES (?, ?)");
-                $stmt->execute([$jogo_id, $cat_id]);
+                $stmt->execute([$jogo_id, (int)$cat_id]);
             }
         }
-        
-        // Adicionar tags
-        if (isset($_POST['tags']) && is_array($_POST['tags'])) {
-            foreach ($_POST['tags'] as $tag_id) {
+
+        // Adicionar tags (Vindo do campo oculto via JS)
+        if (!empty($_POST['tags_selecionadas'])) {
+            $tgs = explode(',', $_POST['tags_selecionadas']);
+            foreach ($tgs as $tag_val) {
+                // Se for um ID numérico, salva. Se sua tabela de tags aceitar texto, ajuste aqui.
                 $stmt = $pdo->prepare("INSERT INTO jogo_tag (jogo_id, tag_id) VALUES (?, ?)");
-                $stmt->execute([$jogo_id, $tag_id]);
+                $stmt->execute([$jogo_id, (int)$tag_val]);
             }
         }
-        
-        // Adicionar plataformas
-        if (isset($_POST['plataformas']) && is_array($_POST['plataformas'])) {
-            foreach ($_POST['plataformas'] as $plat_id) {
+
+        // Adicionar plataformas (Vindo do campo oculto via JS)
+        if (!empty($_POST['plataformas_selecionadas'])) {
+            $plats = explode(',', $_POST['plataformas_selecionadas']);
+            foreach ($plats as $plat_id) {
                 $stmt = $pdo->prepare("INSERT INTO jogo_plataforma (jogo_id, plataforma_id) VALUES (?, ?)");
-                $stmt->execute([$jogo_id, $plat_id]);
+                $stmt->execute([$jogo_id, (int)$plat_id]);
             }
         }
-        
+
         $pdo->commit();
-        
+
         $_SESSION['success'] = 'Jogo criado com sucesso! Você pode editá-lo ou enviar para revisão.';
         header('Location: ' . SITE_URL . '/developer/editar-jogo.php?id=' . $jogo_id);
         exit;
-        
     } catch (Exception $e) {
         $pdo->rollBack();
         $error = $e->getMessage();
@@ -176,388 +188,614 @@ $plataformas = $pdo->query("SELECT * FROM plataforma WHERE ativa = 1 ORDER BY or
 $page_title = 'Publicar Novo Jogo - ' . SITE_NAME;
 require_once '../includes/header.php';
 ?>
-
 <style>
-.publish-page {
-    padding: 30px 0;
-    max-width: 1000px;
-    margin: 0 auto;
-}
-
-.form-section {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 15px;
-    padding: 30px;
-    margin-bottom: 30px;
-}
-
-.form-section h2 {
-    font-size: 22px;
-    margin-bottom: 20px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.form-section h2 i {
-    color: var(--accent);
-}
-
-.form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-}
-
-.checkbox-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 15px;
-    margin-top: 10px;
-}
-
-.checkbox-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px;
-    background: var(--bg-primary);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.checkbox-item:hover {
-    background: var(--accent);
-    color: white;
-}
-
-.checkbox-item input {
-    cursor: pointer;
-}
-
-.upload-area {
-    border: 2px dashed var(--border);
-    border-radius: 10px;
-    padding: 30px;
-    text-align: center;
-    transition: all 0.3s;
-    cursor: pointer;
-}
-
-.upload-area:hover {
-    border-color: var(--accent);
-    background: rgba(76,139,245,0.05);
-}
-
-.upload-area i {
-    font-size: 48px;
-    color: var(--accent);
-    margin-bottom: 15px;
-}
-
-.upload-area input[type="file"] {
-    display: none;
-}
-
-.upload-hint {
-    font-size: 13px;
-    color: var(--text-secondary);
-    margin-top: 10px;
-}
-
-.proportion-hint {
-    background: rgba(76,139,245,0.1);
-    border: 1px solid var(--accent);
-    border-radius: 6px;
-    padding: 10px;
-    font-size: 13px;
-    margin-top: 10px;
-}
-
-.screenshots-preview {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 15px;
-    margin-top: 15px;
-}
-
-.screenshot-preview {
-    position: relative;
-    aspect-ratio: 16/9;
-    border-radius: 8px;
-    overflow: hidden;
-    background: var(--bg-primary);
-}
-
-.screenshot-preview img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.remove-screenshot {
-    position: absolute;
-    top: 5px;
-    right: 5px;
-    background: var(--danger);
-    color: white;
-    border: none;
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-@media (max-width: 768px) {
-    .form-row {
-        grid-template-columns: 1fr;
+    /* Layout e Limitação de Largura */
+    .publish-wrapper {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
     }
-    
-    .checkbox-grid {
-        grid-template-columns: 1fr;
+
+    .publish-container {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 30px;
+        align-items: start;
     }
-    
-    .screenshots-preview {
-        grid-template-columns: 1fr;
+
+    .form-section {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 25px;
     }
-}
+
+    .section-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--primary);
+    }
+
+    /* Uploads com Proporção 3:4 e Banner */
+    .upload-box {
+        position: relative;
+        width: 100%;
+        border: 2px dashed var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--bg-primary);
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: 0.3s;
+    }
+
+    .upload-box.capa-box {
+        aspect-ratio: 3 / 4;
+    }
+
+    .upload-box.banner-box {
+        aspect-ratio: 16 / 9;
+    }
+
+    .upload-box:hover {
+        border-color: var(--primary);
+    }
+
+    .preview-img {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: none;
+    }
+
+    .btn-remove-img {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: #ff4757;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 5px 8px;
+        cursor: pointer;
+        display: none;
+        z-index: 10;
+        font-size: 12px;
+    }
+
+    /* Grid de Screenshots Compacto */
+    .screenshots-wrapper {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+        gap: 12px;
+    }
+
+    .screenshot-item,
+    .add-screenshot-btn {
+        aspect-ratio: 1;
+        border-radius: 8px;
+        position: relative;
+        border: 1px solid var(--border);
+    }
+
+    .add-screenshot-btn {
+        border: 2px dashed var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+
+    .screenshot-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 8px;
+    }
+
+    /* Requisitos e Inputs */
+    .requisitos-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+
+    .hidden-input {
+        display: none;
+    }
+
+    /* Estilo das Tags/Chips */
+    .tags-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-primary);
+        min-height: 45px;
+        cursor: pointer;
+    }
+
+    .tag-chip {
+        background: var(--primary);
+        color: white;
+        padding: 4px 10px;
+        border-radius: 20px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        animation: fadeIn 0.2s ease;
+    }
+
+    .tag-chip i {
+        cursor: pointer;
+        font-size: 11px;
+    }
+
+    .tag-chip i:hover {
+        color: #ff4757;
+    }
+
+    /* Container Flutuante (Popover) */
+    .tags-popover {
+        position: absolute;
+        z-index: 1000;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        width: 100%;
+        max-height: 300px;
+        overflow-y: auto;
+        display: none;
+        /* Escondido por padrão */
+        padding: 15px;
+        margin-top: 5px;
+    }
+
+    .popover-section-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+        margin: 10px 0 5px 0;
+    }
+
+    .opt-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+
+    .opt-item {
+        padding: 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: 0.2s;
+        border: 1px solid transparent;
+    }
+
+    .opt-item:hover {
+        background: var(--bg-primary);
+        border-color: var(--primary);
+    }
+
+    .opt-item.selected {
+        background: var(--primary-low);
+        /* Um tom opaco da sua cor primária */
+        color: var(--primary);
+        pointer-events: none;
+        opacity: 0.6;
+    }
+
+    /* Estilo dos Botões de Plataforma */
+    .platform-grid {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .platform-chip {
+        padding: 10px 20px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-primary);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        transition: all 0.2s ease;
+        user-select: none;
+        font-weight: 500;
+    }
+
+    .platform-chip i {
+        font-size: 1.1rem;
+        color: var(--text-secondary);
+    }
+
+    .platform-chip:hover {
+        border-color: var(--primary);
+        background: var(--bg-secondary);
+    }
+
+    .platform-chip.active {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: white;
+    }
+
+    .platform-chip.active i {
+        color: white;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: scale(0.9);
+        }
+
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+
+    @media (max-width: 992px) {
+        .publish-container {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
-
 <div class="container">
     <div class="dev-layout">
         <?php require_once 'includes/sidebar.php'; ?>
-        <div style="margin-bottom: 30px;">
-            <h1 style="font-size: 32px; margin-bottom: 10px;">
-                <i class="fas fa-plus-circle"></i> Publicar Novo Jogo
-            </h1>
-            <p style="color: var(--text-secondary);">
-                Preencha as informações do seu jogo
-            </p>
+
+        <div class="dev-content">
+
+            <div class="publish-wrapper">
+
+                <form id="publishForm" method="POST" enctype="multipart/form-data">
+                    <div class="publish-container">
+
+                        <div class="main-column">
+                            <div class="form-section">
+                                <div class="section-title"><i class="fas fa-keyboard"></i> Detalhes do Jogo</div>
+                                <div class="form-group">
+                                    <label>Título</label>
+                                    <input type="text" name="titulo" class="form-control" placeholder="Nome do seu jogo" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Descrição Curta</label>
+                                    <input type="text" name="descricao_curta" class="form-control" maxlength="150" placeholder="Uma frase chamativa">
+                                </div>
+                                <div class="form-group">
+                                    <label>Descrição Completa</label>
+                                    <textarea name="descricao_completa" class="form-control" rows="6"></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label>Link do Trailer (YouTube)</label>
+                                    <div class="input-group">
+                                        <div class="input-group-prepend"><span class="input-group-text"><i class="fab fa-youtube"></i></span></div>
+                                        <input type="url" name="video_trailer" class="form-control" placeholder="https://youtube.com/watch?v=...">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="form-section">
+                                <div class="section-title"><i class="fas fa-tags"></i> Classificação do Jogo</div>
+
+                                <div class="row" style="display: flex; gap: 20px;">
+                                    <div style="flex: 1; position: relative;">
+                                        <label>Categorias Principais</label>
+                                        <div class="tags-container" id="catsTrigger">
+                                            <span class="placeholder-text">Selecionar categorias...</span>
+                                        </div>
+                                        <div class="tags-popover" id="catsPopover">
+                                            <div class="popover-section-title">Disponíveis</div>
+                                            <div class="opt-grid">
+                                                <?php foreach ($categorias as $cat): ?>
+                                                    <div class="opt-item" data-id="<?= $cat['id'] ?>" data-name="<?= $cat['nome'] ?>" data-target="cats">
+                                                        <?= $cat['nome'] ?>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </div>
+                                        <input type="hidden" name="categorias_selecionadas" id="inputCats">
+                                    </div>
+
+                                    <div style="flex: 1; position: relative;">
+                                        <label>Tags Relacionadas</label>
+                                        <div class="tags-container" id="tagsTrigger">
+                                            <span class="placeholder-text">Selecionar tags...</span>
+                                        </div>
+                                        <div class="tags-popover" id="tagsPopover">
+                                            <div class="popover-section-title">Tags Sugeridas</div>
+                                            <div class="opt-grid">
+                                                <?php foreach ($tags as $tag): ?>
+                                                    <div class="opt-item" data-id="<?= $tag['id'] ?>" data-name="<?= $tag['nome'] ?>" data-target="tags">
+                                                        <?= $tag['nome'] ?>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </div>
+                                        <input type="hidden" name="tags_selecionadas" id="inputTags">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-section">
+                                <div class="section-title"><i class="fas fa-laptop-code"></i> Disponibilidade</div>
+                                <label style="margin-bottom: 15px; display: block;">Selecione as plataformas suportadas pelo jogo:</label>
+
+                                <div class="platform-grid" id="platformContainer">
+                                    <?php foreach ($plataformas as $plat): ?>
+                                        <div class="platform-chip" data-id="<?= $plat['id'] ?>">
+                                            <?php
+                                            // Ícones automáticos baseados no nome
+                                            $icon = 'fa-desktop';
+                                            if (stripos($plat['nome'], 'win') !== false) $icon = 'fab fa-windows';
+                                            if (stripos($plat['nome'], 'mac') !== false) $icon = 'fab fa-apple';
+                                            if (stripos($plat['nome'], 'lin') !== false) $icon = 'fab fa-linux';
+                                            ?>
+                                            <i class="<?= $icon ?>"></i>
+                                            <?= $plat['nome'] ?>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+
+                                <input type="hidden" name="plataformas_selecionadas" id="inputPlataformas">
+                            </div>
+
+                            <div class="form-section">
+                                <div class="section-title"><i class="fas fa-images"></i> Screenshots</div>
+                                <div class="screenshots-wrapper" id="screenshotsContainer">
+                                    <label class="add-screenshot-btn" for="screenshots">
+                                        <i class="fas fa-plus"></i>
+                                    </label>
+                                </div>
+                                <input type="file" name="screenshots[]" id="screenshots" class="hidden-input" multiple accept="image/*">
+                            </div>
+
+                            <div class="form-section">
+                                <div class="section-title"><i class="fas fa-microchip"></i> Requisitos</div>
+                                <div class="requisitos-grid">
+                                    <textarea name="requisitos_minimos" class="form-control" placeholder="Requisitos Mínimos" rows="4"></textarea>
+                                    <textarea name="requisitos_recomendados" class="form-control" placeholder="Requisitos Recomendados" rows="4"></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="side-column">
+                            <div class="form-section">
+                                <div class="section-title"><i class="fas fa-image"></i> Identidade Visual</div>
+
+                                <label>Capa (Proporção 3:4)</label>
+                                <div class="upload-box capa-box" onclick="document.getElementById('capa').click()">
+                                    <img id="preview-capa" class="preview-img">
+                                    <button type="button" class="btn-remove-img" id="remove-capa">Remover</button>
+                                    <div id="placeholder-capa"><i class="fas fa-file-upload"></i><br>Capa 3:4</div>
+                                </div>
+                                <input type="file" name="capa" id="capa" class="hidden-input" accept="image/*">
+
+                                <br>
+
+                                <label>Banner (16:9)</label>
+                                <div class="upload-box banner-box" onclick="document.getElementById('banner').click()">
+                                    <img id="preview-banner" class="preview-img">
+                                    <button type="button" class="btn-remove-img" id="remove-banner">Remover</button>
+                                    <div id="placeholder-banner"><i class="fas fa-image"></i><br>Banner 16:9</div>
+                                </div>
+                                <input type="file" name="banner" id="banner" class="hidden-input" accept="image/*">
+                            </div>
+
+                            <div class="form-section">
+                                <div class="section-title"><i class="fas fa-dollar-sign"></i> Preço e Classificação</div>
+                                <div class="form-group">
+                                    <input type="number" step="0.01" name="preco" class="form-control" placeholder="R$ 0,00 (0 para grátis)">
+                                </div>
+                                <div class="form-group">
+                                    <select name="classificacao" class="form-control">
+                                        <option value="L">Livre</option>
+                                        <option value="10">10+</option>
+                                        <option value="12">12+</option>
+                                        <option value="14">14+</option>
+                                        <option value="16">16+</option>
+                                        <option value="18">18+</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary btn-block btn-lg">
+                                <i class="fas fa-rocket"></i> PUBLICAR AGORA
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
         </div>
-        
-        <?php if ($error): ?>
-            <div style="background: rgba(220,53,69,0.1); border: 1px solid var(--danger); color: var(--danger); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <i class="fas fa-exclamation-circle"></i> <?php echo $error; ?>
-            </div>
-        <?php endif; ?>
-        
-        <form method="POST" enctype="multipart/form-data" >
-            <!-- Informações Básicas -->
-            <div class="form-section">
-                <h2><i class="fas fa-info-circle"></i> Informações Básicas</h2>
-                
-                <div class="form-group">
-                    <label class="form-label">Título do Jogo *</label>
-                    <input type="text" name="titulo" class="form-control" required 
-                           placeholder="Ex: Meu Jogo Incrível">
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Descrição Curta * (máx. 500 caracteres)</label>
-                    <input type="text" name="descricao_curta" class="form-control" required 
-                           maxlength="500"
-                           placeholder="Uma breve descrição que aparecerá nos cards">
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Descrição Completa *</label>
-                    <textarea name="descricao_completa" class="form-control" rows="8" required
-                              placeholder="Descreva seu jogo em detalhes..."></textarea>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">Preço (R$) *</label>
-                        <input type="number" name="preco" class="form-control" required 
-                               min="0" step="0.01" value="0"
-                               placeholder="0.00">
-                        <small style="color: var(--text-secondary);">Use 0 para jogos gratuitos</small>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Classificação Etária *</label>
-                        <select name="classificacao" class="form-control" required>
-                            <option value="L">Livre</option>
-                            <option value="10">10 anos</option>
-                            <option value="12">12 anos</option>
-                            <option value="14">14 anos</option>
-                            <option value="16">16 anos</option>
-                            <option value="18">18 anos</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Mídia -->
-            <div class="form-section">
-                <h2><i class="fas fa-images"></i> Mídia do Jogo</h2>
-                
-                <div class="form-group">
-                    <label class="form-label">Capa do Jogo * (Aparece nos cards)</label>
-                    <div class="upload-area" onclick="document.getElementById('capa').click()">
-                        <i class="fas fa-image"></i>
-                        <p>Clique para selecionar a capa</p>
-                        <input type="file" id="capa" name="capa" accept="image/*" required>
-                    </div>
-                    <div class="proportion-hint">
-                        <i class="fas fa-info-circle"></i> <strong>Proporção sugerida: 3:4</strong> 
-                        (ex: 600x800px, 900x1200px)
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Banner do Jogo (Aparece na página de detalhes)</label>
-                    <div class="upload-area" onclick="document.getElementById('banner').click()">
-                        <i class="fas fa-panorama"></i>
-                        <p>Clique para selecionar o banner</p>
-                        <input type="file" id="banner" name="banner" accept="image/*">
-                    </div>
-                    <div class="proportion-hint">
-                        <i class="fas fa-info-circle"></i> <strong>Proporção sugerida: 16:9</strong> 
-                        (ex: 1920x1080px, 1280x720px)
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Screenshots do Jogo (Até 10 imagens)</label>
-                    <div class="upload-area" onclick="document.getElementById('screenshots').click()">
-                        <i class="fas fa-images"></i>
-                        <p>Clique para selecionar screenshots</p>
-                        <input type="file" id="screenshots" name="screenshots[]" accept="image/*" multiple>
-                    </div>
-                    <div class="proportion-hint">
-                        <i class="fas fa-info-circle"></i> <strong>Proporção sugerida: 16:9</strong> 
-                        (ex: 1920x1080px) - Aparecerão no carrossel
-                    </div>
-                    <div id="screenshotsPreview" class="screenshots-preview"></div>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Trailer do YouTube (URL embed)</label>
-                    <input type="url" name="video_trailer" class="form-control"
-                           placeholder="https://www.youtube.com/embed/VIDEO_ID">
-                    <small style="color: var(--text-secondary);">
-                        Cole o link de incorporação do YouTube. 
-                        Será o primeiro item do carrossel se fornecido.
-                    </small>
-                </div>
-            </div>
-            
-            <!-- Categorias e Tags -->
-            <div class="form-section">
-                <h2><i class="fas fa-th"></i> Categorias e Tags</h2>
-                
-                <div class="form-group">
-                    <label class="form-label">Categorias *</label>
-                    <div class="checkbox-grid">
-                        <?php foreach ($categorias as $cat): ?>
-                        <label class="checkbox-item">
-                            <input type="checkbox" name="categorias[]" value="<?php echo $cat['id']; ?>">
-                            <i class="fas fa-<?php echo $cat['icone']; ?>"></i>
-                            <?php echo sanitize($cat['nome']); ?>
-                        </label>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Tags</label>
-                    <div class="checkbox-grid">
-                        <?php foreach ($tags as $tag): ?>
-                        <label class="checkbox-item">
-                            <input type="checkbox" name="tags[]" value="<?php echo $tag['id']; ?>">
-                            <?php echo sanitize($tag['nome']); ?>
-                        </label>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Plataformas -->
-            <div class="form-section">
-                <h2><i class="fas fa-laptop"></i> Plataformas *</h2>
-                
-                <div class="checkbox-grid">
-                    <?php foreach ($plataformas as $plat): ?>
-                    <label class="checkbox-item">
-                        <input type="checkbox" name="plataformas[]" value="<?php echo $plat['id']; ?>">
-                        <i class="<?php echo $plat['icone']; ?>"></i>
-                        <?php echo sanitize($plat['nome']); ?>
-                    </label>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-            
-            <!-- Requisitos -->
-            <div class="form-section">
-                <h2><i class="fas fa-desktop"></i> Requisitos do Sistema</h2>
-                
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">Requisitos Mínimos</label>
-                        <textarea name="requisitos_minimos" class="form-control" rows="8"
-                                  placeholder="SO: Windows 10&#10;Processador: Intel i3&#10;Memória: 4 GB RAM&#10;Placa de vídeo: GTX 750"></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Requisitos Recomendados</label>
-                        <textarea name="requisitos_recomendados" class="form-control" rows="8"
-                                  placeholder="SO: Windows 11&#10;Processador: Intel i5&#10;Memória: 8 GB RAM&#10;Placa de vídeo: GTX 1060"></textarea>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Ações -->
-            <div style="display: flex; gap: 15px;">
-                <button type="submit" class="btn btn-primary btn-lg">
-                    <i class="fas fa-save"></i> Salvar como Rascunho
-                </button>
-                
-                <a href="<?php echo SITE_URL; ?>/developer/jogos.php" class="btn btn-secondary">
-                    <i class="fas fa-times"></i> Cancelar
-                </a>
-            </div>
-        </form>
     </div>
 </div>
 
 <script>
-// Preview de screenshots
-document.getElementById('screenshots').addEventListener('change', function(e) {
-    const preview = document.getElementById('screenshotsPreview');
-    preview.innerHTML = '';
-    
-    const files = Array.from(e.target.files).slice(0, 10);
-    
-    files.forEach((file, index) => {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            const div = document.createElement('div');
-            div.className = 'screenshot-preview';
-            div.innerHTML = `
-                <img src="${e.target.result}" alt="Screenshot ${index + 1}">
-                <button type="button" class="remove-screenshot" onclick="this.parentElement.remove()">
-                    <i class="fas fa-times"></i>
-                </button>
-            `;
-            preview.appendChild(div);
-        };
-        reader.readAsDataURL(file);
-    });
-});
+    // Lógica de Preview e Auto-Save
+    function setupPreview(inputId, previewId, placeholderId, removeId) {
+        const input = document.getElementById(inputId);
+        const preview = document.getElementById(previewId);
+        const placeholder = document.getElementById(placeholderId);
+        const removeBtn = document.getElementById(removeId);
 
-// Hover effect nos checkboxes
-document.querySelectorAll('.checkbox-item').forEach(item => {
-    item.addEventListener('click', function() {
-        const checkbox = this.querySelector('input[type="checkbox"]');
-        checkbox.checked = !checkbox.checked;
+        input.addEventListener('change', function() {
+            if (this.files[0]) {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    preview.src = e.target.result;
+                    preview.style.display = 'block';
+                    placeholder.style.display = 'none';
+                    removeBtn.style.display = 'block';
+                }
+                reader.readAsDataURL(this.files[0]);
+            }
+        });
+
+        removeBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            input.value = "";
+            preview.style.display = 'none';
+            placeholder.style.display = 'block';
+            removeBtn.style.display = 'none';
+        });
+    }
+
+    setupPreview('capa', 'preview-capa', 'placeholder-capa', 'remove-capa');
+    setupPreview('banner', 'preview-banner', 'placeholder-banner', 'remove-banner');
+
+    // Screenshots
+    document.getElementById('screenshots').addEventListener('change', function() {
+        const container = document.getElementById('screenshotsContainer');
+        const addBtn = container.querySelector('.add-screenshot-btn');
+        Array.from(this.files).forEach(file => {
+            const reader = new FileReader();
+            reader.onload = e => {
+                const div = document.createElement('div');
+                div.className = 'screenshot-item';
+                div.innerHTML = `<img src="${e.target.result}"><button type="button" class="btn-remove-img" style="display:block" onclick="this.parentElement.remove()">X</button>`;
+                container.insertBefore(div, addBtn);
+            }
+            reader.readAsDataURL(file);
+        });
     });
-});
+
+    // Auto-save no LocalStorage
+    const form = document.getElementById('publishForm');
+    const fields = form.querySelectorAll('input:not([type="file"]), textarea, select');
+
+    fields.forEach(f => {
+        f.value = localStorage.getItem('pub_cache_' + f.name) || f.value;
+        f.addEventListener('input', () => localStorage.setItem('pub_cache_' + f.name, f.value));
+    });
+
+    form.onsubmit = () => fields.forEach(f => localStorage.removeItem('pub_cache_' + f.name));
+
+    document.addEventListener('DOMContentLoaded', function() {
+        function initMultiSelect(triggerId, popoverId, inputId, storageKey) {
+            const trigger = document.getElementById(triggerId);
+            const popover = document.getElementById(popoverId);
+            const input = document.getElementById(inputId);
+            let selected = [];
+
+            // Recuperar do cache (Auto-save)
+            const cached = localStorage.getItem(storageKey);
+            if (cached) {
+                const ids = cached.split(',');
+                popover.querySelectorAll('.opt-item').forEach(item => {
+                    if (ids.includes(item.dataset.id)) {
+                        selected.push({
+                            id: item.dataset.id,
+                            name: item.dataset.name
+                        });
+                        item.classList.add('selected');
+                    }
+                });
+                render();
+            }
+
+            trigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                document.querySelectorAll('.tags-popover').forEach(p => p !== popover ? p.style.display = 'none' : null);
+                popover.style.display = popover.style.display === 'block' ? 'none' : 'block';
+            });
+
+            popover.querySelectorAll('.opt-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const id = item.dataset.id;
+                    if (!selected.find(i => i.id === id)) {
+                        selected.push({
+                            id,
+                            name: item.dataset.name
+                        });
+                        item.classList.add('selected');
+                        render();
+                    }
+                    popover.style.display = 'none';
+                });
+            });
+
+            function render() {
+                trigger.innerHTML = selected.length === 0 ? '<span class="placeholder-text">Selecionar...</span>' : '';
+                selected.forEach(item => {
+                    const chip = document.createElement('div');
+                    chip.className = 'tag-chip';
+                    chip.innerHTML = `${item.name} <i class="fas fa-times"></i>`;
+                    chip.querySelector('i').onclick = (e) => {
+                        e.stopPropagation();
+                        remove(item.id);
+                    };
+                    trigger.appendChild(chip);
+                });
+                const val = selected.map(i => i.id).join(',');
+                input.value = val;
+                localStorage.setItem(storageKey, val); // Salva no cache
+            }
+
+            function remove(id) {
+                selected = selected.filter(i => i.id !== id);
+                const opt = popover.querySelector(`[data-id="${id}"]`);
+                if (opt) opt.classList.remove('selected');
+                render();
+            }
+
+            document.addEventListener('click', () => popover.style.display = 'none');
+        }
+
+        // Inicializa os dois seletores
+        initMultiSelect('catsTrigger', 'catsPopover', 'inputCats', 'pub_cache_cats');
+        initMultiSelect('tagsTrigger', 'tagsPopover', 'inputTags', 'pub_cache_tags');
+    });
+    // Lógica de Plataformas
+    const platformChips = document.querySelectorAll('.platform-chip');
+    const inputPlataformas = document.getElementById('inputPlataformas');
+    let selectedPlats = [];
+
+    // Recuperar do LocalStorage
+    const savedPlats = localStorage.getItem('pub_cache_plats');
+    if (savedPlats) {
+        selectedPlats = savedPlats.split(',');
+        platformChips.forEach(chip => {
+            if (selectedPlats.includes(chip.dataset.id)) {
+                chip.classList.add('active');
+            }
+        });
+        inputPlataformas.value = savedPlats;
+    }
+
+    platformChips.forEach(chip => {
+        chip.addEventListener('click', function() {
+            const id = this.dataset.id;
+
+            if (this.classList.contains('active')) {
+                this.classList.remove('active');
+                selectedPlats = selectedPlats.filter(item => item !== id);
+            } else {
+                this.classList.add('active');
+                selectedPlats.push(id);
+            }
+
+            const val = selectedPlats.join(',');
+            inputPlataformas.value = val;
+            localStorage.setItem('pub_cache_plats', val);
+        });
+    });
 </script>
 
 <?php require_once '../includes/footer.php'; ?>
