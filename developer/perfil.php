@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $success = 'Informações atualizadas!';
             
         } elseif ($action == 'imagens') {
-            $upload_dir = __DIR__ . '/../uploads/desenvolvedores';
+            $upload_dir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/desenvolvedores';
             $upload_url = '/uploads/desenvolvedores';
             
             // Criar diretório se não existir
@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     throw new Exception('Tipo de arquivo não permitido para logo');
                 }
                 
-                if ($_FILES['logo']['size'] > 5242880) { // 5MB
+                if ($_FILES['logo']['size'] > 5242880) {
                     throw new Exception('Logo muito grande (máx 5MB)');
                 }
                 
@@ -56,10 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $logo_path = $upload_dir . '/' . $logo_name;
                 
                 if (move_uploaded_file($_FILES['logo']['tmp_name'], $logo_path)) {
-                    // Remove logo antigo
                     if ($dev['logo_url']) {
-                        $old_file = __DIR__ . '/..' . $dev['logo_url'];
-                        if (file_exists($old_file)) unlink($old_file);
+                        $old_file = $_SERVER['DOCUMENT_ROOT'] . $dev['logo_url'];
+                        if (file_exists($old_file)) @unlink($old_file);
                     }
                     
                     $stmt = $pdo->prepare("UPDATE desenvolvedor SET logo_url = ? WHERE id = ?");
@@ -79,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     throw new Exception('Tipo de arquivo não permitido para banner');
                 }
                 
-                if ($_FILES['banner']['size'] > 10485760) { // 10MB
+                if ($_FILES['banner']['size'] > 10485760) {
                     throw new Exception('Banner muito grande (máx 10MB)');
                 }
                 
@@ -87,10 +86,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $banner_path = $upload_dir . '/' . $banner_name;
                 
                 if (move_uploaded_file($_FILES['banner']['tmp_name'], $banner_path)) {
-                    // Remove banner antigo
                     if ($dev['banner_url']) {
-                        $old_file = __DIR__ . '/..' . $dev['banner_url'];
-                        if (file_exists($old_file)) unlink($old_file);
+                        $old_file = $_SERVER['DOCUMENT_ROOT'] . $dev['banner_url'];
+                        if (file_exists($old_file)) @unlink($old_file);
                     }
                     
                     $stmt = $pdo->prepare("UPDATE desenvolvedor SET banner_url = ? WHERE id = ?");

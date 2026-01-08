@@ -152,6 +152,26 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <i class="fas fa-ticket-alt"></i> Cupons de Desconto
             </a>
         </li>
+        <div class="admin-sidebar-divider"></div>
+        <small class="admin-sidebar-label">Gerenciar</small>
+        <li>
+            <a href="<?= SITE_URL; ?>/admin/jogos.php" 
+               class="<?= $current_page == 'jogos.php' ? 'active' : ''; ?>">
+                <i class="fas fa-gamepad"></i> Jogos
+            </a>
+        </li>
+        <li>
+            <a href="<?= SITE_URL; ?>/admin/usuarios.php" 
+               class="<?= $current_page == 'usuarios.php' ? 'active' : ''; ?>">
+                <i class="fas fa-users"></i> Usuários
+            </a>
+        </li>
+        <li>
+            <a href="<?= SITE_URL; ?>/admin/desenvolvedores.php" 
+               class="<?= $current_page == 'desenvolvedores.php' ? 'active' : ''; ?>">
+                <i class="fas fa-user-tie"></i> Desenvolvedores
+            </a>
+        </li>
 
         <div class="admin-sidebar-divider"></div>
         <small class="admin-sidebar-label">Suporte e Comunicação</small>
