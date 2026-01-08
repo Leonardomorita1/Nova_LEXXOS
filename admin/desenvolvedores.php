@@ -1,4 +1,7 @@
 <?php
+// ============================================
+// admin/desenvolvedores.php (CORRIGIDO - Bug do filtro)
+// ============================================
 require_once '../config/config.php';
 require_once '../config/database.php';
 requireLogin();
@@ -20,12 +23,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $stmt = $pdo->prepare("UPDATE desenvolvedor SET status = 'pendente' WHERE id = ?");
         $stmt->execute([$dev_id]);
         
-        // Notificar
         $stmt_user = $pdo->prepare("SELECT usuario_id FROM desenvolvedor WHERE id = ?");
         $stmt_user->execute([$dev_id]);
         $user_id = $stmt_user->fetch()['usuario_id'];
         
-        $stmt = $pdo->prepare("INSERT INTO notificacao (usuario_id, tipo, titulo, mensagem) VALUES (?, 'sistema', 'Solicitação de desenvolvedor não aprovada', 'Sua solicitação não foi aprovada. Você pode revisar seus dados e tentar novamente.')");
+        $stmt = $pdo->prepare("INSERT INTO notificacao (usuario_id, tipo, titulo, mensagem) VALUES (?, 'sistema', 'Solicitação não aprovada', 'Sua solicitação não foi aprovada.')");
         $stmt->execute([$user_id]);
         
         $message = 'Desenvolvedor rejeitado!';
@@ -36,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     }
 }
 
-// Filtros
+// CORREÇÃO: Filtros
 $where = ['1=1'];
 $params = [];
 
@@ -45,12 +47,20 @@ if (isset($_GET['status']) && !empty($_GET['status'])) {
     $params[] = $_GET['status'];
 }
 
+if (isset($_GET['search']) && !empty($_GET['search'])) {
+    $where[] = '(d.nome_estudio LIKE ? OR u.nome_usuario LIKE ? OR u.email LIKE ?)';
+    $search = '%' . $_GET['search'] . '%';
+    $params[] = $search;
+    $params[] = $search;
+    $params[] = $search;
+}
+
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = 20;
 $offset = ($page - 1) * $per_page;
 $where_sql = implode(' AND ', $where);
 
-$stmt = $pdo->prepare("SELECT COUNT(*) as total FROM desenvolvedor d WHERE $where_sql");
+$stmt = $pdo->prepare("SELECT COUNT(*) as total FROM desenvolvedor d JOIN usuario u ON d.usuario_id = u.id WHERE $where_sql");
 $stmt->execute($params);
 $total = $stmt->fetch()['total'];
 $total_pages = ceil($total / $per_page);
@@ -81,7 +91,7 @@ require_once '../includes/header.php';
         <div class="admin-content">
             <div class="admin-header">
                 <h1 class="admin-title"><i class="fas fa-code"></i> Gerenciar Desenvolvedores</h1>
-                <div style="color: var(--text-secondary);">Total: <?php echo $total; ?> desenvolvedores</div>
+                <div style="color: var(--text-secondary);">Total: <?php echo $total; ?></div>
             </div>
 
             <?php if ($message): ?>
@@ -93,6 +103,10 @@ require_once '../includes/header.php';
             <!-- Filtros -->
             <form method="GET" class="filters">
                 <div class="filters-grid">
+                    <div class="filter-group">
+                        <label>Buscar</label>
+                        <input type="text" name="search" placeholder="Estúdio, usuário..." value="<?php echo $_GET['search'] ?? ''; ?>">
+                    </div>
                     <div class="filter-group">
                         <label>Status</label>
                         <select name="status">
@@ -146,18 +160,14 @@ require_once '../includes/header.php';
                             <td><?php echo $dev['total_vendas'] ?? 0; ?></td>
                             <td>
                                 <?php if ($dev['verificado']): ?>
-                                    <i class="fas fa-check-circle" style="color: var(--success);" title="Verificado"></i>
+                                    <i class="fas fa-check-circle" style="color: var(--success);"></i>
                                 <?php else: ?>
-                                    <i class="fas fa-times-circle" style="color: var(--text-secondary);" title="Não verificado"></i>
+                                    <i class="fas fa-times-circle" style="color: var(--text-secondary);"></i>
                                 <?php endif; ?>
                             </td>
                             <td>
                                 <?php
-                                $status_colors = [
-                                    'pendente' => 'warning',
-                                    'ativo' => 'success',
-                                    'suspenso' => 'danger'
-                                ];
+                                $status_colors = ['pendente' => 'warning', 'ativo' => 'success', 'suspenso' => 'danger'];
                                 ?>
                                 <span class="badge badge-<?php echo $status_colors[$dev['status']]; ?>">
                                     <?php echo ucfirst($dev['status']); ?>
@@ -167,7 +177,7 @@ require_once '../includes/header.php';
                             <td>
                                 <div class="action-buttons">
                                     <a href="<?php echo SITE_URL; ?>/pages/desenvolvedor.php?slug=<?php echo $dev['slug']; ?>" 
-                                       class="btn-icon view" title="Ver Perfil" target="_blank">
+                                       class="btn-icon view" target="_blank">
                                         <i class="fas fa-eye"></i>
                                     </a>
                                     
@@ -175,14 +185,14 @@ require_once '../includes/header.php';
                                     <form method="POST" style="display: inline;">
                                         <input type="hidden" name="dev_id" value="<?php echo $dev['id']; ?>">
                                         <input type="hidden" name="action" value="aprovar">
-                                        <button type="submit" class="btn-icon edit" title="Aprovar">
+                                        <button type="submit" class="btn-icon edit">
                                             <i class="fas fa-check"></i>
                                         </button>
                                     </form>
                                     <form method="POST" style="display: inline;">
                                         <input type="hidden" name="dev_id" value="<?php echo $dev['id']; ?>">
                                         <input type="hidden" name="action" value="rejeitar">
-                                        <button type="submit" class="btn-icon delete" title="Rejeitar">
+                                        <button type="submit" class="btn-icon delete">
                                             <i class="fas fa-times"></i>
                                         </button>
                                     </form>
@@ -192,7 +202,7 @@ require_once '../includes/header.php';
                                     <form method="POST" style="display: inline;">
                                         <input type="hidden" name="dev_id" value="<?php echo $dev['id']; ?>">
                                         <input type="hidden" name="action" value="verificar">
-                                        <button type="submit" class="btn-icon edit" title="Verificar">
+                                        <button type="submit" class="btn-icon edit">
                                             <i class="fas fa-certificate"></i>
                                         </button>
                                     </form>
@@ -206,21 +216,24 @@ require_once '../includes/header.php';
                 
                 <?php if ($total_pages > 1): ?>
                 <div class="pagination">
-                    <?php if ($page > 1): ?>
-                        <a href="?page=<?php echo $page - 1; ?><?php echo isset($_GET['status']) ? '&status=' . $_GET['status'] : ''; ?>">
+                    <?php 
+                    $query_string = http_build_query(array_filter($_GET, function($key) { return $key != 'page'; }, ARRAY_FILTER_USE_KEY));
+                    if ($page > 1): 
+                    ?>
+                        <a href="?page=<?php echo $page - 1; ?><?php echo $query_string ? '&' . $query_string : ''; ?>">
                             <i class="fas fa-chevron-left"></i>
                         </a>
                     <?php endif; ?>
                     
                     <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
-                        <a href="?page=<?php echo $i; ?><?php echo isset($_GET['status']) ? '&status=' . $_GET['status'] : ''; ?>" 
+                        <a href="?page=<?php echo $i; ?><?php echo $query_string ? '&' . $query_string : ''; ?>" 
                            class="<?php echo $i == $page ? 'active' : ''; ?>">
                             <?php echo $i; ?>
                         </a>
                     <?php endfor; ?>
                     
                     <?php if ($page < $total_pages): ?>
-                        <a href="?page=<?php echo $page + 1; ?><?php echo isset($_GET['status']) ? '&status=' . $_GET['status'] : ''; ?>">
+                        <a href="?page=<?php echo $page + 1; ?><?php echo $query_string ? '&' . $query_string : ''; ?>">
                             <i class="fas fa-chevron-right"></i>
                         </a>
                     <?php endif; ?>

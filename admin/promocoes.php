@@ -1,6 +1,6 @@
 <?php
 // ============================================
-// admin/promocoes.php
+// admin/promocoes.php (COMPLETO)
 // ============================================
 require_once '../config/config.php';
 require_once '../config/database.php';
@@ -11,33 +11,48 @@ $database = new Database();
 $pdo = $database->getConnection();
 $message = '';
 
-// Adicionar promoção
+// Adicionar
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add'])) {
     $stmt = $pdo->prepare("INSERT INTO promocao (nome, descricao, percentual_desconto, data_inicio, data_fim, ativa) VALUES (?, ?, ?, ?, ?, ?)");
-    $stmt->execute([
-        $_POST['nome'],
-        $_POST['descricao'],
-        $_POST['percentual_desconto'],
-        $_POST['data_inicio'],
-        $_POST['data_fim'],
-        $_POST['ativa']
-    ]);
+    $stmt->execute([$_POST['nome'], $_POST['descricao'], $_POST['percentual_desconto'], $_POST['data_inicio'], $_POST['data_fim'], $_POST['ativa']]);
     $message = 'Promoção criada!';
 }
 
-// Adicionar jogo à promoção
+// Editar
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit'])) {
+    $stmt = $pdo->prepare("UPDATE promocao SET nome=?, descricao=?, percentual_desconto=?, data_inicio=?, data_fim=?, ativa=? WHERE id=?");
+    $stmt->execute([$_POST['nome'], $_POST['descricao'], $_POST['percentual_desconto'], $_POST['data_inicio'], $_POST['data_fim'], $_POST['ativa'], $_POST['promocao_id']]);
+    $message = 'Promoção atualizada!';
+}
+
+// Deletar
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete'])) {
+    $stmt = $pdo->prepare("DELETE FROM promocao_jogo WHERE promocao_id = ?");
+    $stmt->execute([$_POST['promocao_id']]);
+    $stmt = $pdo->prepare("DELETE FROM promocao WHERE id = ?");
+    $stmt->execute([$_POST['promocao_id']]);
+    $message = 'Promoção excluída!';
+}
+
+// Adicionar jogo
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_jogo'])) {
-    $stmt = $pdo->prepare("INSERT INTO promocao_jogo (promocao_id, jogo_id) VALUES (?, ?)");
+    $stmt = $pdo->prepare("INSERT IGNORE INTO promocao_jogo (promocao_id, jogo_id) VALUES (?, ?)");
     $stmt->execute([$_POST['promocao_id'], $_POST['jogo_id']]);
     
-    // Atualizar jogo
     $stmt = $pdo->prepare("UPDATE jogo SET em_promocao = 1 WHERE id = ?");
     $stmt->execute([$_POST['jogo_id']]);
     
-    $message = 'Jogo adicionado à promoção!';
+    $message = 'Jogo adicionado!';
 }
 
-// Toggle promoção
+// Remover jogo
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['remove_jogo'])) {
+    $stmt = $pdo->prepare("DELETE FROM promocao_jogo WHERE promocao_id = ? AND jogo_id = ?");
+    $stmt->execute([$_POST['promocao_id'], $_POST['jogo_id']]);
+    $message = 'Jogo removido!';
+}
+
+// Toggle
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['toggle'])) {
     $stmt = $pdo->prepare("UPDATE promocao SET ativa = NOT ativa WHERE id = ?");
     $stmt->execute([$_POST['promocao_id']]);
@@ -47,7 +62,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['toggle'])) {
 $stmt = $pdo->query("SELECT * FROM promocao ORDER BY criado_em DESC");
 $promocoes = $stmt->fetchAll();
 
-// Buscar jogos disponíveis
 $stmt = $pdo->query("SELECT id, titulo FROM jogo WHERE status = 'publicado' ORDER BY titulo");
 $jogos_disponiveis = $stmt->fetchAll();
 
@@ -75,25 +89,25 @@ require_once '../includes/header.php';
             </div>
             <?php endif; ?>
 
-            <!-- Formulário Nova Promoção -->
+            <!-- Form Nova -->
             <div id="formNova" class="form-section" style="display: none; margin-bottom: 30px;">
                 <h2>Nova Promoção</h2>
                 <form method="POST">
                     <div class="form-grid">
                         <div class="form-group">
-                            <label>Nome da Promoção</label>
+                            <label>Nome</label>
                             <input type="text" name="nome" class="form-control" required>
                         </div>
                         <div class="form-group">
-                            <label>Percentual de Desconto</label>
+                            <label>Desconto (%)</label>
                             <input type="number" name="percentual_desconto" class="form-control" min="1" max="100" required>
                         </div>
                         <div class="form-group">
-                            <label>Data de Início</label>
+                            <label>Início</label>
                             <input type="datetime-local" name="data_inicio" class="form-control" required>
                         </div>
                         <div class="form-group">
-                            <label>Data de Fim</label>
+                            <label>Fim</label>
                             <input type="datetime-local" name="data_fim" class="form-control" required>
                         </div>
                     </div>
@@ -108,17 +122,16 @@ require_once '../includes/header.php';
                             <option value="0">Não</option>
                         </select>
                     </div>
-                    <div style="display: flex; gap: 10px; margin-top: 20px;">
-                        <button type="submit" name="add" class="btn btn-primary">Criar Promoção</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="submit" name="add" class="btn btn-primary">Criar</button>
                         <button type="button" class="btn btn-secondary" onclick="document.getElementById('formNova').style.display='none'">Cancelar</button>
                     </div>
                 </form>
             </div>
 
-            <!-- Lista de Promoções -->
+            <!-- Lista -->
             <?php foreach ($promocoes as $promocao): ?>
             <?php
-            // Buscar jogos da promoção
             $stmt = $pdo->prepare("
                 SELECT j.id, j.titulo, j.imagem_capa 
                 FROM jogo j
@@ -144,13 +157,24 @@ require_once '../includes/header.php';
                             <p style="margin-top: 10px;"><?php echo sanitize($promocao['descricao']); ?></p>
                         <?php endif; ?>
                     </div>
-                    <form method="POST">
-                        <input type="hidden" name="promocao_id" value="<?php echo $promocao['id']; ?>">
-                        <button type="submit" name="toggle" class="btn btn-<?php echo $promocao['ativa'] ? 'danger' : 'success'; ?>">
-                            <i class="fas fa-toggle-<?php echo $promocao['ativa'] ? 'on' : 'off'; ?>"></i>
-                            <?php echo $promocao['ativa'] ? 'Desativar' : 'Ativar'; ?>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="editarPromocao(<?php echo htmlspecialchars(json_encode($promocao)); ?>)" class="btn btn-secondary">
+                            <i class="fas fa-edit"></i> Editar
                         </button>
-                    </form>
+                        <form method="POST" style="display: inline;">
+                            <input type="hidden" name="promocao_id" value="<?php echo $promocao['id']; ?>">
+                            <button type="submit" name="toggle" class="btn btn-<?php echo $promocao['ativa'] ? 'danger' : 'success'; ?>">
+                                <i class="fas fa-toggle-<?php echo $promocao['ativa'] ? 'on' : 'off'; ?>"></i>
+                                <?php echo $promocao['ativa'] ? 'Desativar' : 'Ativar'; ?>
+                            </button>
+                        </form>
+                        <form method="POST" style="display: inline;">
+                            <input type="hidden" name="promocao_id" value="<?php echo $promocao['id']; ?>">
+                            <button type="submit" name="delete" class="btn btn-danger" onclick="return confirm('Excluir promoção?')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
+                    </div>
                 </div>
 
                 <div style="margin-bottom: 15px;">
@@ -159,12 +183,12 @@ require_once '../includes/header.php';
                     </button>
                 </div>
 
-                <!-- Formulário Adicionar Jogo -->
+                <!-- Form Add Jogo -->
                 <div id="addJogo<?php echo $promocao['id']; ?>" style="display: none; background: var(--bg-primary); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
                     <form method="POST" style="display: flex; gap: 10px; align-items: flex-end;">
                         <input type="hidden" name="promocao_id" value="<?php echo $promocao['id']; ?>">
                         <div class="form-group" style="flex: 1; margin: 0;">
-                            <label>Selecione o Jogo</label>
+                            <label>Jogo</label>
                             <select name="jogo_id" class="form-control" required>
                                 <option value="">Selecione...</option>
                                 <?php foreach ($jogos_disponiveis as $jogo): ?>
@@ -177,23 +201,30 @@ require_once '../includes/header.php';
                     </form>
                 </div>
 
-                <!-- Jogos da Promoção -->
+                <!-- Jogos -->
                 <?php if (count($jogos_promocao) > 0): ?>
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px;">
                     <?php foreach ($jogos_promocao as $jogo): ?>
-                    <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;">
+                    <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; position: relative;">
                         <img src="<?php echo SITE_URL . ($jogo['imagem_capa'] ?: '/assets/images/no-image.png'); ?>" 
                              style="width: 100%; aspect-ratio: 3/4; object-fit: cover;">
                         <div style="padding: 10px;">
-                            <strong style="font-size: 14px;"><?php echo sanitize($jogo['titulo']); ?></strong>
+                            <strong style="font-size: 13px;"><?php echo sanitize($jogo['titulo']); ?></strong>
                         </div>
+                        <form method="POST" style="position: absolute; top: 5px; right: 5px;">
+                            <input type="hidden" name="promocao_id" value="<?php echo $promocao['id']; ?>">
+                            <input type="hidden" name="jogo_id" value="<?php echo $jogo['id']; ?>">
+                            <button type="submit" name="remove_jogo" style="background: var(--danger); color: white; border: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer;" onclick="return confirm('Remover?')">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </form>
                     </div>
                     <?php endforeach; ?>
                 </div>
                 <?php else: ?>
                 <div style="text-align: center; padding: 40px; background: var(--bg-primary); border-radius: 8px;">
                     <i class="fas fa-gamepad" style="font-size: 48px; color: var(--text-secondary); margin-bottom: 10px;"></i>
-                    <p style="color: var(--text-secondary);">Nenhum jogo adicionado a esta promoção</p>
+                    <p style="color: var(--text-secondary);">Nenhum jogo nesta promoção</p>
                 </div>
                 <?php endif; ?>
             </div>
@@ -201,5 +232,40 @@ require_once '../includes/header.php';
         </div>
     </div>
 </div>
+
+<!-- Modal Editar -->
+<div id="modalEdit" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 9999; padding: 20px; align-items: center; justify-content: center; overflow-y: auto;">
+    <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; max-width: 600px; width: 100%;">
+        <div style="padding: 20px; border-bottom: 1px solid var(--border);"><h2>Editar Promoção</h2></div>
+        <form method="POST" style="padding: 20px;">
+            <input type="hidden" name="promocao_id" id="edit_id">
+            <div class="form-grid">
+                <div class="form-group"><label>Nome</label><input type="text" name="nome" id="edit_nome" class="form-control" required></div>
+                <div class="form-group"><label>Desconto (%)</label><input type="number" name="percentual_desconto" id="edit_desconto" class="form-control" required></div>
+                <div class="form-group"><label>Início</label><input type="datetime-local" name="data_inicio" id="edit_inicio" class="form-control" required></div>
+                <div class="form-group"><label>Fim</label><input type="datetime-local" name="data_fim" id="edit_fim" class="form-control" required></div>
+            </div>
+            <div class="form-group"><label>Descrição</label><textarea name="descricao" id="edit_desc" class="form-control" rows="3"></textarea></div>
+            <div class="form-group"><label>Ativa</label><select name="ativa" id="edit_ativa" class="form-control"><option value="1">Sim</option><option value="0">Não</option></select></div>
+            <div style="display: flex; gap: 10px;">
+                <button type="submit" name="edit" class="btn btn-primary">Salvar</button>
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('modalEdit').style.display='none'">Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function editarPromocao(promo) {
+    document.getElementById('edit_id').value = promo.id;
+    document.getElementById('edit_nome').value = promo.nome;
+    document.getElementById('edit_desconto').value = promo.percentual_desconto;
+    document.getElementById('edit_inicio').value = promo.data_inicio.replace(' ', 'T');
+    document.getElementById('edit_fim').value = promo.data_fim.replace(' ', 'T');
+    document.getElementById('edit_desc').value = promo.descricao || '';
+    document.getElementById('edit_ativa').value = promo.ativa;
+    document.getElementById('modalEdit').style.display = 'flex';
+}
+</script>
 
 <?php require_once '../includes/footer.php'; ?>
