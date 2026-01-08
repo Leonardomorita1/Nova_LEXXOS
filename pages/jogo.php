@@ -449,8 +449,8 @@ require_once '../includes/header.php';
                         <a href="<?= SITE_URL ?>/user/download-jogo.php?jogo_id=<?= $jogo['id'] ?>" class="btn btn-primary btn-lg w-100"><i class="fas fa-download"></i> Instalar</a>
                     <?php elseif ($user_id): ?>
                         <button class="btn btn-primary btn-block" onclick="toggleCart(<?php echo $jogo['id']; ?>, this)">
-                                    <i class="fas fa-shopping-cart"></i> Adicionar ao Carrinho
-                                </button>
+                            <i class="fas fa-shopping-cart"></i> Adicionar ao Carrinho
+                        </button>
                         <button class="btn btn-secondary btn-block" onclick="toggleWishlist(<?php echo $jogo['id']; ?>, this)">
                             <i class="fas fa-heart"></i> <?php echo $in_wishlist ? 'Na Lista' : 'Lista de Desejos'; ?>
                         </button>
@@ -536,25 +536,49 @@ require_once '../includes/header.php';
 
                 <?php if ($in_library): ?>
                     <?php if ($my_review): ?>
-                        <div class="review-card" style="border-color: var(--accent); background: rgba(var(--accent-rgb), 0.05);">
-                            <div class="d-flex justify-content-between">
-                                <strong><i class="fas fa-user-check"></i> Sua Análise</strong>
-                                <div>
-                                    <button class="btn btn-sm btn-outline-primary" onclick="openReviewModal(<?= $my_review['nota'] ?>, '<?= addslashes($my_review['comentario']) ?>')"><i class="fas fa-edit"></i> Editar</button>
-                                    <form action="<?= SITE_URL ?>/api/avaliar.php" method="POST" style="display:inline" onsubmit="return confirm('Apagar avaliação?')">
+                        <div class="user-review-highlight" style="background: rgba(var(--accent-rgb), 0.08); border: 1px solid var(--accent); border-radius: 16px; padding: 25px; margin-bottom: 30px; position: relative; backdrop-filter: blur(10px);">
+
+                            <div style="position: absolute; top: -12px; left: 20px; background: var(--accent); color: #000; padding: 2px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 800; text-transform: uppercase;">
+                                Sua Análise
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div class="d-flex align-items-center gap-3">
+                                    <img src="<?= getAvatar($my_review['avatar_url']) ?>" style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--accent);">
+                                    <div>
+                                        <h4 style="margin: 0; font-size: 1.1rem; color: var(--text-primary);">Você</h4>
+                                        <div style="color: #f1c40f; font-size: 0.9rem;">
+                                            <?php for ($i = 1; $i <= 5; $i++) echo ($i <= $my_review['nota']) ? '<i class="fas fa-star"></i>' : '<i class="far fa-star"></i>'; ?>
+                                            <span style="color: var(--text-secondary); margin-left: 8px; font-size: 0.8rem;">
+                                                <?= date('d/m/Y', strtotime($my_review['criado_em'])) ?>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="review-actions">
+                                    <button class="btn btn-sm btn-outline-light" style="border-radius: 8px; border-color: rgba(255,255,255,0.1);"
+                                        onclick="openReviewModal(<?= $my_review['nota'] ?>, `<?= addslashes($my_review['comentario']) ?>`)">
+                                        <i class="fas fa-edit"></i> Editar
+                                    </button>
+                                    <form action="<?= SITE_URL ?>/api/avaliar.php" method="POST" style="display:inline" onsubmit="return confirm('Tem certeza que deseja remover sua avaliação?')">
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="jogo_id" value="<?= $jogo['id'] ?>">
-                                        <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                                        <button class="btn btn-sm btn-outline-danger" style="border-radius: 8px; margin-left: 5px;">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
                                     </form>
                                 </div>
                             </div>
-                            <div style="color: #f1c40f; margin: 10px 0;">
-                                <?php for ($i = 1; $i <= 5; $i++) echo ($i <= $my_review['nota']) ? '<i class="fas fa-star"></i>' : '<i class="far fa-star"></i>'; ?>
+
+                            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; color: var(--text-secondary); line-height: 1.6; border-left: 3px solid var(--accent);">
+                                <?= nl2br(htmlspecialchars($my_review['comentario'])) ?>
                             </div>
-                            <p><?= nl2br(sanitize($my_review['comentario'])) ?></p>
                         </div>
                     <?php else: ?>
-                        <button class="btn btn-primary w-100 mb-4" onclick="openReviewModal()"><i class="fas fa-pen"></i> Escrever Análise</button>
+                        <button class="btn btn-primary w-100 mb-4" style="padding: 15px; border-radius: 12px; font-weight: 600;" onclick="openReviewModal()">
+                            <i class="fas fa-pen-nib"></i> Escrever uma Análise para este jogo
+                        </button>
                     <?php endif; ?>
                 <?php endif; ?>
 
