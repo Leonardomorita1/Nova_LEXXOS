@@ -10,8 +10,8 @@
 :root {
     --bg-primary: #131314;
     --bg-secondary: #1E1F20;
-    --accent: #4C8BF5;
-    --accent-hover: #3a7de8;
+    --accent: #0ea5b7;
+    --accent-hover: #00e5ffcc;
     --text-primary: #E3E3E3;
     --text-secondary: #7e7e7e;
     --border: #2A2B2C;
@@ -23,8 +23,8 @@
 [data-theme="light"] {
     --bg-primary: #F5F5F5;
     --bg-secondary: #FFFFFF;
-    --accent: #4C8BF5;
-    --accent-hover: #3a7de8;
+    --accent: var(--accent);
+    --accent-hover: var(--accent-hover);
     --text-primary: #000000;
     --text-secondary: #686868;
     --border: #E0E0E0;

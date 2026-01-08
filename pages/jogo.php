@@ -444,19 +444,35 @@ require_once '../includes/header.php';
                         <?php endif; ?>
                     </div>
 
-                    <?php if ($in_library): ?>
-                        <a href="<?= SITE_URL ?>/user/biblioteca.php" class="btn btn-success btn-lg w-100 mb-2" disabled><i class="fas fa-check"></i> Na Biblioteca</a>
-                        <a href="<?= SITE_URL ?>/user/download-jogo.php?jogo_id=<?= $jogo['id'] ?>" class="btn btn-primary btn-lg w-100"><i class="fas fa-download"></i> Instalar</a>
-                    <?php elseif ($user_id): ?>
-                        <button class="btn btn-primary btn-block" onclick="toggleCart(<?php echo $jogo['id']; ?>, this)">
-                            <i class="fas fa-shopping-cart"></i> Adicionar ao Carrinho
-                        </button>
-                        <button class="btn btn-secondary btn-block" onclick="toggleWishlist(<?php echo $jogo['id']; ?>, this)">
-                            <i class="fas fa-heart"></i> <?php echo $in_wishlist ? 'Na Lista' : 'Lista de Desejos'; ?>
-                        </button>
-                    <?php else: ?>
-                        <a href="<?= SITE_URL ?>/auth/login.php" class="btn btn-primary btn-lg w-100">Login para Comprar</a>
-                    <?php endif; ?>
+                    <div class="purchase-actions">
+                        <?php if ($in_library): ?>
+                            <a href="#" class="btn btn-success btn-block">
+                                <i class="fas fa-play"></i> Você já possui este jogo
+                            </a>
+                        <?php elseif ($user_id): ?>
+                            <?php if ($in_cart): ?>
+                                <button class="btn btn-success btn-block" disabled>
+                                    <i class="fas fa-check"></i> No Carrinho
+                                </button>
+                                <a href="<?php echo SITE_URL; ?>/user/carrinho.php" class="btn btn-primary btn-block">
+                                    <i class="fas fa-shopping-cart"></i> Ir para Carrinho
+                                </a>
+                            <?php else: ?>
+                                <button class="btn btn-primary btn-block" onclick="toggleCart(<?php echo $jogo['id']; ?>, this)">
+                                    <i class="fas fa-shopping-cart"></i> Adicionar ao Carrinho
+                                </button>
+                            <?php endif; ?>
+                            
+                            <button class="btn btn-secondary btn-block <?php echo $in_wishlist ? 'active' : ''; ?>" 
+                                    onclick="toggleWishlist(<?php echo $jogo['id']; ?>, this)">
+                                <i class="fas fa-heart"></i> <?php echo $in_wishlist ? 'Na Lista de Desejos' : 'Lista de Desejos'; ?>
+                            </button>
+                        <?php else: ?>
+                            <a href="<?php echo SITE_URL; ?>/auth/login.php" class="btn btn-primary btn-block">
+                                <i class="fas fa-sign-in-alt"></i> Entre para Comprar
+                            </a>
+                        <?php endif; ?>
+                    </div>
 
                     <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); text-align: center; color: var(--text-secondary);">
                         <small>Plataformas Compatíveis</small>
