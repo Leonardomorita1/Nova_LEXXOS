@@ -1,5 +1,5 @@
 <?php
-// ===== user/seja-dev.php =====
+// user/seja-dev.php
 require_once '../config/config.php';
 require_once '../config/database.php';
 
@@ -8,10 +8,9 @@ requireLogin();
 $database = new Database();
 $pdo = $database->getConnection();
 $user_id = $_SESSION['user_id'];
-$success = '';
-$error = '';
+$errors = [];
 
-// Verificar se já é desenvolvedor
+// Verificar se já é dev
 $stmt = $pdo->prepare("SELECT id FROM desenvolvedor WHERE usuario_id = ?");
 $stmt->execute([$user_id]);
 if ($stmt->fetch()) {
@@ -20,194 +19,251 @@ if ($stmt->fetch()) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    // Dados Básicos
     $nome_estudio = trim($_POST['nome_estudio']);
     $descricao_curta = trim($_POST['descricao_curta']);
     $tipo_pessoa = $_POST['tipo_pessoa'];
     $cpf_cnpj = trim($_POST['cpf_cnpj']);
-    $chave_pix = trim($_POST['chave_pix']);
+    $website = trim($_POST['website']);
     
-    if (empty($nome_estudio) || empty($tipo_pessoa) || empty($cpf_cnpj)) {
-        $error = 'Preencha todos os campos obrigatórios';
-    } else {
+    // Dados Financeiros (Opcionais no cadastro mas recomendados)
+    $chave_pix = trim($_POST['chave_pix']);
+    $banco_nome = trim($_POST['banco_nome']);
+    $banco_agencia = trim($_POST['banco_agencia']);
+    $banco_conta = trim($_POST['banco_conta']);
+    $banco_tipo = $_POST['banco_tipo'] ?? 'corrente';
+
+    // Validação Básica
+    if (empty($nome_estudio)) $errors['nome_estudio'] = true;
+    if (empty($cpf_cnpj)) $errors['cpf_cnpj'] = true;
+
+    if (empty($errors)) {
         try {
-            $slug = generateSlug($nome_estudio);
+            // Gerar Slug
+            $slug = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $nome_estudio)));
             
-            // Verificar slug único
-            $stmt = $pdo->prepare("SELECT id FROM desenvolvedor WHERE slug = ?");
-            $stmt->execute([$slug]);
-            if ($stmt->fetch()) {
-                $slug = $slug . '-' . uniqid();
-            }
+            // Query Completa
+            $sql = "INSERT INTO desenvolvedor 
+                    (usuario_id, nome_estudio, slug, descricao_curta, website, tipo_pessoa, cpf_cnpj, chave_pix, banco_nome, banco_agencia, banco_conta, banco_tipo, status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendente')";
             
-            $stmt = $pdo->prepare("
-                INSERT INTO desenvolvedor (usuario_id, nome_estudio, slug, descricao_curta, tipo_pessoa, cpf_cnpj, chave_pix, status, criado_em)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente', NOW())
-            ");
-            $stmt->execute([$user_id, $nome_estudio, $slug, $descricao_curta, $tipo_pessoa, $cpf_cnpj, $chave_pix]);
-            
-            // Atualizar tipo do usuário
-            $stmt = $pdo->prepare("UPDATE usuario SET tipo = 'desenvolvedor' WHERE id = ?");
-            $stmt->execute([$user_id]);
-            $_SESSION['user_type'] = 'desenvolvedor';
-            
-            $success = 'Solicitação enviada! Aguarde análise da nossa equipe.';
-        } catch (Exception $e) {
-            $error = 'Erro ao enviar solicitação';
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                $user_id, $nome_estudio, $slug, $descricao_curta, $website, 
+                $tipo_pessoa, $cpf_cnpj, $chave_pix, 
+                $banco_nome, $banco_agencia, $banco_conta, $banco_tipo
+            ]);
+
+            // Redireciona para página de sucesso ou dashboard (que vai mostrar status pendente)
+            $_SESSION['success'] = "Solicitação enviada! Analisaremos seus dados em breve.";
+            header('Location: ' . SITE_URL . '/developer/dashboard.php');
+            exit;
+
+        } catch (PDOException $e) {
+            $errors['geral'] = "Erro ao cadastrar: " . $e->getMessage();
         }
     }
 }
 
-$page_title = 'Seja um Desenvolvedor - ' . SITE_NAME;
+$page_title = "Torne-se um Desenvolvedor - Lexxos";
 require_once '../includes/header.php';
 ?>
 
 <style>
-.seja-dev-page {
-    padding: 30px 0;
-    max-width: 800px;
-    margin: 0 auto;
+/* Estilos Específicos para Landing Page Dev */
+.dev-hero {
+    text-align: center;
+    padding: 80px 20px;
+    background: radial-gradient(circle at top, rgba(14, 165, 183, 0.15), transparent 70%);
+}
+
+.dev-hero h1 {
+    font-size: 3rem;
+    background: linear-gradient(to right, #fff, var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 20px;
 }
 
 .benefits-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
-    margin: 40px 0;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 30px;
+    margin: 60px 0;
 }
 
 .benefit-card {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 25px;
-    text-align: center;
+    padding: 30px;
+    border-radius: 16px;
+    transition: transform 0.3s;
 }
+.benefit-card:hover { transform: translateY(-5px); border-color: var(--accent); }
+.benefit-icon { font-size: 2.5rem; color: var(--accent); margin-bottom: 20px; }
 
-.benefit-icon {
-    font-size: 48px;
+.registration-section {
+    max-width: 900px;
+    margin: 0 auto;
+    background: var(--bg-secondary);
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    padding: 40px;
+    display: none; /* Escondido inicialmente */
+    animation: slideUp 0.5s ease;
+}
+@keyframes slideUp { from {opacity:0; transform:translateY(20px);} to {opacity:1; transform:translateY(0);} }
+
+.cta-btn {
+    padding: 15px 40px;
+    font-size: 1.2rem;
+    border-radius: 50px;
+    background: var(--accent);
+    color: #000;
+    font-weight: 800;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.4);
+    transition: all 0.3s;
+}
+.cta-btn:hover { transform: scale(1.05); box-shadow: 0 0 30px rgba(var(--accent-rgb), 0.6); }
+
+/* Steps do Form */
+.form-section-title {
     color: var(--accent);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
     margin-bottom: 15px;
-}
-
-.benefit-title {
-    font-size: 18px;
-    font-weight: 600;
-    margin-bottom: 10px;
-}
-
-.benefit-description {
-    font-size: 14px;
-    color: var(--text-secondary);
-}
-
-@media (max-width: 768px) {
-    .benefits-grid {
-        grid-template-columns: 1fr;
-    }
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
 }
 </style>
 
 <div class="container">
-    <div class="seja-dev-page">
-        <div class="page-header" style="text-align: center;">
-            <h1 class="page-title">
-                <i class="fas fa-rocket"></i> Seja um Desenvolvedor
-            </h1>
-            <p class="page-subtitle">
-                Publique seus jogos e alcance milhares de jogadores
-            </p>
+    
+    <div class="dev-hero">
+        <h1>Publique seu jogo para o mundo.</h1>
+        <p style="font-size: 1.2rem; color: var(--text-secondary); max-width: 600px; margin: 0 auto 40px;">
+            Junte-se à Lexxos e alcance milhares de jogadores. Taxas justas, pagamentos rápidos e total controle sobre sua criação.
+        </p>
+        <button class="cta-btn" onclick="showForm()">Começar Agora <i class="fas fa-arrow-right"></i></button>
+    </div>
+
+    <div class="benefits-grid" id="benefits">
+        <div class="benefit-card">
+            <i class="fas fa-percentage benefit-icon"></i>
+            <h3>Maior Lucro para Você</h3>
+            <p style="color: var(--text-secondary);">Fique com 90% da receita das suas vendas. Uma das melhores taxas do mercado indie.</p>
         </div>
-        
-        <?php if ($success): ?>
-            <div style="background: rgba(40,167,69,0.1); border: 1px solid var(--success); color: var(--success); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 30px;">
-                <i class="fas fa-check-circle" style="font-size: 48px; margin-bottom: 15px;"></i>
-                <h3><?php echo $success; ?></h3>
-                <p style="margin-top: 10px;">Você receberá uma notificação quando sua conta for aprovada.</p>
-            </div>
-        <?php else: ?>
-            <div class="benefits-grid">
-                <div class="benefit-card">
-                    <div class="benefit-icon"><i class="fas fa-percentage"></i></div>
-                    <h3 class="benefit-title">Taxa Competitiva</h3>
-                    <p class="benefit-description">Apenas <?php echo getConfig('taxa_plataforma', $pdo); ?>% de comissão sobre vendas</p>
-                </div>
-                
-                <div class="benefit-card">
-                    <div class="benefit-icon"><i class="fas fa-users"></i></div>
-                    <h3 class="benefit-title">Grande Audiência</h3>
-                    <p class="benefit-description">Milhares de jogadores ativos na plataforma</p>
-                </div>
-                
-                <div class="benefit-card">
-                    <div class="benefit-icon"><i class="fas fa-bolt"></i></div>
-                    <h3 class="benefit-title">Publicação Rápida</h3>
-                    <p class="benefit-description">Análise em até 48 horas</p>
-                </div>
-                
-                <div class="benefit-card">
-                    <div class="benefit-icon"><i class="fas fa-chart-line"></i></div>
-                    <h3 class="benefit-title">Analytics Completo</h3>
-                    <p class="benefit-description">Dashboards detalhados de vendas e estatísticas</p>
-                </div>
-            </div>
-            
-            <?php if ($error): ?>
-                <div style="background: rgba(220,53,69,0.1); border: 1px solid var(--danger); color: var(--danger); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                    <i class="fas fa-exclamation-circle"></i> <?php echo $error; ?>
-                </div>
-            <?php endif; ?>
-            
-            <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 15px; padding: 40px;">
-                <h2 style="margin-bottom: 25px;">Formulário de Cadastro</h2>
-                
-                <form method="POST">
-                    <div class="form-group">
-                        <label class="form-label">Nome do Estúdio *</label>
-                        <input type="text" name="nome_estudio" class="form-control" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Descrição Curta</label>
-                        <input type="text" name="descricao_curta" class="form-control" maxlength="300" 
-                               placeholder="Uma breve descrição sobre seu estúdio">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Tipo de Pessoa *</label>
-                        <select name="tipo_pessoa" class="form-control" required>
-                            <option value="">Selecione...</option>
-                            <option value="fisica">Pessoa Física</option>
-                            <option value="juridica">Pessoa Jurídica</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">CPF/CNPJ *</label>
-                        <input type="text" name="cpf_cnpj" class="form-control" required
-                               placeholder="Apenas números">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Chave PIX (para recebimentos)</label>
-                        <input type="text" name="chave_pix" class="form-control"
-                               placeholder="CPF, email, telefone ou chave aleatória">
-                    </div>
-                    
-                    <div style="background: rgba(76,139,245,0.1); border: 1px solid var(--accent); border-radius: 8px; padding: 15px; margin: 20px 0;">
-                        <p style="font-size: 13px; margin: 0;">
-                            <i class="fas fa-info-circle"></i>
-                            Ao enviar este formulário, sua conta será analisada por nossa equipe. 
-                            Você receberá uma notificação com o resultado em até 48 horas.
-                        </p>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary btn-block btn-lg">
-                        <i class="fas fa-paper-plane"></i> Enviar Solicitação
-                    </button>
-                </form>
-            </div>
+        <div class="benefit-card">
+            <i class="fas fa-rocket benefit-icon"></i>
+            <h3>Publicação Simplificada</h3>
+            <p style="color: var(--text-secondary);">Sem burocracia excessiva. Suba seus arquivos, preencha os dados e comece a vender.</p>
+        </div>
+        <div class="benefit-card">
+            <i class="fas fa-chart-line benefit-icon"></i>
+            <h3>Dashboard Completo</h3>
+            <p style="color: var(--text-secondary);">Acompanhe vendas em tempo real, gerencie chaves e responda à comunidade.</p>
+        </div>
+    </div>
+
+    <div id="devFormSection" class="registration-section">
+        <div class="text-center mb-5">
+            <h2>Cadastro de Desenvolvedor</h2>
+            <p style="color: var(--text-secondary);">Preencha os dados abaixo para criar seu estúdio.</p>
+        </div>
+
+        <?php if (!empty($errors)): ?>
+            <div class="alert alert-danger mb-4">Verifique os campos destacados em vermelho.</div>
         <?php endif; ?>
+
+        <form method="POST" action="">
+            
+            <div class="form-section-title"><i class="fas fa-gamepad"></i> Identidade do Estúdio</div>
+            <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+                <div class="form-group">
+                    <label>Nome do Estúdio / Desenvolvedor *</label>
+                    <input type="text" name="nome_estudio" class="form-control <?= isset($errors['nome_estudio']) ? 'error' : '' ?>" required placeholder="Ex: Epic Indie Games">
+                </div>
+                <div class="form-group">
+                    <label>Website (Opcional)</label>
+                    <input type="url" name="website" class="form-control" placeholder="https://seu-estudio.com">
+                </div>
+                <div class="form-group full-width" style="grid-column: 1 / -1;">
+                    <label>Descrição Curta</label>
+                    <input type="text" name="descricao_curta" class="form-control" placeholder="Slogan ou breve resumo (aparece nos cards)">
+                </div>
+            </div>
+
+            <div class="form-section-title"><i class="fas fa-file-contract"></i> Dados Legais</div>
+            <div class="form-grid" style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px; margin-bottom: 30px;">
+                <div class="form-group">
+                    <label>Tipo de Pessoa</label>
+                    <select name="tipo_pessoa" class="form-control">
+                        <option value="fisica">Pessoa Física (CPF)</option>
+                        <option value="juridica">Pessoa Jurídica (CNPJ)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>CPF ou CNPJ *</label>
+                    <input type="text" name="cpf_cnpj" class="form-control <?= isset($errors['cpf_cnpj']) ? 'error' : '' ?>" required placeholder="Somente números">
+                </div>
+            </div>
+
+            <div class="form-section-title"><i class="fas fa-wallet"></i> Dados de Recebimento</div>
+            <p style="font-size: 0.85rem; color: var(--warning); margin-bottom: 15px;">Estes dados são essenciais para processarmos seus saques.</p>
+            
+            <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="form-group">
+                    <label>Chave PIX (Principal)</label>
+                    <input type="text" name="chave_pix" class="form-control" placeholder="Email, CPF ou Aleatória">
+                </div>
+                <div class="form-group">
+                    <label>Nome do Banco</label>
+                    <input type="text" name="banco_nome" class="form-control" placeholder="Ex: Nubank, Banco do Brasil">
+                </div>
+                <div class="form-group">
+                    <label>Agência</label>
+                    <input type="text" name="banco_agencia" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Conta com Dígito</label>
+                    <input type="text" name="banco_conta" class="form-control">
+                </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-top border-secondary">
+                <button type="submit" class="btn btn-primary btn-block btn-lg" style="width: 100%;">
+                    Finalizar Cadastro e Enviar
+                </button>
+                <p class="text-center mt-2" style="font-size: 0.85rem; color: var(--text-secondary);">
+                    Ao clicar, você concorda com os termos de distribuição da Lexxos.
+                </p>
+            </div>
+        </form>
     </div>
 </div>
+
+<script>
+    function showForm() {
+        // Esconde benefícios
+        document.getElementById('benefits').style.display = 'none';
+        document.querySelector('.dev-hero p').style.display = 'none';
+        document.querySelector('.cta-btn').style.display = 'none';
+        
+        // Mostra Form
+        const form = document.getElementById('devFormSection');
+        form.style.display = 'block';
+        
+        // Scroll suave
+        form.scrollIntoView({behavior: 'smooth'});
+    }
+
+    // Se houve erro no envio, mostrar form automaticamente
+    <?php if(!empty($errors) || $_SERVER['REQUEST_METHOD'] == 'POST'): ?>
+        showForm();
+    <?php endif; ?>
+</script>
 
 <?php require_once '../includes/footer.php'; ?>

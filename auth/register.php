@@ -8,58 +8,63 @@ if (isLoggedIn()) {
     exit;
 }
 
-$error = '';
-$success = '';
+$errors = [];
+$old = []; // Para manter os dados preenchidos se der erro
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    // Coleta dados
+    $old = $_POST;
     $nome_usuario = trim($_POST['nome_usuario']);
+    $nome_completo = trim($_POST['nome_completo']);
     $email = trim($_POST['email']);
+    $data_nascimento = $_POST['data_nascimento'];
     $senha = $_POST['senha'];
     $senha_confirmar = $_POST['senha_confirmar'];
     
     // Validações
-    if (empty($nome_usuario) || empty($email) || empty($senha) || empty($senha_confirmar)) {
-        $error = 'Preencha todos os campos';
-    } elseif (strlen($nome_usuario) < 3 || strlen($nome_usuario) > 50) {
-        $error = 'Nome de usuário deve ter entre 3 e 50 caracteres';
+    if (empty($nome_usuario)) $errors['nome_usuario'] = 'Obrigatório';
+    if (empty($nome_completo)) $errors['nome_completo'] = 'Obrigatório';
+    if (empty($data_nascimento)) $errors['data_nascimento'] = 'Obrigatório';
+    
+    if (empty($email)) {
+        $errors['email'] = 'Obrigatório';
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = 'Email inválido';
+        $errors['email'] = 'Email inválido';
+    }
+
+    if (empty($senha)) {
+        $errors['senha'] = 'Obrigatório';
     } elseif (strlen($senha) < 6) {
-        $error = 'Senha deve ter no mínimo 6 caracteres';
-    } elseif ($senha !== $senha_confirmar) {
-        $error = 'As senhas não coincidem';
-    } else {
+        $errors['senha'] = 'Mínimo 6 caracteres';
+    }
+
+    if ($senha !== $senha_confirmar) {
+        $errors['senha_confirmar'] = 'As senhas não coincidem';
+    }
+
+    // Se não houver erros locais, checa banco de dados
+    if (empty($errors)) {
         $database = new Database();
         $pdo = $database->getConnection();
         
-        // Verificar se email já existe
-        $stmt = $pdo->prepare("SELECT id FROM usuario WHERE email = ?");
-        $stmt->execute([$email]);
+        // Verificar duplicidade
+        $stmt = $pdo->prepare("SELECT id FROM usuario WHERE email = ? OR nome_usuario = ?");
+        $stmt->execute([$email, $nome_usuario]);
         if ($stmt->fetch()) {
-            $error = 'Este email já está cadastrado';
+            $errors['geral'] = 'Email ou Nome de Usuário já cadastrados.';
         } else {
-            // Verificar se nome de usuário já existe
-            $stmt = $pdo->prepare("SELECT id FROM usuario WHERE nome_usuario = ?");
-            $stmt->execute([$nome_usuario]);
-            if ($stmt->fetch()) {
-                $error = 'Este nome de usuário já está em uso';
+            // Inserir
+            $senha_hash = password_hash($senha, PASSWORD_DEFAULT);
+            $stmt = $pdo->prepare("INSERT INTO usuario (nome_usuario, nome_completo, email, data_nascimento, senha_hash, tipo, status) VALUES (?, ?, ?, ?, ?, 'cliente', 'ativo')");
+            
+            if ($stmt->execute([$nome_usuario, $nome_completo, $email, $data_nascimento, $senha_hash])) {
+                $_SESSION['user_id'] = $pdo->lastInsertId();
+                $_SESSION['user_name'] = $nome_usuario;
+                $_SESSION['user_type'] = 'cliente';
+                header('Location: ' . SITE_URL . '/pages/home.php');
+                exit;
             } else {
-                // Criar usuário
-                $senha_hash = password_hash($senha, PASSWORD_DEFAULT);
-                
-                $stmt = $pdo->prepare("
-                    INSERT INTO usuario (nome_usuario, email, senha_hash, tipo, status, criado_em) 
-                    VALUES (?, ?, ?, 'cliente', 'ativo', NOW())
-                ");
-                
-                if ($stmt->execute([$nome_usuario, $email, $senha_hash])) {
-                    $success = 'Conta criada com sucesso! Você já pode fazer login.';
-                    
-                    // Limpar campos
-                    $_POST = array();
-                } else {
-                    $error = 'Erro ao criar conta. Tente novamente.';
-                }
+                $errors['geral'] = 'Erro ao criar conta. Tente novamente.';
             }
         }
     }
@@ -70,164 +75,118 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cadastro - <?php echo SITE_NAME; ?></title>
-    <link rel="stylesheet" href="<?php echo SITE_URL; ?>/assets/css/main.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        .auth-container {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        .auth-box {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 15px;
-            padding: 40px;
-            width: 100%;
-            max-width: 450px;
-        }
-        .auth-logo {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .auth-logo h1 {
-            font-size: 36px;
-            color: var(--accent);
-            margin-bottom: 10px;
-        }
-        .auth-logo p {
-            color: var(--text-secondary);
-        }
-        .error-message {
-            background: rgba(220, 53, 69, 0.1);
-            border: 1px solid var(--danger);
-            color: var(--danger);
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        .success-message {
-            background: rgba(40, 167, 69, 0.1);
-            border: 1px solid var(--success);
-            color: var(--success);
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        .auth-divider {
-            text-align: center;
-            margin: 20px 0;
-            color: var(--text-secondary);
-        }
-        .password-requirements {
-            font-size: 12px;
-            color: var(--text-secondary);
-            margin-top: 5px;
-        }
-    </style>
+    <title>Criar Conta - Lexxos</title>
+    <link rel="stylesheet" href="<?= SITE_URL ?>/assets/css/main.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
-<body>
-    <div class="auth-container">
-        <div class="auth-box">
-            <div class="auth-logo">
-                <h1><?php echo SITE_NAME; ?></h1>
-                <p>Crie sua conta e comece a jogar</p>
-            </div>
+<body style="background: var(--bg-primary); min-height: 100vh; display: flex; align-items: center; justify-content: center;">
+
+    <div class="auth-container" style="width: 100%; max-width: 500px; padding: 20px;">
+        <div class="auth-card" style="background: var(--bg-secondary); padding: 40px; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
             
-            <?php if ($error): ?>
-                <div class="error-message">
-                    <i class="fas fa-exclamation-circle"></i> <?php echo $error; ?>
+            <div class="text-center mb-4">
+                <h2 style="color: var(--text-primary); margin-bottom: 10px;">Crie sua conta</h2>
+                <p style="color: var(--text-secondary);">Junte-se à comunidade Lexxos</p>
+            </div>
+
+            <?php if (isset($errors['geral'])): ?>
+                <div class="alert alert-danger mb-3" style="color: var(--danger); background: rgba(220, 53, 69, 0.1); padding: 10px; border-radius: 8px; font-size: 0.9rem;">
+                    <?= $errors['geral'] ?>
                 </div>
             <?php endif; ?>
-            
-            <?php if ($success): ?>
-                <div class="success-message">
-                    <i class="fas fa-check-circle"></i> <?php echo $success; ?>
-                    <br><br>
-                    <a href="login.php" class="btn btn-primary">
-                        <i class="fas fa-sign-in-alt"></i> Fazer Login
-                    </a>
+
+            <form method="POST" action="" novalidate>
+                <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label class="form-label">Nome Completo</label>
+                        <input type="text" name="nome_completo" 
+                               class="form-control <?= isset($errors['nome_completo']) ? 'error' : '' ?>" 
+                               value="<?= htmlspecialchars($old['nome_completo'] ?? '') ?>"
+                               placeholder="Seu nome real">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Nascimento</label>
+                        <input type="date" name="data_nascimento" 
+                               class="form-control <?= isset($errors['data_nascimento']) ? 'error' : '' ?>"
+                               value="<?= htmlspecialchars($old['data_nascimento'] ?? '') ?>">
+                    </div>
                 </div>
-            <?php else: ?>
-                <form method="POST" action="">
-                    <div class="form-group">
-                        <label class="form-label">
-                            <i class="fas fa-user"></i> Nome de Usuário
-                        </label>
-                        <input type="text" 
-                               name="nome_usuario" 
-                               class="form-control" 
-                               placeholder="seunome"
-                               value="<?php echo isset($_POST['nome_usuario']) ? sanitize($_POST['nome_usuario']) : ''; ?>"
-                               minlength="3"
-                               maxlength="50"
-                               required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">
-                            <i class="fas fa-envelope"></i> Email
-                        </label>
-                        <input type="email" 
-                               name="email" 
-                               class="form-control" 
-                               placeholder="seu@email.com"
-                               value="<?php echo isset($_POST['email']) ? sanitize($_POST['email']) : ''; ?>"
-                               required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">
-                            <i class="fas fa-lock"></i> Senha
-                        </label>
-                        <input type="password" 
-                               name="senha" 
-                               class="form-control" 
-                               placeholder="••••••••"
-                               minlength="6"
-                               required>
-                        <div class="password-requirements">
-                            Mínimo de 6 caracteres
-                        </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">
-                            <i class="fas fa-lock"></i> Confirmar Senha
-                        </label>
-                        <input type="password" 
-                               name="senha_confirmar" 
-                               class="form-control" 
-                               placeholder="••••••••"
-                               minlength="6"
-                               required>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary btn-block">
-                        <i class="fas fa-user-plus"></i> Criar Conta
-                    </button>
-                </form>
-                
-                <div class="auth-divider">
-                    <span>JÁ TEM UMA CONTA?</span>
+
+                <div class="form-group mt-3">
+                    <label class="form-label">Nome de Usuário</label>
+                    <input type="text" name="nome_usuario" 
+                           class="form-control <?= isset($errors['nome_usuario']) ? 'error' : '' ?>"
+                           value="<?= htmlspecialchars($old['nome_usuario'] ?? '') ?>"
+                           placeholder="Como quer ser chamado">
                 </div>
-                
-                <a href="login.php" class="btn btn-secondary btn-block">
-                    <i class="fas fa-sign-in-alt"></i> Fazer Login
-                </a>
-            <?php endif; ?>
-            
-            <div style="text-align: center; margin-top: 20px;">
-                <a href="<?php echo SITE_URL; ?>/pages/home.php" style="color: var(--text-secondary); font-size: 14px;">
-                    <i class="fas fa-arrow-left"></i> Voltar para home
-                </a>
+
+                <div class="form-group mt-3">
+                    <label class="form-label">Email</label>
+                    <input type="email" name="email" 
+                           class="form-control <?= isset($errors['email']) ? 'error' : '' ?>"
+                           value="<?= htmlspecialchars($old['email'] ?? '') ?>"
+                           placeholder="seu@email.com">
+                    <?php if(isset($errors['email'])): ?><span class="error-msg"><?= $errors['email'] ?></span><?php endif; ?>
+                </div>
+
+                <div class="form-group mt-3">
+                    <label class="form-label">Senha</label>
+                    <div class="password-wrapper">
+                        <input type="password" name="senha" id="senha"
+                               class="form-control <?= isset($errors['senha']) ? 'error' : '' ?>"
+                               placeholder="Mínimo 6 caracteres">
+                        <i class="fas fa-eye password-toggle" onclick="togglePass('senha')"></i>
+                    </div>
+                    <?php if(isset($errors['senha'])): ?><span class="error-msg"><?= $errors['senha'] ?></span><?php endif; ?>
+                </div>
+
+                <div class="form-group mt-3">
+                    <label class="form-label">Confirmar Senha</label>
+                    <div class="password-wrapper">
+                        <input type="password" name="senha_confirmar" id="senha_conf"
+                               class="form-control <?= isset($errors['senha_confirmar']) ? 'error' : '' ?>"
+                               placeholder="Repita a senha">
+                        <i class="fas fa-eye password-toggle" onclick="togglePass('senha_conf')"></i>
+                    </div>
+                    <?php if(isset($errors['senha_confirmar'])): ?><span class="error-msg"><?= $errors['senha_confirmar'] ?></span><?php endif; ?>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block mt-4" style="width: 100%; padding: 12px; font-weight: bold;">
+                    Cadastrar
+                </button>
+            </form>
+
+            <div class="divider" style="text-align: center; margin: 20px 0; position: relative;">
+                <span style="background: var(--bg-secondary); padding: 0 10px; color: var(--text-secondary); position: relative; z-index: 1;">OU</span>
+                <div style="position: absolute; top: 50%; left: 0; width: 100%; height: 1px; background: var(--border);"></div>
             </div>
+
+            
+
+            <p class="text-center mt-4" style="color: var(--text-secondary);">
+                Já tem uma conta? <a href="login.php" style="color: var(--accent); font-weight: bold;">Fazer Login</a>
+            </p>
         </div>
     </div>
+
+    <script>
+    function togglePass(id) {
+        const input = document.getElementById(id);
+        const icon = input.nextElementSibling;
+        if (input.type === "password") {
+            input.type = "text";
+            icon.classList.remove('fa-eye');
+            icon.classList.add('fa-eye-slash');
+        } else {
+            input.type = "password";
+            icon.classList.remove('fa-eye-slash');
+            icon.classList.add('fa-eye');
+        }
+    }
+    
+    
+    </script>
 </body>
 </html>

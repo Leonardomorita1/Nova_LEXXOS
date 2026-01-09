@@ -23,8 +23,6 @@
 [data-theme="light"] {
     --bg-primary: #F5F5F5;
     --bg-secondary: #FFFFFF;
-    --accent: var(--accent);
-    --accent-hover: var(--accent-hover);
     --text-primary: #000000;
     --text-secondary: #686868;
     --border: #E0E0E0;
@@ -878,6 +876,53 @@ textarea.form-control {
 .scroll-top-btn:hover {
     background: var(--accent-hover);
     transform: scale(1.1);
+}
+/* Classes de Validação */
+.form-control.error {
+    border-color: var(--danger) !important;
+    background-image: none; /* Remove ícones padrão do browser se houver */
+}
+.error-msg {
+    color: var(--danger);
+    font-size: 0.85rem;
+    margin-top: 5px;
+    display: block;
+}
+
+/* Container de Senha com Olho */
+.password-wrapper {
+    position: relative;
+}
+.password-toggle {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-secondary);
+    cursor: pointer;
+    z-index: 10;
+}
+.password-toggle:hover {
+    color: var(--accent);
+}
+
+/* Estilo para Botão Google */
+.btn-google {
+    background: #fff;
+    color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+}
+.btn-google:hover {
+    background: #f1f1f1;
+}
+[data-theme="light"] .btn-google {
+    background: #fff;
+    border: 1px solid #ccc;
 }
 
 /* ========== RESPONSIVE ========== */
