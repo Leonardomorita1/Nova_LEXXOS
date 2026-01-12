@@ -89,6 +89,122 @@ if (isLoggedIn()) {
             exit;
         }
     }
+    
+    // ============================================
+    // LIMPEZA AUTOMÁTICA: CARRINHO E LISTA DE DESEJOS
+    // Remove jogos que já estão na biblioteca do usuário
+    // ============================================
+    cleanupOwnedGames($pdo_check, $_SESSION['user_id']);
+}
+
+// ============================================
+// FUNÇÃO DE LIMPEZA DE JOGOS JÁ POSSUÍDOS
+// ============================================
+
+/**
+ * Remove jogos do carrinho e lista de desejos que já estão na biblioteca
+ * Usa controle de frequência para não executar em toda requisição
+ */
+function cleanupOwnedGames($pdo, $user_id) {
+    // Controle de frequência: executar no máximo a cada 5 minutos por usuário
+    $session_key = 'last_cleanup_' . $user_id;
+    $cleanup_interval = 300; // 5 minutos em segundos
+    
+    if (isset($_SESSION[$session_key]) && (time() - $_SESSION[$session_key]) < $cleanup_interval) {
+        return; // Ainda não é hora de executar novamente
+    }
+    
+    try {
+        // Remover do carrinho jogos que já estão na biblioteca
+        $stmt = $pdo->prepare("
+            DELETE FROM carrinho 
+            WHERE usuario_id = ? 
+            AND jogo_id IN (
+                SELECT jogo_id FROM biblioteca WHERE usuario_id = ?
+            )
+        ");
+        $stmt->execute([$user_id, $user_id]);
+        $removed_cart = $stmt->rowCount();
+        
+        // Remover da lista de desejos jogos que já estão na biblioteca
+        $stmt = $pdo->prepare("
+            DELETE FROM lista_desejos 
+            WHERE usuario_id = ? 
+            AND jogo_id IN (
+                SELECT jogo_id FROM biblioteca WHERE usuario_id = ?
+            )
+        ");
+        $stmt->execute([$user_id, $user_id]);
+        $removed_wishlist = $stmt->rowCount();
+        
+        // Atualizar timestamp da última limpeza
+        $_SESSION[$session_key] = time();
+        
+        // Log opcional (pode ser removido em produção)
+        if ($removed_cart > 0 || $removed_wishlist > 0) {
+            error_log("Cleanup para usuário $user_id: $removed_cart do carrinho, $removed_wishlist da lista de desejos");
+        }
+        
+    } catch (PDOException $e) {
+        // Silenciosamente falha para não interromper a navegação
+        error_log("Erro na limpeza de jogos possuídos: " . $e->getMessage());
+    }
+}
+
+/**
+ * Função auxiliar para forçar limpeza imediata
+ * Útil após uma compra ser finalizada
+ */
+function forceCleanupOwnedGames($pdo, $user_id) {
+    // Remove o controle de tempo para forçar execução
+    $session_key = 'last_cleanup_' . $user_id;
+    unset($_SESSION[$session_key]);
+    
+    cleanupOwnedGames($pdo, $user_id);
+}
+
+/**
+ * Verificar se um jogo específico já está na biblioteca
+ */
+function userOwnsGame($pdo, $user_id, $jogo_id) {
+    $stmt = $pdo->prepare("SELECT 1 FROM biblioteca WHERE usuario_id = ? AND jogo_id = ? LIMIT 1");
+    $stmt->execute([$user_id, $jogo_id]);
+    return $stmt->fetch() !== false;
+}
+
+/**
+ * Adicionar jogo à biblioteca e limpar do carrinho/desejos
+ */
+function addGameToLibrary($pdo, $user_id, $jogo_id, $pedido_id = null) {
+    try {
+        $pdo->beginTransaction();
+        
+        // Verificar se já não está na biblioteca
+        if (!userOwnsGame($pdo, $user_id, $jogo_id)) {
+            // Adicionar à biblioteca
+            $stmt = $pdo->prepare("
+                INSERT INTO biblioteca (usuario_id, jogo_id, pedido_id, adicionado_em) 
+                VALUES (?, ?, ?, NOW())
+            ");
+            $stmt->execute([$user_id, $jogo_id, $pedido_id]);
+        }
+        
+        // Remover do carrinho
+        $stmt = $pdo->prepare("DELETE FROM carrinho WHERE usuario_id = ? AND jogo_id = ?");
+        $stmt->execute([$user_id, $jogo_id]);
+        
+        // Remover da lista de desejos
+        $stmt = $pdo->prepare("DELETE FROM lista_desejos WHERE usuario_id = ? AND jogo_id = ?");
+        $stmt->execute([$user_id, $jogo_id]);
+        
+        $pdo->commit();
+        return true;
+        
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        error_log("Erro ao adicionar jogo à biblioteca: " . $e->getMessage());
+        return false;
+    }
 }
 
 // ============================================
@@ -215,4 +331,16 @@ function showBannedPage() {
     </body>
     </html>
     <?php
+}
+
+function formatFileSize($bytes) {
+    if ($bytes >= 1073741824) {
+        return number_format($bytes / 1073741824, 2) . ' GB';
+    } elseif ($bytes >= 1048576) {
+        return number_format($bytes / 1048576, 2) . ' MB';
+    } elseif ($bytes >= 1024) {
+        return number_format($bytes / 1024, 2) . ' KB';
+    } else {
+        return $bytes . ' bytes';
+    }
 }

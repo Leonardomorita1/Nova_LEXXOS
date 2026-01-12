@@ -1,117 +1,83 @@
 <?php
-// admin/includes/sidebar.php
 $current_page = basename($_SERVER['PHP_SELF']);
 ?>
 
 <style>
-/* Estrutura do Layout Admin */
 .admin-layout {
     display: grid;
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 260px 1fr;
     gap: 30px;
     padding: 30px 0;
 }
 
-/* Sidebar Estilo Card */
 .admin-sidebar {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 15px;
-    padding: 25px;
+    border-radius: 12px;
+    padding: 0;
     height: fit-content;
     position: sticky;
     top: 90px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    overflow: hidden;
 }
 
-.admin-sidebar-header {
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 20px;
-}
-
-.admin-sidebar-header h3 {
-    font-size: 18px;
-    margin-bottom: 5px;
-    color: var(--text-primary);
-    font-weight: 700;
-}
-
-.admin-sidebar-header p {
-    font-size: 13px;
-    color: var(--accent);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.admin-sidebar-menu {
+.admin-nav {
     list-style: none;
-    padding: 0;
     margin: 0;
+    padding: 0;
 }
 
-.admin-sidebar-menu li {
-    margin-bottom: 5px;
+.admin-nav-item {
+    border-bottom: 1px solid var(--border);
 }
 
-.admin-sidebar-menu a {
+.admin-nav-item:last-child {
+    border-bottom: none;
+}
+
+.admin-nav-link {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 15px;
+    padding: 16px 20px;
     color: var(--text-secondary);
-    border-radius: 10px;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    font-size: 14px;
     text-decoration: none;
+    transition: all 0.3s ease;
+    font-weight: 500;
 }
 
-.admin-sidebar-menu a:hover {
+.admin-nav-link:hover {
     background: var(--bg-primary);
     color: var(--text-primary);
-    transform: translateX(5px);
 }
 
-.admin-sidebar-menu a.active {
-    background: var(--accent);
-    color: #fff !important;
-    font-weight: 600;
-    box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.3);
+.admin-nav-link.active {
+    background: linear-gradient(90deg, rgba(76, 139, 245, 0.15) 0%, transparent 100%);
+    color: var(--accent);
+    border-left: 3px solid var(--accent);
 }
 
-.admin-sidebar-menu i {
+.admin-nav-link i {
     width: 20px;
     text-align: center;
     font-size: 16px;
 }
 
-.admin-sidebar-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 15px 0;
-}
-
-.admin-sidebar-label {
-    display: block;
-    padding: 10px 15px;
+.admin-nav-section {
+    padding: 12px 20px;
     font-size: 11px;
+    font-weight: 700;
     text-transform: uppercase;
     color: var(--text-secondary);
-    letter-spacing: 1px;
-    font-weight: 800;
-    opacity: 0.6;
-}
-
-.logout-item a:hover {
-    background: rgba(255, 68, 68, 0.1) !important;
-    color: #ff4444 !important;
+    letter-spacing: 0.5px;
+    background: var(--bg-primary);
 }
 
 @media (max-width: 992px) {
     .admin-layout {
         grid-template-columns: 1fr;
     }
+    
     .admin-sidebar {
         position: static;
         margin-bottom: 20px;
@@ -120,99 +86,94 @@ $current_page = basename($_SERVER['PHP_SELF']);
 </style>
 
 <div class="admin-sidebar">
-    <div class="admin-sidebar-header">
-        <h3><?= sanitize($usuario['nome'] ?? 'Administrador'); ?></h3>
-        <p><i class="fas fa-shield-alt"></i> Painel de Controle</p>
-    </div>
-    
-    <ul class="admin-sidebar-menu">
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/dashboard.php" 
-               class="<?= $current_page == 'dashboard.php' ? 'active' : ''; ?>">
-                <i class="fas fa-th-large"></i> Dashboard
+    <ul class="admin-nav">
+        <li class="admin-nav-item">
+            <a href="<?= SITE_URL ?>/admin/dashboard.php" 
+               class="admin-nav-link <?= $current_page == 'dashboard.php' ? 'active' : '' ?>">
+                <i class="fas fa-tachometer-alt"></i>
+                Dashboard
             </a>
         </li>
-
-        <small class="admin-sidebar-label">Loja e Vendas</small>
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/pedidos.php" 
-               class="<?= $current_page == 'pedidos.php' ? 'active' : ''; ?>">
-                <i class="fas fa-shopping-cart"></i> Gerenciar Pedidos
+        
+        <li class="admin-nav-section">Conteúdo</li>
+        
+        <li class="admin-nav-item">
+            <a href="<?= SITE_URL ?>/admin/jogos.php" 
+               class="admin-nav-link <?= $current_page == 'jogos.php' ? 'active' : '' ?>">
+                <i class="fas fa-gamepad"></i>
+                Jogos
             </a>
         </li>
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/promocoes.php" 
-               class="<?= $current_page == 'promocoes.php' ? 'active' : ''; ?>">
-                <i class="fas fa-percentage"></i> Promoções
+        
+        <li class="admin-nav-item">
+            <a href="<?= SITE_URL ?>/admin/categorias.php" 
+               class="admin-nav-link <?= $current_page == 'categorias.php' ? 'active' : '' ?>">
+                <i class="fas fa-folder"></i>
+                Categorias
             </a>
         </li>
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/cupons.php" 
-               class="<?= $current_page == 'cupons.php' ? 'active' : ''; ?>">
-                <i class="fas fa-ticket-alt"></i> Cupons de Desconto
+        
+        <li class="admin-nav-item">
+            <a href="<?= SITE_URL ?>/admin/tags.php" 
+               class="admin-nav-link <?= $current_page == 'tags.php' ? 'active' : '' ?>">
+                <i class="fas fa-tags"></i>
+                Tags
             </a>
         </li>
-        <div class="admin-sidebar-divider"></div>
-        <small class="admin-sidebar-label">Gerenciar</small>
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/jogos.php" 
-               class="<?= $current_page == 'jogos.php' ? 'active' : ''; ?>">
-                <i class="fas fa-gamepad"></i> Jogos
+        
+        <li class="admin-nav-section">Usuários</li>
+        
+        <li class="admin-nav-item">
+            <a href="<?= SITE_URL ?>/admin/usuarios.php" 
+               class="admin-nav-link <?= $current_page == 'usuarios.php' ? 'active' : '' ?>">
+                <i class="fas fa-users"></i>
+                Usuários
             </a>
         </li>
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/usuarios.php" 
-               class="<?= $current_page == 'usuarios.php' ? 'active' : ''; ?>">
-                <i class="fas fa-users"></i> Usuários
+        
+        <li class="admin-nav-item">
+            <a href="<?= SITE_URL ?>/admin/desenvolvedores.php" 
+               class="admin-nav-link <?= $current_page == 'desenvolvedores.php' ? 'active' : '' ?>">
+                <i class="fas fa-code"></i>
+                Desenvolvedores
             </a>
         </li>
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/desenvolvedores.php" 
-               class="<?= $current_page == 'desenvolvedores.php' ? 'active' : ''; ?>">
-                <i class="fas fa-user-tie"></i> Desenvolvedores
+        
+        <li class="admin-nav-section">Vendas</li>
+        
+        <li class="admin-nav-item">
+            <a href="<?= SITE_URL ?>/admin/pedidos.php" 
+               class="admin-nav-link <?= $current_page == 'pedidos.php' ? 'active' : '' ?>">
+                <i class="fas fa-shopping-cart"></i>
+                Pedidos
             </a>
         </li>
-
-        <div class="admin-sidebar-divider"></div>
-        <small class="admin-sidebar-label">Suporte e Comunicação</small>
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/tickets.php" 
-               class="<?= ($current_page == 'tickets.php' || $current_page == 'ticket-detalhes.php') ? 'active' : ''; ?>">
-                <i class="fas fa-headset"></i> Tickets de Suporte
+        
+        <li class="admin-nav-item">
+            <a href="<?= SITE_URL ?>/admin/promocoes.php" 
+               class="admin-nav-link <?= $current_page == 'promocoes.php' ? 'active' : '' ?>">
+                <i class="fas fa-percentage"></i>
+                Promoções
             </a>
         </li>
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/banners.php" 
-               class="<?= $current_page == 'banners.php' ? 'active' : ''; ?>">
-                <i class="fas fa-images"></i> Banners da Home
+        
+        <li class="admin-nav-section">Suporte</li>
+        
+        <li class="admin-nav-item">
+            <a href="<?= SITE_URL ?>/admin/tickets.php" 
+               class="admin-nav-link <?= $current_page == 'tickets.php' ? 'active' : '' ?>">
+                <i class="fas fa-life-ring"></i>
+                Tickets
             </a>
         </li>
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/faqs.php" 
-               class="<?= $current_page == 'faqs.php' ? 'active' : ''; ?>">
-                <i class="fas fa-question-circle"></i> Gerenciar FAQs
-            </a>
-        </li>
-
-        <div class="admin-sidebar-divider"></div>
-        <small class="admin-sidebar-label">Configurações</small>
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/logs.php" 
-               class="<?= $current_page == 'logs.php' ? 'active' : ''; ?>">
-                <i class="fas fa-terminal"></i> Logs do Sistema
-            </a>
-        </li>
-        <li>
-            <a href="<?= SITE_URL; ?>/admin/configuracoes.php" 
-               class="<?= $current_page == 'configuracoes.php' ? 'active' : ''; ?>">
-                <i class="fas fa-cog"></i> Configurações
-            </a>
-        </li>
-
-        <div class="admin-sidebar-divider"></div>
-        <li class="logout-item">
-            <a href="<?= SITE_URL; ?>/auth/logout.php">
-                <i class="fas fa-sign-out-alt"></i> Sair do Painel
+        
+        <li class="admin-nav-section">Configurações</li>
+        
+        <li class="admin-nav-item">
+            <a href="<?= SITE_URL ?>/admin/configuracoes.php" 
+               class="admin-nav-link <?= $current_page == 'configuracoes.php' ? 'active' : '' ?>">
+                <i class="fas fa-cog"></i>
+                Configurações
             </a>
         </li>
     </ul>

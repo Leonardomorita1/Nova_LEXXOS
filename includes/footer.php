@@ -61,6 +61,7 @@
     </footer>
     
     <!-- Scripts -->
+     <script src="<?php echo SITE_URL; ?>/assets/js/navigation.js"></script>
     <script src="<?php echo SITE_URL; ?>/assets/js/main.js"></script>
     <script src="<?php echo SITE_URL; ?>/assets/js/theme.js"></script>
     <script src="<?php echo SITE_URL; ?>/assets/js/cart.js"></script>

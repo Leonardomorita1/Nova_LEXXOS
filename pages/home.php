@@ -214,7 +214,7 @@ require_once '../components/game-card.php';
         <div class="carousel-inner">
             <?php foreach ($banners as $i => $banner): ?>
             <div class="carousel-item <?= $i == 0 ? 'active' : '' ?>">
-                <img src="<?= SITE_URL . $banner['imagem_desktop'] ?>" alt="<?= sanitize($banner['titulo']) ?>">
+                <img src="<?= $banner['imagem_desktop'] ?>" alt="<?= sanitize($banner['titulo']) ?>">
                 <?php if ($banner['titulo']): ?>
                 <div class="carousel-caption">
                     <h2><?= sanitize($banner['titulo']) ?></h2>
@@ -222,7 +222,7 @@ require_once '../components/game-card.php';
                     <p><?= sanitize($banner['subtitulo']) ?></p>
                     <?php endif; ?>
                     <?php if ($banner['url_destino']): ?>
-                    <a href="<?= SITE_URL . $banner['url_destino'] ?>" class="btn btn-primary btn-lg">
+                    <a href="<?= $banner['url_destino'] ?>" class="btn btn-primary btn-lg">
                         Saiba Mais
                     </a>
                     <?php endif; ?>
