@@ -171,7 +171,7 @@ require_once '../includes/header.php';
                             </td>
                             <td>
                                 <div class="action-buttons">
-                                    <a href="<?php echo SITE_URL; ?>jogo-detalhes.php?slug=<?php echo $jogo['slug']; ?>" 
+                                    <a href="<?php echo SITE_URL; ?>jogo-detalhes.php?id=<?php echo $jogo['id']; ?>" 
                                        class="btn-icon view" title="Ver Jogo" target="_blank">
                                         <i class="fas fa-eye"></i>
                                     </a>
