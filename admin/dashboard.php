@@ -179,9 +179,9 @@ require_once '../includes/header.php';
                 <h3>Vendas dos Últimos 7 Dias</h3>
                 <canvas id="vendasChart" style="max-height: 300px;"></canvas>
             </div>
-
+        
             <!-- Conteúdo em Grid -->
-            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+            <div class="dashboard-grid">
                 <!-- Vendas Recentes -->
                 <div class="data-table-wrapper">
                     <div class="table-header">

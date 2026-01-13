@@ -28,6 +28,8 @@ $avatar_url = $user_avatar ? $user_avatar : $default_avatar;
 // Buscar contagem do carrinho
 $cart_count = 0;
 $wishlist_count = 0;
+$is_developer = false; // Nova variável para verificar se é desenvolvedor
+
 if ($user_id) {
     $cart_count = getCartCount($user_id, $pdo);
     
@@ -35,6 +37,12 @@ if ($user_id) {
     $stmt = $pdo->prepare("SELECT COUNT(*) FROM lista_desejos WHERE usuario_id = ?");
     $stmt->execute([$user_id]);
     $wishlist_count = $stmt->fetchColumn();
+    
+    // Verificar se usuário é desenvolvedor (baseado na tabela desenvolvedor)
+    $stmt = $pdo->prepare("SELECT id, status FROM desenvolvedor WHERE usuario_id = ? AND status = 'ativo'");
+    $stmt->execute([$user_id]);
+    $dev_data = $stmt->fetch();
+    $is_developer = ($dev_data !== false);
 }
 ?>
 <!DOCTYPE html>
@@ -129,7 +137,9 @@ if ($user_id) {
                                     <a href="<?php echo SITE_URL; ?>/admin/dashboard.php" class="dropdown-item">
                                         <i class="fas fa-shield-alt"></i> Painel Admin
                                     </a>
-                                <?php elseif ($user_type == 'desenvolvedor'): ?>
+                                <?php endif; ?>
+                                
+                                <?php if ($is_developer): ?>
                                     <a href="<?php echo SITE_URL; ?>/developer/dashboard.php" class="dropdown-item">
                                         <i class="fas fa-code"></i> Dashboard Dev
                                     </a>
@@ -151,6 +161,18 @@ if ($user_id) {
                                     <i class="fas fa-moon" id="theme-icon"></i> 
                                     <span id="theme-text">Modo Claro</span>
                                 </button>
+                                
+                                <div class="dropdown-divider"></div>
+                                
+                                <!-- Novos botões -->
+                                <?php if (!$is_developer): ?>
+                                    <a href="<?php echo SITE_URL; ?>/user/seja-dev.php" class="dropdown-item">
+                                        <i class="fas fa-rocket"></i> Seja um Dev
+                                    </a>
+                                <?php endif; ?>
+                                <a href="<?php echo SITE_URL; ?>/pages/suporte.php" class="dropdown-item">
+                                    <i class="fas fa-headset"></i> Suporte
+                                </a>
                                 
                                 <div class="dropdown-divider"></div>
                                 
@@ -280,7 +302,9 @@ if ($user_id) {
                             <span>Painel Admin</span>
                             <i class="fas fa-chevron-right"></i>
                         </a>
-                    <?php elseif ($user_type == 'desenvolvedor'): ?>
+                    <?php endif; ?>
+                    
+                    <?php if ($is_developer): ?>
                         <a href="<?php echo SITE_URL; ?>/developer/dashboard.php" class="sheet-menu-item sheet-menu-highlight">
                             <i class="fas fa-code"></i>
                             <span>Dashboard Dev</span>
@@ -303,6 +327,23 @@ if ($user_id) {
                             </span>
                         </div>
                     </button>
+                    
+                    <div class="sheet-divider"></div>
+                    
+                    <!-- Novos botões: Seja Dev e Suporte -->
+                    <?php if (!$is_developer): ?>
+                        <a href="<?php echo SITE_URL; ?>/user/seja-dev.php" class="sheet-menu-item">
+                            <i class="fas fa-rocket"></i>
+                            <span>Seja um Dev</span>
+                            <i class="fas fa-chevron-right"></i>
+                        </a>
+                    <?php endif; ?>
+                    
+                    <a href="<?php echo SITE_URL; ?>/pages/suporte.php" class="sheet-menu-item">
+                        <i class="fas fa-headset"></i>
+                        <span>Suporte</span>
+                        <i class="fas fa-chevron-right"></i>
+                    </a>
                 </div>
 
                 <div class="sheet-divider"></div>
@@ -327,6 +368,23 @@ if ($user_id) {
                     </a>
                 </div>
 
+                <div class="sheet-divider"></div>
+                
+                <!-- Links para visitantes -->
+                <div class="sheet-menu">
+                    <a href="<?php echo SITE_URL; ?>/user/seja-dev.php" class="sheet-menu-item">
+                        <i class="fas fa-rocket"></i>
+                        <span>Seja um Dev</span>
+                        <i class="fas fa-chevron-right"></i>
+                    </a>
+                    
+                    <a href="<?php echo SITE_URL; ?>/pages/suporte.php" class="sheet-menu-item">
+                        <i class="fas fa-headset"></i>
+                        <span>Suporte</span>
+                        <i class="fas fa-chevron-right"></i>
+                    </a>
+                </div>
+                
                 <div class="sheet-divider"></div>
 
                 <button class="sheet-menu-item" onclick="toggleTheme(); updateThemeUI();">

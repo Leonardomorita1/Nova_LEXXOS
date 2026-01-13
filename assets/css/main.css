@@ -991,8 +991,8 @@ textarea.form-control {
         grid-template-columns: 1fr;
     }
 
-    .footer-content {
-        grid-template-columns: 1fr;
+    .footer {
+        display: none;
     }
 
     .notification {
