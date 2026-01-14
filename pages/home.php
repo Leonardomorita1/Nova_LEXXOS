@@ -121,12 +121,12 @@ require_once '../components/game-card.php';
         <h2 class="section-title">Navegar por Gênero</h2>
     </div>
     <div class="genre-grid">
-        <a href="busca.php?categoria=acao" class="genre-card"><i class="fas fa-fist-raised"></i> Ação</a>
-        <a href="busca.php?categoria=rpg" class="genre-card"><i class="fas fa-dungeon"></i> RPG</a>
-        <a href="busca.php?categoria=aventura" class="genre-card"><i class="fas fa-compass"></i> Aventura</a>
-        <a href="busca.php?categoria=estrategia" class="genre-card"><i class="fas fa-chess"></i> Estratégia</a>
-        <a href="busca.php?categoria=indie" class="genre-card"><i class="fas fa-gamepad"></i> Indie</a>
-        <a href="busca.php?categoria=terror" class="genre-card"><i class="fas fa-ghost"></i> Terror</a>
+        <a href="/pages/categoria.php?slug=acao" class="genre-card"><i class="fas fa-fist-raised"></i> Ação</a>
+        <a href="/pages/categoria.php?slug=rpg" class="genre-card"><i class="fas fa-dungeon"></i> RPG</a>
+        <a href="/pages/categoria.php?slug=aventura" class="genre-card"><i class="fas fa-compass"></i> Aventura</a>
+        <a href="/pages/categoria.php?slug=estrategia" class="genre-card"><i class="fas fa-chess"></i> Estratégia</a>
+        <a href="/pages/categoria.php?slug=indie" class="genre-card"><i class="fas fa-gamepad"></i> Indie</a>
+        <a href="/pages/categoria.php?slug=terror" class="genre-card"><i class="fas fa-ghost"></i> Terror</a>
     </div>
 
     <!-- DESTAQUES -->
