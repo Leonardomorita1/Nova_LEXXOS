@@ -1,5 +1,5 @@
 <?php
-// pages/checkout.php
+// pages/checkout.php - Checkout Redesenhado
 require_once '../config/config.php';
 require_once '../config/database.php';
 
@@ -8,6 +8,11 @@ requireLogin();
 $database = new Database();
 $pdo = $database->getConnection();
 $user_id = $_SESSION['user_id'];
+
+// Buscar dados do usuário
+$stmt = $pdo->prepare("SELECT * FROM usuario WHERE id = ?");
+$stmt->execute([$user_id]);
+$usuario = $stmt->fetch();
 
 // Buscar itens do carrinho
 $stmt = $pdo->prepare("
@@ -27,178 +32,679 @@ if (count($itens) == 0) {
 
 // Calcular totais
 $subtotal = 0;
+$desconto = 0;
 foreach ($itens as $item) {
+    $original = $item['preco_centavos'];
     $preco = $item['em_promocao'] && $item['preco_promocional_centavos'] 
         ? $item['preco_promocional_centavos'] 
         : $item['preco_centavos'];
     $subtotal += $preco;
+    if ($original > $preco) {
+        $desconto += ($original - $preco);
+    }
 }
 
-$total = $subtotal;
+// Cupom
+$cupom = $_SESSION['cupom_aplicado'] ?? null;
+$desconto_cupom = 0;
+if ($cupom) {
+    if ($cupom['tipo_desconto'] == 'percentual') {
+        $desconto_cupom = ($subtotal * $cupom['valor_desconto']) / 100;
+    } else {
+        $desconto_cupom = $cupom['valor_desconto'];
+    }
+}
+
+$total = max(0, $subtotal - $desconto_cupom);
 
 $page_title = 'Finalizar Compra - ' . SITE_NAME;
 require_once '../includes/header.php';
 ?>
 
 <style>
-.checkout-page {
-    padding: 30px 0;
+/* ===========================================
+   CHECKOUT - ESTILOS PRINCIPAIS
+   =========================================== */
+:root {
+    --checkout-green: #10b981;
+    --checkout-blue: #3b82f6;
+    --checkout-purple: #8b5cf6;
 }
 
+.checkout-page {
+    padding: 40px 0 100px;
+    min-height: 100vh;
+}
+
+/* ===========================================
+   PROGRESS STEPS
+   =========================================== */
+.checkout-progress {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 50px;
+    padding: 0 20px;
+}
+
+.progress-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.step-circle {
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1rem;
+    transition: all 0.3s;
+}
+
+.step-circle.completed {
+    background: var(--checkout-green);
+    color: #fff;
+}
+
+.step-circle.active {
+    background: var(--accent);
+    color: #000;
+    box-shadow: 0 0 0 4px rgba(185, 255, 102, 0.2);
+}
+
+.step-circle.pending {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 2px solid var(--border);
+}
+
+.step-label {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.step-label.active {
+    color: var(--accent);
+}
+
+.step-label.completed {
+    color: var(--checkout-green);
+}
+
+.step-label.pending {
+    color: var(--text-secondary);
+}
+
+.step-connector {
+    width: 80px;
+    height: 3px;
+    background: var(--border);
+    margin: 0 15px;
+}
+
+.step-connector.completed {
+    background: var(--checkout-green);
+}
+
+/* ===========================================
+   CHECKOUT LAYOUT
+   =========================================== */
 .checkout-layout {
     display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 30px;
+    grid-template-columns: 1fr 420px;
+    gap: 40px;
+    align-items: start;
 }
 
+/* ===========================================
+   PAYMENT SECTION
+   =========================================== */
+.payment-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+.section-header {
+    padding: 25px 30px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.section-header i {
+    font-size: 1.3rem;
+    color: var(--accent);
+}
+
+.section-header h2 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.section-content {
+    padding: 30px;
+}
+
+/* Payment Methods */
 .payment-methods {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 15px;
-    margin-bottom: 20px;
+    margin-bottom: 30px;
 }
 
 .payment-method {
-    background: var(--bg-primary);
-    border: 2px solid var(--border);
-    border-radius: 10px;
-    padding: 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.3s;
+    position: relative;
 }
 
 .payment-method input[type="radio"] {
-    display: none;
+    position: absolute;
+    opacity: 0;
 }
 
-.payment-method:hover {
-    border-color: var(--accent);
+.payment-method label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 25px 20px;
+    background: var(--bg-primary);
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-align: center;
+}
+
+.payment-method label:hover {
+    border-color: rgba(185, 255, 102, 0.3);
+    background: rgba(185, 255, 102, 0.02);
 }
 
 .payment-method input[type="radio"]:checked + label {
     border-color: var(--accent);
+    background: rgba(185, 255, 102, 0.05);
 }
 
-.payment-method label {
-    cursor: pointer;
+.payment-method input[type="radio"]:checked + label::before {
+    content: '';
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 20px;
+    height: 20px;
+    background: var(--accent);
+    border-radius: 50%;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.method-icon {
+    width: 60px;
+    height: 60px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin-bottom: 15px;
+    transition: all 0.3s;
+}
+
+.payment-method input[type="radio"]:checked + label .method-icon {
+    background: rgba(185, 255, 102, 0.15);
+}
+
+.method-icon.pix {
+    color: #32bcad;
+}
+
+.method-icon.card {
+    color: var(--checkout-blue);
+}
+
+.method-name {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 6px;
+}
+
+.method-desc {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.method-badge {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 4px 10px;
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--checkout-green);
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+/* Test Mode Banner */
+.test-mode-banner {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(251, 191, 36, 0.1));
+    border: 1px solid #f59e0b;
+    border-radius: 14px;
+    padding: 20px;
+    display: flex;
+    gap: 15px;
+    align-items: flex-start;
+}
+
+.test-mode-banner i {
+    font-size: 1.5rem;
+    color: #f59e0b;
+    flex-shrink: 0;
+}
+
+.test-mode-banner h4 {
+    font-size: 0.95rem;
+    margin: 0 0 6px;
+    color: #f59e0b;
+}
+
+.test-mode-banner p {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* Submit Button */
+.btn-proceed {
     width: 100%;
+    padding: 18px 30px;
+    background: linear-gradient(135deg, var(--accent), #a3e635);
+    color: #000;
+    border: none;
+    border-radius: 14px;
+    font-size: 1.1rem;
+    font-weight: 800;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 25px;
+    transition: all 0.3s;
+    box-shadow: 0 8px 25px rgba(185, 255, 102, 0.25);
 }
 
-.payment-method i {
-    font-size: 32px;
+.btn-proceed:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 15px 40px rgba(185, 255, 102, 0.35);
+}
+
+/* ===========================================
+   ORDER SUMMARY
+   =========================================== */
+.order-summary {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    position: sticky;
+    top: 100px;
+    overflow: hidden;
+}
+
+.summary-header {
+    padding: 25px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.summary-header i {
     color: var(--accent);
-    margin-bottom: 10px;
+    font-size: 1.2rem;
 }
 
-.payment-method span {
-    display: block;
+.summary-header h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.summary-items {
+    max-height: 350px;
+    overflow-y: auto;
+    padding: 15px 25px;
+}
+
+.summary-item {
+    display: flex;
+    gap: 15px;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.summary-item:last-child {
+    border-bottom: none;
+}
+
+.item-thumb {
+    width: 60px;
+    height: 80px;
+    border-radius: 10px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.item-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.item-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.item-details h4 {
+    font-size: 0.9rem;
     font-weight: 600;
+    margin: 0 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-@media (max-width: 992px) {
+.item-details .dev {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.item-details .price {
+    font-weight: 700;
+    color: var(--accent);
+    font-size: 0.95rem;
+}
+
+.item-details .price-old {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-decoration: line-through;
+    margin-right: 8px;
+}
+
+/* Summary Totals */
+.summary-totals {
+    padding: 20px 25px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.total-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    font-size: 0.9rem;
+}
+
+.total-row .label {
+    color: var(--text-secondary);
+}
+
+.total-row.discount .value {
+    color: var(--checkout-green);
+}
+
+.total-row.final {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 2px solid var(--border);
+    font-size: 1.2rem;
+    font-weight: 800;
+}
+
+.total-row.final .value {
+    color: var(--accent);
+}
+
+/* Security Footer */
+.summary-security {
+    padding: 20px 25px;
+    text-align: center;
+    border-top: 1px solid var(--border);
+}
+
+.security-badges {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 12px;
+}
+
+.security-badges i {
+    font-size: 1.5rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+
+.security-text {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.security-text i {
+    color: var(--checkout-green);
+}
+
+/* ===========================================
+   RESPONSIVE
+   =========================================== */
+@media (max-width: 1024px) {
     .checkout-layout {
         grid-template-columns: 1fr;
     }
     
+    .order-summary {
+        position: static;
+        order: -1;
+    }
+    
+    .checkout-progress {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    
+    .step-connector {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
     .payment-methods {
         grid-template-columns: 1fr;
+    }
+    
+    .checkout-progress {
+        justify-content: flex-start;
+    }
+    
+    .progress-step {
+        flex: 1;
+        justify-content: center;
+    }
+    
+    .step-label {
+        display: none;
     }
 }
 </style>
 
 <div class="container">
     <div class="checkout-page">
-        <div class="page-header">
-            <h1 class="page-title">
-                <i class="fas fa-credit-card"></i> Finalizar Compra
-            </h1>
-        </div>
+        
+        <!-- Progress Steps -->
+        <nav class="checkout-progress">
+            <div class="progress-step">
+                <div class="step-circle completed">
+                    <i class="fas fa-check"></i>
+                </div>
+                <span class="step-label completed">Carrinho</span>
+            </div>
+            
+            <div class="step-connector completed"></div>
+            
+            <div class="progress-step">
+                <div class="step-circle active">2</div>
+                <span class="step-label active">Pagamento</span>
+            </div>
+            
+            <div class="step-connector"></div>
+            
+            <div class="progress-step">
+                <div class="step-circle pending">3</div>
+                <span class="step-label pending">Confirmação</span>
+            </div>
+        </nav>
         
         <div class="checkout-layout">
-            <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 15px; padding: 30px;">
-                <h2 style="margin-bottom: 25px;">
-                    <i class="fas fa-wallet"></i> Forma de Pagamento
-                </h2>
+            
+            <!-- Payment Section -->
+            <section class="payment-section">
+                <div class="section-header">
+                    <i class="fas fa-wallet"></i>
+                    <h2>Forma de Pagamento</h2>
+                </div>
                 
-                <form method="POST" action="<?php echo SITE_URL; ?>/pages/pagamento.php">
+                <form method="POST" action="<?php echo SITE_URL; ?>/pages/pagamento.php" class="section-content">
                     <div class="payment-methods">
                         <div class="payment-method">
                             <input type="radio" name="metodo_pagamento" value="pix" id="pix" checked>
                             <label for="pix">
-                                <i class="fas fa-qrcode"></i>
-                                <span>PIX</span>
-                                <p style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
-                                    Pagamento instantâneo
-                                </p>
+                                <div class="method-icon pix">
+                                    <i class="fas fa-qrcode"></i>
+                                </div>
+                                <span class="method-name">PIX</span>
+                                <span class="method-desc">Pagamento instantâneo</span>
+                                <span class="method-badge">Aprovação imediata</span>
                             </label>
                         </div>
                         
                         <div class="payment-method">
                             <input type="radio" name="metodo_pagamento" value="cartao_credito" id="cartao">
                             <label for="cartao">
-                                <i class="fas fa-credit-card"></i>
-                                <span>Cartão de Crédito</span>
-                                <p style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
-                                    Em até 3x sem juros
-                                </p>
+                                <div class="method-icon card">
+                                    <i class="fas fa-credit-card"></i>
+                                </div>
+                                <span class="method-name">Cartão de Crédito</span>
+                                <span class="method-desc">Parcele em até 3x sem juros</span>
                             </label>
                         </div>
                     </div>
                     
-                    <div style="background: rgba(76,139,245,0.1); border: 1px solid var(--accent); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                        <i class="fas fa-info-circle"></i>
-                        <strong>Modo de Teste Ativo</strong>
-                        <p style="font-size: 13px; margin-top: 5px;">
-                            Este é um ambiente de testes. Você poderá simular o pagamento na próxima etapa.
-                        </p>
+                    <div class="test-mode-banner">
+                        <i class="fas fa-flask"></i>
+                        <div>
+                            <h4>Modo de Teste Ativo</h4>
+                            <p>Este é um ambiente de demonstração. Na próxima etapa você poderá simular o pagamento sem nenhuma cobrança real.</p>
+                        </div>
                     </div>
                     
-                    <button type="submit" class="btn btn-primary btn-block btn-lg">
-                        <i class="fas fa-arrow-right"></i> Ir para Pagamento
+                    <button type="submit" class="btn-proceed">
+                        <i class="fas fa-arrow-right"></i>
+                        Continuar para Pagamento
                     </button>
                 </form>
-            </div>
+            </section>
             
-            <!-- Resumo -->
-            <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 15px; padding: 25px; height: fit-content; position: sticky; top: 90px;">
-                <h2 style="font-size: 20px; margin-bottom: 20px;">Resumo da Compra</h2>
+            <!-- Order Summary -->
+            <aside class="order-summary">
+                <div class="summary-header">
+                    <i class="fas fa-shopping-bag"></i>
+                    <h2>Seu Pedido (<?php echo count($itens); ?>)</h2>
+                </div>
                 
-                <div style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;">
+                <div class="summary-items">
                     <?php foreach ($itens as $item): ?>
-                    <div style="display: flex; gap: 12px; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--border);">
-                        <img src="<?php echo SITE_URL . ($item['imagem_capa'] ?: '/assets/images/no-image.png'); ?>" 
-                             style="width: 60px; height: 80px; object-fit: cover; border-radius: 6px;"
-                             alt="<?php echo sanitize($item['titulo']); ?>">
-                        <div style="flex: 1;">
-                            <p style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">
-                                <?php echo sanitize($item['titulo']); ?>
-                            </p>
-                            <p style="font-size: 13px; color: var(--accent); font-weight: 600;">
-                                <?php
-                                $preco = $item['em_promocao'] && $item['preco_promocional_centavos'] 
-                                    ? $item['preco_promocional_centavos'] 
-                                    : $item['preco_centavos'];
-                                echo $preco == 0 ? 'GRÁTIS' : formatPrice($preco);
-                                ?>
+                    <?php
+                        $preco_original = $item['preco_centavos'];
+                        $preco = $item['em_promocao'] && $item['preco_promocional_centavos'] 
+                            ? $item['preco_promocional_centavos'] 
+                            : $item['preco_centavos'];
+                    ?>
+                    <div class="summary-item">
+                        <div class="item-thumb">
+                            <img src="<?php echo SITE_URL . ($item['imagem_capa'] ?: '/assets/images/no-image.png'); ?>" 
+                                 alt="<?php echo sanitize($item['titulo']); ?>">
+                        </div>
+                        <div class="item-details">
+                            <h4><?php echo sanitize($item['titulo']); ?></h4>
+                            <p class="dev"><?php echo sanitize($item['nome_estudio'] ?? 'Indie Dev'); ?></p>
+                            <p class="price">
+                                <?php if ($preco_original > $preco): ?>
+                                <span class="price-old"><?php echo formatPrice($preco_original); ?></span>
+                                <?php endif; ?>
+                                <?php echo $preco == 0 ? 'GRÁTIS' : formatPrice($preco); ?>
                             </p>
                         </div>
                     </div>
                     <?php endforeach; ?>
                 </div>
                 
-                <div style="border-top: 2px solid var(--border); padding-top: 20px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                        <span>Subtotal</span>
-                        <span><?php echo formatPrice($subtotal); ?></span>
+                <div class="summary-totals">
+                    <div class="total-row">
+                        <span class="label">Subtotal</span>
+                        <span class="value"><?php echo formatPrice($subtotal + $desconto); ?></span>
                     </div>
                     
-                    <div style="display: flex; justify-content: space-between; font-size: 20px; font-weight: 700; margin-top: 15px;">
-                        <span>Total</span>
-                        <span style="color: var(--accent);"><?php echo formatPrice($total); ?></span>
+                    <?php if ($desconto > 0): ?>
+                    <div class="total-row discount">
+                        <span class="label">Promoções</span>
+                        <span class="value">-<?php echo formatPrice($desconto); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <?php if ($desconto_cupom > 0): ?>
+                    <div class="total-row discount">
+                        <span class="label">Cupom (<?php echo $cupom['codigo']; ?>)</span>
+                        <span class="value">-<?php echo formatPrice($desconto_cupom); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <div class="total-row final">
+                        <span class="label">Total</span>
+                        <span class="value"><?php echo formatPrice($total); ?></span>
                     </div>
                 </div>
-            </div>
+                
+                <div class="summary-security">
+                    <div class="security-badges">
+                        <i class="fas fa-shield-alt"></i>
+                        <i class="fas fa-lock"></i>
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <p class="security-text">
+                        <i class="fas fa-lock"></i>
+                        Pagamento 100% seguro e criptografado
+                    </p>
+                </div>
+            </aside>
+            
         </div>
     </div>
 </div>

@@ -1,0 +1,775 @@
+/**
+ * LEXUS GAMES - CSS Global de Componentes
+ * Toast, Botões, Cards, Badges, etc.
+ * Usando variáveis do main.css
+ */
+
+/* ============================================
+   TOAST NOTIFICATIONS
+   ============================================ */
+.toast-container {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    z-index: 10000;
+    pointer-events: none;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 16px 20px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    pointer-events: auto;
+    transform: translateX(120%);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    max-width: 380px;
+    min-width: 300px;
+}
+
+.toast-show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.toast-hide {
+    transform: translateX(120%);
+    opacity: 0;
+}
+
+.toast-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.2rem;
+}
+
+.toast-success { 
+    border-left: 4px solid var(--success); 
+}
+.toast-success .toast-icon { 
+    background: rgba(40, 167, 69, 0.15); 
+    color: var(--success); 
+}
+
+.toast-error { 
+    border-left: 4px solid var(--danger); 
+}
+.toast-error .toast-icon { 
+    background: rgba(220, 53, 69, 0.15); 
+    color: var(--danger); 
+}
+
+.toast-warning { 
+    border-left: 4px solid var(--warning); 
+}
+.toast-warning .toast-icon { 
+    background: rgba(255, 193, 7, 0.15); 
+    color: var(--warning); 
+}
+
+.toast-info { 
+    border-left: 4px solid var(--accent); 
+}
+.toast-info .toast-icon { 
+    background: rgba(0, 174, 255, 0.15); 
+    color: var(--accent); 
+}
+
+.toast-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.toast-title {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.toast-message {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.4;
+}
+
+.toast-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 5px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.toast-close:hover {
+    opacity: 1;
+}
+
+/* ============================================
+   BOTÕES GLOBAIS
+   ============================================ */
+
+/* Botão Base */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    white-space: nowrap;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn.loading {
+    pointer-events: none;
+}
+
+.btn.loading::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: btn-spin 0.8s linear infinite;
+}
+
+@keyframes btn-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Botão Primário */
+.btn-primary {
+    background: var(--accent);
+    color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+    filter: brightness(1.15);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 174, 255, 0.3);
+}
+
+/* Botão Secundário */
+.btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Botão Ghost */
+.btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+}
+
+.btn-ghost:hover:not(:disabled) {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+/* Botão de Sucesso */
+.btn-success {
+    background: var(--success);
+    color: #fff;
+}
+
+.btn-success:hover:not(:disabled) {
+    filter: brightness(1.15);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(40, 167, 69, 0.3);
+}
+
+/* Botão de Perigo */
+.btn-danger {
+    background: rgba(220, 53, 69, 0.15);
+    color: var(--danger);
+    border: 1px solid transparent;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: var(--danger);
+    color: #fff;
+}
+
+/* Botão Warning */
+.btn-warning {
+    background: var(--warning);
+    color: #000;
+}
+
+.btn-warning:hover:not(:disabled) {
+    filter: brightness(1.1);
+    transform: translateY(-2px);
+}
+
+/* Botão Outline */
+.btn-outline {
+    background: transparent;
+    color: var(--accent);
+    border: 2px solid var(--accent);
+}
+
+.btn-outline:hover:not(:disabled) {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* Botões de Tamanho */
+.btn-sm {
+    padding: 8px 16px;
+    font-size: 0.8rem;
+    border-radius: 8px;
+}
+
+.btn-lg {
+    padding: 16px 32px;
+    font-size: 1rem;
+}
+
+.btn-block {
+    width: 100%;
+}
+
+/* Botão Ícone */
+.btn-icon {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border-radius: 50%;
+}
+
+.btn-icon.btn-sm {
+    width: 36px;
+    height: 36px;
+}
+
+.btn-icon.btn-lg {
+    width: 50px;
+    height: 50px;
+}
+
+/* ============================================
+   BOTÕES DE AÇÃO (Carrinho/Wishlist)
+   ============================================ */
+.action-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(30, 31, 32, 0.95);
+    backdrop-filter: blur(10px);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.action-btn:hover {
+    transform: scale(1.1);
+}
+
+.action-btn.loading::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: btn-spin 0.8s linear infinite;
+}
+
+.action-btn.loading i {
+    opacity: 0;
+}
+
+/* Botão Carrinho */
+.action-btn-cart:hover {
+    background: var(--accent);
+    color: #fff;
+}
+
+.action-btn-cart.active {
+    background: var(--success);
+    color: #fff;
+}
+
+/* Botão Wishlist */
+.action-btn-wishlist:hover {
+    background: var(--danger);
+    color: #fff;
+}
+
+.action-btn-wishlist.active {
+    background: var(--danger);
+    color: #fff;
+}
+
+.action-btn-wishlist.active i {
+    animation: heartPulse 0.4s ease;
+}
+
+@keyframes heartPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.3); }
+}
+
+/* Botão Remover */
+.action-btn-remove:hover {
+    background: var(--danger);
+    color: #fff;
+}
+
+/* ============================================
+   BADGES
+   ============================================ */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.badge-primary {
+    background: var(--accent);
+    color: #fff;
+}
+
+.badge-success {
+    background: var(--success);
+    color: #fff;
+}
+
+.badge-danger {
+    background: var(--danger);
+    color: #fff;
+}
+
+.badge-warning {
+    background: var(--warning);
+    color: #000;
+}
+
+.badge-discount {
+    background: var(--success);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 8px;
+}
+
+/* ============================================
+   CLASSIFICAÇÃO ETÁRIA
+   ============================================ */
+.age-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.age-badge.age-l, .age-l { background: #059669; color: #fff; }
+.age-badge.age-10, .age-10 { background: #0ea5e9; color: #fff; }
+.age-badge.age-12, .age-12 { background: #f59e0b; color: #000; }
+.age-badge.age-14, .age-14 { background: #f97316; color: #fff; }
+.age-badge.age-16, .age-16 { background: #ef4444; color: #fff; }
+.age-badge.age-18, .age-18 { background: #1f2937; color: #fff; }
+
+/* ============================================
+   TOOLTIPS
+   ============================================ */
+[data-tooltip] {
+    position: relative;
+}
+
+[data-tooltip]::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-5px);
+    padding: 8px 12px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+[data-tooltip]::after {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%) translateY(3px);
+    border: 6px solid transparent;
+    border-top-color: var(--bg-primary);
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+    z-index: 1000;
+}
+
+[data-tooltip]:hover::before,
+[data-tooltip]:hover::after {
+    opacity: 1;
+    visibility: visible;
+}
+
+[data-tooltip]:hover::before {
+    transform: translateX(-50%) translateY(-10px);
+}
+
+[data-tooltip]:hover::after {
+    transform: translateX(-50%) translateY(-2px);
+}
+
+/* ============================================
+   EMPTY STATES
+   ============================================ */
+.empty-state {
+    text-align: center;
+    padding: 80px 30px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+}
+
+.empty-state-icon {
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 30px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.empty-state-icon i {
+    font-size: 50px;
+    color: var(--text-secondary);
+}
+
+.empty-state h2 {
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+}
+
+.empty-state p {
+    color: var(--text-secondary);
+    margin-bottom: 30px;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* ============================================
+   LOADING STATES
+   ============================================ */
+.skeleton {
+    background: linear-gradient(
+        90deg,
+        var(--bg-secondary) 25%,
+        var(--bg-primary) 50%,
+        var(--bg-secondary) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-loading 1.5s infinite;
+    border-radius: 8px;
+}
+
+@keyframes skeleton-loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   FORM ELEMENTS
+   ============================================ */
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0, 174, 255, 0.1);
+}
+
+.form-input::placeholder {
+    color: var(--text-secondary);
+}
+
+.form-input.error {
+    border-color: var(--danger);
+}
+
+.form-input.success {
+    border-color: var(--success);
+}
+
+.form-error {
+    color: var(--danger);
+    font-size: 0.8rem;
+    margin-top: 5px;
+}
+
+/* ============================================
+   CARDS GENÉRICOS
+   ============================================ */
+.card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 25px;
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    border-color: var(--accent);
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--border);
+}
+
+.card-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.card-body {
+    color: var(--text-secondary);
+}
+
+.card-footer {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid var(--border);
+}
+
+/* ============================================
+   ALERT BOXES
+   ============================================ */
+.alert {
+    padding: 16px 20px;
+    border-radius: 12px;
+    display: flex;
+    align-items: flex-start;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.alert-icon {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.alert-content {
+    flex: 1;
+}
+
+.alert-title {
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.alert-message {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+.alert-success {
+    background: rgba(40, 167, 69, 0.1);
+    border: 1px solid rgba(40, 167, 69, 0.3);
+    color: var(--success);
+}
+
+.alert-danger {
+    background: rgba(220, 53, 69, 0.1);
+    border: 1px solid rgba(220, 53, 69, 0.3);
+    color: var(--danger);
+}
+
+.alert-warning {
+    background: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    color: var(--warning);
+}
+
+.alert-info {
+    background: rgba(0, 174, 255, 0.1);
+    border: 1px solid rgba(0, 174, 255, 0.3);
+    color: var(--accent);
+}
+
+/* ============================================
+   DIVIDERS
+   ============================================ */
+.divider {
+    height: 1px;
+    background: var(--border);
+    margin: 30px 0;
+}
+
+.divider-text {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.divider-text::before,
+.divider-text::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+@media (max-width: 768px) {
+    .toast-container {
+        bottom: 20px;
+        right: 15px;
+        left: 15px;
+    }
+    
+    .toast {
+        max-width: 100%;
+        min-width: auto;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        font-size: 0.85rem;
+    }
+    
+    .btn-lg {
+        padding: 14px 28px;
+    }
+    
+    .action-btn {
+        width: 38px;
+        height: 38px;
+    }
+    
+    .empty-state {
+        padding: 60px 20px;
+    }
+    
+    .empty-state-icon {
+        width: 100px;
+        height: 100px;
+    }
+    
+    .empty-state-icon i {
+        font-size: 40px;
+    }
+    
+    .card {
+        padding: 20px;
+        border-radius: 12px;
+    }
+}
