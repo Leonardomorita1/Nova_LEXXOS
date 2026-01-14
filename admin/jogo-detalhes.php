@@ -1,9 +1,5 @@
 <?php
-// ============================================
-// admin/jogo-detalhes.php
-// ============================================
-error_reporting(E_ALL);
-ini_set('display_errors', 1); // Temporário para debug
+
 
 require_once '../config/config.php';
 require_once '../config/database.php';
@@ -266,8 +262,8 @@ require_once '../includes/header.php';
     }
 
     .detail-card {
-        background: var(--bg-secondary, #1a1a2e);
-        border: 1px solid var(--border, #2a2a4a);
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
         border-radius: 12px;
         padding: 25px;
         margin-bottom: 20px;
@@ -279,7 +275,7 @@ require_once '../includes/header.php';
         gap: 12px;
         margin-bottom: 20px;
         padding-bottom: 15px;
-        border-bottom: 1px solid var(--border, #2a2a4a);
+        border-bottom: 1px solid var(--border);
     }
 
     .detail-card-header h2 {
@@ -289,7 +285,7 @@ require_once '../includes/header.php';
     }
 
     .detail-card-header i {
-        color: var(--accent, #8b5cf6);
+        color: var(--accent);
         font-size: 20px;
     }
 
@@ -323,7 +319,7 @@ require_once '../includes/header.php';
     }
 
     .back-link:hover {
-        color: var(--accent, #8b5cf6);
+        color: var(--accent);
     }
 
     .status-badge-lg {
@@ -370,7 +366,7 @@ require_once '../includes/header.php';
     }
 
     .tag-item {
-        background: var(--bg-tertiary, #252540);
+        background: var(--bg-primary);
         color: var(--text-secondary, #a0a0a0);
         padding: 5px 12px;
         border-radius: 15px;
@@ -378,8 +374,8 @@ require_once '../includes/header.php';
     }
 
     .tag-item.accent {
-        background: rgba(139, 92, 246, 0.15);
-        color: var(--accent, #8b5cf6);
+        background: var(--bg-primary);
+        color: var(--accent);
     }
 
     .media-preview {
@@ -411,7 +407,7 @@ require_once '../includes/header.php';
 
     .screenshot-item:hover {
         transform: scale(1.02);
-        border-color: var(--accent, #8b5cf6);
+        border-color: var(--accent);
     }
 
     .screenshot-item img {
@@ -428,7 +424,7 @@ require_once '../includes/header.php';
     }
 
     .stat-box {
-        background: var(--bg-tertiary, #252540);
+        background: var(--bg-primary);
         border-radius: 10px;
         padding: 18px;
         text-align: center;
@@ -486,14 +482,14 @@ require_once '../includes/header.php';
     }
 
     .btn-primary {
-        background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+        background: var(--accent);
         color: white;
     }
 
     .btn-secondary {
-        background: var(--bg-tertiary, #252540);
+        background: var(--bg-primary);
         color: var(--text-primary, #fff);
-        border: 1px solid var(--border, #2a2a4a);
+        border: 1px solid var(--border);
     }
 
     .btn-outline-danger {
@@ -559,7 +555,7 @@ require_once '../includes/header.php';
         align-items: center;
         gap: 12px;
         padding: 12px;
-        background: var(--bg-tertiary, #252540);
+        background: var(--bg-primary);
         border-radius: 8px;
     }
 
@@ -567,7 +563,7 @@ require_once '../includes/header.php';
         width: 45px;
         height: 45px;
         border-radius: 50%;
-        background: var(--accent, #8b5cf6);
+        background: var(--accent);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -586,7 +582,7 @@ require_once '../includes/header.php';
         align-items: center;
         gap: 12px;
         padding: 12px 15px;
-        background: var(--bg-tertiary, #252540);
+        background: var(--bg-primary);
         border-radius: 8px;
     }
 
@@ -598,7 +594,7 @@ require_once '../includes/header.php';
         display: flex;
         align-items: center;
         justify-content: center;
-        color: var(--accent, #8b5cf6);
+        color: var(--accent);
     }
 
     /* Modal */

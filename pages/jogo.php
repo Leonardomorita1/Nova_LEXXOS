@@ -45,38 +45,180 @@ if ($user_id) {
     if ($usuario && $usuario['data_nascimento']) {
         $nascimento = new DateTime($usuario['data_nascimento']);
         $idade_usuario = $nascimento->diff(new DateTime())->y;
-        $classificacao = $jogo['classificacao_indicativa'] ?? 0;
+        $classificacao = $jogo['classificacao_etaria'] ?? 0;
         
         if ($classificacao > 0 && $idade_usuario < $classificacao) {
             $idade_bloqueada = true;
+        }
+        if ($classificacao === 'L') {
+            $idade_bloqueada = false;
         }
     }
 }
 
 // Página de restrição de idade
-if ($idade_bloqueada) {
+if ($idade_bloqueada == true) {
     $page_title = 'Conteúdo Restrito - ' . SITE_NAME;
     require_once '../includes/header.php';
 ?>
 <style>
-:root{--bg-primary:#131314;--bg-secondary:#1E1F20;--accent:#0ea5b7;--accent-hover:#00e5ffcc;--text-primary:#E3E3E3;--text-secondary:#7e7e7e;--border:#2A2B2C;--success:#28a745;--warning:#ffc107;--danger:#dc3545}
-.age-restricted{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;padding:40px 20px;color:var(--text-primary)}
-.age-restricted i{font-size:64px;color:var(--danger);margin-bottom:24px}
-.age-restricted h1{font-size:24px;margin-bottom:12px;font-weight:600}
-.age-restricted p{color:var(--text-secondary);margin-bottom:32px;font-size:15px}
-.btn-back{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;padding:12px 28px;border-radius:4px;text-decoration:none;font-weight:500;font-size:14px;transition:all .2s}
-.btn-back:hover{background:var(--accent-hover)}
+    /* Container principal ocupando a tela com gradiente sutil usando suas vars */
+    .age-restricted-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 70vh;
+        padding: 20px;
+        background-color: var(--bg-primary);
+        /* Cria um efeito de profundidade usando o bg-secondary no centro */
+        background-image: radial-gradient(circle at center, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+        font-family: inherit; /* Herda a fonte do seu site */
+    }
+
+    /* O Card Central */
+    .restriction-card {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 40px 30px;
+        max-width: 450px;
+        width: 100%;
+        text-align: center;
+        /* Sombra suave para destacar do fundo */
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+        position: relative;
+        overflow: hidden;
+        animation: slideUpFade 0.5s ease-out;
+    }
+
+    /* Barra colorida no topo do card para estética */
+    .restriction-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 3px;
+        background: var(--danger);
+        box-shadow: 0 0 10px var(--danger);
+    }
+
+    /* Ícone de bloqueio */
+    .icon-lock {
+        font-size: 48px;
+        color: var(--danger);
+        margin-bottom: 20px;
+        display: inline-block;
+        /* Simula brilho usando drop-shadow */
+        filter: drop-shadow(0 0 5px var(--danger));
+    }
+
+    /* Tipografia */
+    .restriction-card h1 {
+        font-size: 24px;
+        margin: 0 0 10px 0;
+        font-weight: 700;
+        color: var(--text-primary);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .restriction-card p {
+        color: var(--text-secondary);
+        margin-bottom: 25px;
+        font-size: 15px;
+        line-height: 1.5;
+    }
+
+    /* Emblema da Classificação */
+    .age-badge-container {
+        margin: 20px 0 35px 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .age-badge-label {
+        font-size: 12px;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .age-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid var(--danger);
+        color: var(--text-primary);
+        background: rgba(0,0,0,0.2); /* Fundo escuro sutil dentro do badge */
+        font-weight: 800;
+        font-size: 28px;
+        width: 64px;
+        height: 64px;
+        border-radius: 12px; /* Quadrado arredondado estilo selo de jogo */
+        box-shadow: 0 0 15px var(--danger); /* Glow vermelho */
+        text-shadow: 0 0 5px var(--danger);
+    }
+
+    /* Botão Voltar */
+    .btn-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        background: transparent;
+        color: var(--accent);
+        border: 1px solid var(--accent);
+        padding: 12px 35px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 14px;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+    }
+
+    .btn-action:hover {
+        background: var(--accent);
+        color: #fff; /* Texto branco no hover para contraste */
+        box-shadow: 0 0 20px var(--accent); /* Glow na cor de accent */
+        transform: translateY(-2px);
+    }
+
+    /* Animação */
+    @keyframes slideUpFade {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
 </style>
-<div class="age-restricted">
-    <i class="fas fa-ban"></i>
-    <h1>Conteúdo Restrito</h1>
-    <p>Este jogo possui classificação indicativa de <strong style="color:var(--danger)"><?= $jogo['classificacao_indicativa'] ?>+</strong> anos.</p>
-    <a href="<?= SITE_URL ?>/pages/home.php" class="btn-back"><i class="fas fa-arrow-left"></i> Voltar</a>
+
+<div class="age-restricted-container">
+    <div class="restriction-card">
+        <i class="fas fa-ban icon-lock"></i>
+        
+        <h1>Acesso Restrito</h1>
+        
+        <p>Este conteúdo não é recomendado para a sua idade.</p>
+
+        <div class="age-badge-container">
+            <span class="age-badge-label">Classificação</span>
+            <div class="age-badge">
+                <?= $jogo['classificacao_etaria'] ?>+
+            </div>
+        </div>
+
+        <a href="<?= SITE_URL ?>/pages/home.php" class="btn-action">
+            <i class="fas fa-arrow-left"></i> Voltar
+        </a>
+    </div>
 </div>
+
 <?php
     require_once '../includes/footer.php';
     exit;
 }
+
 
 // Status do usuário
 $in_library = $in_cart = $in_wishlist = false;

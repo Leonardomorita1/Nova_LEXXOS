@@ -1081,38 +1081,7 @@ textarea.form-control {
                                 </div>
                             </div>
                             
-                            <div class="preference-item">
-                                <div class="preference-info">
-                                    <h4>Notificações por Email</h4>
-                                    <p>Receba novidades, promoções e atualizações</p>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
                             
-                            <div class="preference-item">
-                                <div class="preference-info">
-                                    <h4>Perfil Público</h4>
-                                    <p>Permitir que outros vejam sua biblioteca</p>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox">
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
-                            
-                            <div class="preference-item">
-                                <div class="preference-info">
-                                    <h4>Exibir Conquistas</h4>
-                                    <p>Mostrar suas conquistas no perfil público</p>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" checked>
-                                    <span class="toggle-slider"></span>
-                                </label>
-                            </div>
                         </div>
                     </div>
                 </div>

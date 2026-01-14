@@ -506,15 +506,7 @@ require_once '../includes/header.php';
                             </select>
                         </div>
 
-                        <!-- View Toggle -->
-                        <div class="view-toggle">
-                            <button class="view-btn active" data-view="grid" onclick="setView('grid')">
-                                <i class="fas fa-th-large"></i>
-                            </button>
-                            <button class="view-btn" data-view="list" onclick="setView('list')">
-                                <i class="fas fa-list"></i>
-                            </button>
-                        </div>
+                        
                     </div>
                 </div>
 
@@ -680,22 +672,7 @@ function clearSearch() {
     document.getElementById('searchForm').submit();
 }
 
-// View toggle
-function setView(view) {
-    const grid = document.getElementById('resultsGrid');
-    const buttons = document.querySelectorAll('.view-btn');
-    
-    buttons.forEach(btn => btn.classList.remove('active'));
-    document.querySelector(`[data-view="${view}"]`).classList.add('active');
-    
-    if (view === 'list') {
-        grid.classList.add('list-view');
-    } else {
-        grid.classList.remove('list-view');
-    }
-    
-    localStorage.setItem('searchView', view);
-}
+
 
 // Restore view preference
 document.addEventListener('DOMContentLoaded', () => {

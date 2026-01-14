@@ -92,16 +92,7 @@ require_once '../includes/header.php';
                 <span class="stat-label">Jogos na Biblioteca</span>
             </div>
             
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-clock"></i></div>
-                <span class="stat-value">
-                    <?php
-                    $total_minutos = array_sum(array_column($jogos, 'tempo_jogado_minutos'));
-                    echo floor($total_minutos / 60);
-                    ?>h
-                </span>
-                <span class="stat-label">Tempo Jogado</span>
-            </div>
+            
             
             <div class="stat-card">
                 <div class="stat-icon"><i class="fas fa-calendar"></i></div>

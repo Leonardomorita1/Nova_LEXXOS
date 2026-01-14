@@ -313,7 +313,7 @@ require_once '../includes/header.php';
     }
 
     .form-box:hover {
-        border-color: rgba(139, 92, 246, 0.3);
+        border-color: var(--accent);
     }
 
     .box-title {
@@ -467,7 +467,7 @@ require_once '../includes/header.php';
     }
 
     .chip {
-        background: linear-gradient(135deg, var(--accent), #7c3aed);
+        background: var(--accent);
         color: white;
         padding: 6px 12px;
         border-radius: 20px;
@@ -585,7 +585,7 @@ require_once '../includes/header.php';
     }
 
     .plat-btn.active {
-        background: linear-gradient(135deg, var(--accent), #7c3aed);
+        background: var(--accent);
         color: white;
         border-color: transparent;
     }
@@ -682,13 +682,13 @@ require_once '../includes/header.php';
     }
 
     .btn-primary {
-        background: linear-gradient(135deg, var(--accent), #7c3aed);
+        background: var(--accent);
         color: white;
     }
 
     .btn-primary:hover {
         transform: translateY(-2px);
-        box-shadow: 0 5px 20px rgba(139, 92, 246, 0.4);
+        box-shadow: 0 5px 20px rgba(46, 213, 255, 0.3);
     }
 
     .btn-success {
