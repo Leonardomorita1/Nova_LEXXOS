@@ -96,7 +96,7 @@ function renderGameCard($jogo, $pdo = null, $user_id = null, $context = 'store',
                     </button>
                     
                     <?php if ($in_cart): ?>
-                        <a href="<?= SITE_URL ?>/user/carrinho.php" class="ps-action-btn cart-btn active" title="Ver no Carrinho">
+                        <a href="<?= SITE_URL ?>/pages/carrinho.php" class="ps-action-btn cart-btn active" title="Ver no Carrinho">
                             <i class="fas fa-check"></i>
                         </a>
                     <?php else: ?>

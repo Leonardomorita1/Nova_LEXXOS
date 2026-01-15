@@ -145,7 +145,7 @@ require_once '../includes/header.php';
     /* Uploads */
     .upload-zone { position: relative; width: 100%; background: var(--bg-primary); border: 2px dashed var(--border); border-radius: 10px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: 0.3s; overflow: hidden; }
     .upload-zone:hover { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.05); }
-    .upload-zone.capa { aspect-ratio: 3/4; }
+    .upload-zone.capa { aspect-ratio: 1/1; }
     .upload-zone.banner { aspect-ratio: 16/9; }
     .preview-img { width: 100%; height: 100%; object-fit: cover; position: absolute; top:0; left:0; display: none; }
     .remove-btn { position: absolute; top: 10px; right: 10px; background: #ff4757; color: white; border: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; z-index: 10; display: none; font-size: 12px; }
@@ -271,7 +271,7 @@ require_once '../includes/header.php';
                             <div class="form-box">
                                 <div class="box-title"><i class="fas fa-image"></i> Mídia Principal</div>
                                 
-                                <label>Capa (3:4)</label>
+                                <label>Capa (1:1)</label>
                                 <div class="upload-zone capa" onclick="document.getElementById('capa').click()">
                                     <img id="prev-capa" class="preview-img">
                                     <button type="button" class="remove-btn" onclick="clearImg(event, 'capa')">Remover</button>
