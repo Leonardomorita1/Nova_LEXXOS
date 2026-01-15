@@ -801,10 +801,10 @@ try {
         </li>
         
         <li>
-            <a href="<?= SITE_URL ?>/admin/promocoes.php" 
-               class="<?= $current_page == 'promocoes.php' ? 'active' : '' ?>">
-                <i class="fas fa-percentage"></i>
-                Promoções
+            <a href="<?= SITE_URL ?>/admin/eventos.php" 
+               class="<?= $current_page == 'eventos.php' ? 'active' : '' ?>">
+                <i class="fas fa-calendar-alt"></i>
+                Eventos
             </a>
         </li>
         
