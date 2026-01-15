@@ -399,7 +399,7 @@ require_once '../includes/header.php';
                         <?php foreach ($jogos_recentes as $jogo): ?>
                             <div class="game-item">
                                 <img src="<?php echo SITE_URL . ($jogo['imagem_capa'] ?: '/assets/images/no-image.png'); ?>"
-                                    alt="<?php echo sanitize($jogo['titulo']); ?>">
+                                    alt="<?php echo sanitize($jogo['titulo']); ?>" style="aspect-ratio: 1/1;">
                                 <div class="game-info">
                                     <h3><?php echo sanitize($jogo['titulo']); ?></h3>
                                     <span class="game-status status-<?php echo $jogo['status']; ?>">

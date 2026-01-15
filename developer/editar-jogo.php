@@ -410,7 +410,7 @@ require_once '../includes/header.php';
     }
 
     .upload-zone.capa {
-        aspect-ratio: 3/4;
+        aspect-ratio: 1/1;
     }
 
     .upload-zone.banner {
@@ -1173,7 +1173,7 @@ require_once '../includes/header.php';
                             <div class="form-box">
                                 <div class="box-title"><i class="fas fa-image"></i> Imagens</div>
                                 <div class="form-group">
-                                    <label>Capa do Jogo (3:4) *</label>
+                                    <label>Capa do Jogo (1:1) *</label>
                                     <div class="upload-zone capa <?= $jogo['imagem_capa'] ? 'has-image' : '' ?>" onclick="document.getElementById('capa').click()">
                                         <?php if ($jogo['imagem_capa']): ?>
                                             <img src="<?= SITE_URL . $jogo['imagem_capa'] ?>" id="prev-capa" class="preview-img">

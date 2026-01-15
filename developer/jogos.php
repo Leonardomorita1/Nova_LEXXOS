@@ -150,7 +150,7 @@ require_once '../includes/header.php';
                         <div style="display: grid; grid-template-columns: 120px 1fr auto; gap: 20px; align-items: center;">
                             <!-- Imagem -->
                             <img src="<?php echo SITE_URL . ($jogo['imagem_capa'] ?: '/assets/images/no-image.png'); ?>" 
-                                 style="width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 8px;"
+                                 style="width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 8px;"
                                  alt="<?php echo sanitize($jogo['titulo']); ?>">
                             
                             <!-- Informações -->

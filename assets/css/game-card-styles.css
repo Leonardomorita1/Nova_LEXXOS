@@ -3,11 +3,11 @@
    ============================================ */
 
 :root {
-    --ps-card-bg: transparent; /* PlayStation usa fundo transparente na grid */
-    --ps-radius: 8px;          /* Arredondamento sutil */
-    --ps-accent: #0070d1;      /* Azul PlayStation */
-    --ps-text: #ffffff;
-    --ps-text-dim: #a0a0a0;
+    --ps-card-bg: transparent;
+    --ps-radius: 8px;
+    --ps-accent: var(--accent);
+    --ps-text: var(--text-primary);
+    --ps-text-dim: var(--text-secondary);
 }
 
 /* Container do Card */
@@ -24,15 +24,14 @@
 .ps-card-image-wrapper {
     position: relative;
     width: 100%;
-    padding-bottom: 100%; /* Aspect Ratio 1:1 Quadrado */
+    padding-bottom: 100%;
     border-radius: var(--ps-radius);
     overflow: hidden;
-    background: #1a1a1a; /* Placeholder bg */
+    background: #1a1a1a;
     box-shadow: 0 4px 10px rgba(0,0,0,0.2);
     margin-bottom: 10px;
 }
 
-/* Link cobre toda a área da imagem */
 .ps-card-link {
     position: absolute;
     top: 0;
@@ -49,11 +48,13 @@
     transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
-/* Badge de Desconto (Pequeno e discreto) */
+/* ============================================
+   BADGES
+   ============================================ */
 .ps-badge {
     position: absolute;
     top: 8px;
-    right: 8px; /* PlayStation costuma colocar badges na direita ou esquerda */
+    right: 8px;
     background: #000;
     color: #fff;
     font-size: 11px;
@@ -61,6 +62,20 @@
     padding: 3px 6px;
     border-radius: 4px;
     z-index: 2;
+}
+
+/* Badge específico: Na Biblioteca */
+.ps-badge-owned {
+    background: #000;
+    top: 8px;
+    left: 8px;
+    right: auto;
+    padding: 5px 8px;
+    font-size: 10px;
+}
+
+.ps-badge-owned i {
+    font-size: 9px;
 }
 
 /* ============================================
@@ -72,13 +87,13 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.4); /* Fundo escuro leve */
+    background: rgba(0, 0, 0, 0.5);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 15px;
+    gap: 12px;
     opacity: 0;
-    pointer-events: none; /* Evita cliques quando invisível */
+    pointer-events: none;
     transition: opacity 0.2s ease;
     z-index: 5;
 }
@@ -90,29 +105,46 @@
     border: 2px solid rgba(255, 255, 255, 0.2);
     background: rgba(0, 0, 0, 0.6);
     color: #fff;
-    font-size: 18px;
+    font-size: 16px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transform: translateY(10px);
     transition: all 0.2s ease;
+    text-decoration: none;
 }
 
 .ps-action-btn:hover {
     background: #fff;
     color: #000;
-    transform: scale(1.1);
+    transform: scale(1.1) translateY(0);
     border-color: #fff;
 }
 
+/* Wishlist ativo */
+.ps-action-btn.wishlist-btn.active,
 .ps-action-btn.active {
     background: #ff4757;
     border-color: #ff4757;
     color: #fff;
 }
 
-/* Efeito Hover Desktop */
+/* Carrinho ativo (no carrinho) */
+.ps-action-btn.cart-btn.active {
+    background: var(--success, #28a745);
+    border-color: var(--success, #28a745);
+    color: #fff;
+}
+
+/* Botão remover */
+.ps-action-btn.remove-btn:hover {
+    background: #ff4757;
+    border-color: #ff4757;
+    color: #fff;
+}
+
+/* Hover Desktop */
 @media (min-width: 1025px) {
     .ps-card-image-wrapper:hover .ps-card-actions {
         opacity: 1;
@@ -124,20 +156,17 @@
     }
     
     .ps-card-image-wrapper:hover .ps-card-img {
-        transform: scale(1.05); /* Zoom leve */
-        opacity: 0.6; /* Escurece a imagem para destacar os botões */
+        transform: scale(1.05);
+        opacity: 0.5;
     }
 }
 
-/* ============================================
-   MOBILE (Sem Ações no Card)
-   ============================================ */
+/* Mobile: Sem Ações */
 @media (max-width: 1024px) {
     .ps-card-actions {
-        display: none !important; /* Remove totalmente no mobile/tablet */
+        display: none !important;
     }
     
-    /* Efeito de toque no mobile */
     .ps-card-image-wrapper:active {
         transform: scale(0.96);
     }
@@ -157,8 +186,6 @@
     color: var(--ps-text);
     text-decoration: none;
     margin-bottom: 4px;
-    
-    /* Truncar texto em 1 linha (Estilo PS5) ou 2 linhas */
     display: -webkit-box;
     -webkit-line-clamp: 1;
     -webkit-box-orient: vertical;
@@ -194,28 +221,41 @@
     text-decoration: line-through;
 }
 
-/* ============================================
-   AJUSTES GLOBAIS DE GRID E CARROSSEL
-   ============================================ */
+/* Meta (Data de adição) */
+.ps-card-meta {
+    font-size: 12px;
+    color: var(--ps-text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
 
-/* Grid Responsivo Inteligente */
-.cards-grid {
+.ps-card-meta i {
+    font-size: 10px;
+    opacity: 0.7;
+}
+
+/* ============================================
+   GRID PADRÃO
+   ============================================ */
+.cards-grid,
+.games-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 24px 16px; /* Gap Vertical maior, Horizontal menor */
+    gap: 24px 16px;
     width: 100%;
 }
 
-/* Ajustes Mobile */
 @media (max-width: 768px) {
-    .cards-grid {
-        grid-template-columns: repeat(2, 1fr); /* Sempre 2 colunas no mobile */
+    .cards-grid,
+    .games-grid {
+        grid-template-columns: repeat(2, 1fr);
         gap: 20px 12px;
     }
     
     .ps-card-title {
         font-size: 13px;
-        -webkit-line-clamp: 2; /* No mobile permite 2 linhas pois não tem hover */
+        -webkit-line-clamp: 2;
     }
     
     .ps-card-price {
@@ -223,14 +263,14 @@
     }
 }
 
-/* Ajuste Carrossel para os novos cards */
+/* Carrossel */
 .carousel-track .ps-card {
-    width: 180px; /* Largura fixa no carrossel desktop */
+    width: 180px;
     flex-shrink: 0;
 }
 
 @media (max-width: 768px) {
     .carousel-track .ps-card {
-        width: 140px; /* Largura fixa no carrossel mobile */
+        width: 140px;
     }
 }

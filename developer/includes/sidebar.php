@@ -678,6 +678,13 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 Publicar Jogo
             </a>
         </li>
+        <li>
+            <a href="<?php echo SITE_URL; ?>/developer/promocoes.php" 
+               class="<?php echo $current_page == 'promocoes.php' ? 'active' : ''; ?>">
+                <i class="fas fa-tags"></i>
+                Gerenciar Promoções
+            </a>
+        </li>
         
         <div class="dev-sidebar-divider"></div>
         <span class="dev-sidebar-section-title">Financeiro</span>
@@ -825,6 +832,16 @@ $current_page = basename($_SERVER['PHP_SELF']);
     
     <!-- Menu Items -->
     <div class="dev-sheet-menu">
+
+        <div class="dev-sheet-menu-title">Promoções</div>
+
+        <a href="<?php echo SITE_URL; ?>/developer/promocoes.php" 
+           class="dev-sheet-menu-item <?php echo $current_page == 'promocoes.php' ? 'active' : ''; ?>">
+            <i class="fas fa-tags"></i>
+            <span>Gerenciar Promoções</span>
+            <i class="fas fa-chevron-right chevron"></i>
+        </a>
+        <div class="dev-sheet-divider"></div>
         <div class="dev-sheet-menu-title">Financeiro</div>
         
         <a href="<?php echo SITE_URL; ?>/developer/vendas.php" 
