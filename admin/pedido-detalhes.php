@@ -19,7 +19,7 @@ $stmt = $pdo->prepare("
     SELECT p.*, u.nome_usuario, u.email, c.codigo as cupom_codigo
     FROM pedido p
     JOIN usuario u ON p.usuario_id = u.id
-    LEFT JOIN cupom c ON p.cupom_id = c.id
+    LEFT JOIN dev_cupom c ON p.cupom_id = c.id
     WHERE p.id = ?
 ");
 $stmt->execute([$pedido_id]);

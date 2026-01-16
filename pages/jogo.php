@@ -27,46 +27,176 @@ $stmt->execute([$jogo['id']]);
 $arquivo_info = $stmt->fetch();
 $tem_arquivo = (bool)$arquivo_info;
 
-// Verificar idade
+// 1. LÓGICA DE VERIFICAÇÃO DE IDADE (CORRIGIDA)
 $idade_bloqueada = false;
+
 if ($user_id) {
     $stmt = $pdo->prepare("SELECT data_nascimento FROM usuario WHERE id = ?");
     $stmt->execute([$user_id]);
     $usuario = $stmt->fetch();
-    if ($usuario && $usuario['data_nascimento'] && $jogo['classificacao_etaria'] > 0) {
+
+    if ($usuario && $usuario['data_nascimento']) {
         $idade = (new DateTime($usuario['data_nascimento']))->diff(new DateTime())->y;
-        $idade_bloqueada = $idade < $jogo['classificacao_etaria'];
+        $classificacao = $jogo['classificacao_etaria'];
+
+        // CORREÇÃO CRÍTICA:
+        // Verifica se classificação NÃO é 'L' E se a idade é menor que o número da classificação.
+        // O (int) garante que o PHP compare números corretamente.
+        if ($classificacao !== 'L' && $idade < (int)$classificacao) {
+            $idade_bloqueada = true;
+        }
     }
 }
 
+// 2. EXIBIÇÃO DO BLOQUEIO (DESIGN NOVO)
 if ($idade_bloqueada) {
     $page_title = 'Conteúdo Restrito - ' . SITE_NAME;
     require_once '../includes/header.php';
     ?>
+    
     <style>
-        .age-block{display:flex;align-items:center;justify-content:center;min-height:70vh;padding:20px}
-        .age-card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:16px;padding:48px 32px;max-width:400px;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,.5)}
-        .age-card i{font-size:56px;color:var(--danger);margin-bottom:20px}
-        .age-card h1{font-size:24px;margin-bottom:12px}
-        .age-card p{color:var(--text-secondary);margin-bottom:24px}
-        .age-badge{display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;border:3px solid var(--danger);border-radius:12px;font-size:28px;font-weight:800;color:var(--danger);margin-bottom:24px}
-        .age-card .btn{padding:12px 32px;background:transparent;border:1px solid var(--accent);color:var(--accent);border-radius:8px;text-decoration:none;font-weight:600;transition:.2s}
-        .age-card .btn:hover{background:var(--accent);color:#fff}
+        /* Container principal centralizado */
+        .restriction-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 75vh;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Efeito de fundo (Opcional - dá um brilho vermelho sutil atrás) */
+        .restriction-wrapper::before {
+            content: '';
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(239, 68, 68, 0.2) 0%, rgba(0,0,0,0) 70%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Card Glassmorphism */
+        .restriction-card {
+            position: relative;
+            z-index: 1;
+            background: rgba(30, 41, 59, 0.75); /* Cor escura translúcida */
+            backdrop-filter: blur(16px);       /* O desfoque do vidro */
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1); /* Borda fina e sutil */
+            border-radius: 24px;
+            padding: 3rem 2.5rem;
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+            animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* Ícone */
+        .icon-lock {
+            width: 70px;
+            height: 70px;
+            background: rgba(239, 68, 68, 0.15); /* Fundo vermelho suave */
+            color: #ef4444; /* Vermelho alerta */
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            font-size: 28px;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+        }
+
+        /* Tipografia */
+        .restriction-card h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #f8fafc;
+            margin: 0 0 0.5rem 0;
+        }
+
+        .restriction-card p {
+            color: #94a3b8; /* Cinza azulado */
+            font-size: 1rem;
+            line-height: 1.6;
+            margin-bottom: 2rem;
+        }
+
+        /* Badge de Idade */
+        .age-badge {
+            display: inline-flex;
+            align-items: center;
+            background: #ef4444;
+            color: white;
+            font-weight: 800;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            vertical-align: middle;
+            margin-left: 4px;
+        }
+
+        /* Botão */
+        .btn-back {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 14px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #fff;
+            text-decoration: none;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            box-sizing: border-box; /* Garante que o padding não estoure a largura */
+        }
+
+        .btn-back:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
-    <div class="age-block">
-        <div class="age-card">
-            <i class="fas fa-ban"></i>
+
+    <div class="restriction-wrapper">
+        <div class="restriction-card">
+            <div class="icon-lock">
+                <i class="fas fa-lock"></i>
+            </div>
+            
             <h1>Acesso Restrito</h1>
-            <p>Este conteúdo não é recomendado para a sua idade.</p>
-            <div class="age-badge"><?= $jogo['classificacao_etaria'] ?>+</div>
-            <br><br>
-            <a href="<?= SITE_URL ?>" class="btn"><i class="fas fa-arrow-left"></i> Voltar</a>
+            
+            <p>
+                Este título possui classificação indicativa para maiores de 
+                <span class="age-badge"><?= $jogo['classificacao_etaria'] ?>+</span> anos.
+                <br>Sua conta não atende aos requisitos.
+            </p>
+            
+            <a href="<?= SITE_URL ?>/" class="btn-back">
+                <i class="fas fa-arrow-left"></i> 
+                Voltar para a Loja
+            </a>
         </div>
     </div>
+
     <?php
     require_once '../includes/footer.php';
     exit;
 }
+
 
 // Status do usuário
 $in_library = $in_cart = $in_wishlist = false;
