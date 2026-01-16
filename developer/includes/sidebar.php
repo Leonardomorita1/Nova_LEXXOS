@@ -682,7 +682,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
             <a href="<?php echo SITE_URL; ?>/developer/promocoes.php" 
                class="<?php echo $current_page == 'promocoes.php' ? 'active' : ''; ?>">
                 <i class="fas fa-tags"></i>
-                Gerenciar Promoções
+                Promoções e Cupons
             </a>
         </li>
         
@@ -838,7 +838,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <a href="<?php echo SITE_URL; ?>/developer/promocoes.php" 
            class="dev-sheet-menu-item <?php echo $current_page == 'promocoes.php' ? 'active' : ''; ?>">
             <i class="fas fa-tags"></i>
-            <span>Gerenciar Promoções</span>
+            <span>Promoções e Cupons</span>
             <i class="fas fa-chevron-right chevron"></i>
         </a>
         <div class="dev-sheet-divider"></div>

@@ -967,10 +967,10 @@ try {
         <div class="admin-sheet-divider"></div>
         <div class="admin-sheet-menu-title">Vendas</div>
         
-        <a href="<?= SITE_URL ?>/admin/promocoes.php" 
-           class="admin-sheet-menu-item <?= $current_page == 'promocoes.php' ? 'active' : '' ?>">
-            <i class="fas fa-percentage"></i>
-            <span>Promoções</span>
+        <a href="<?= SITE_URL ?>/admin/eventos.php" 
+           class="admin-sheet-menu-item <?= $current_page == 'eventos.php' ? 'active' : '' ?>">
+            <i class="fas fa-calendar-alt"></i>
+            <span>Eventos</span>
             <i class="fas fa-chevron-right chevron"></i>
         </a>
         

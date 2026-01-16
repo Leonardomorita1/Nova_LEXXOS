@@ -78,49 +78,7 @@ function renderGameCard($jogo, $pdo = null, $user_id = null, $context = 'store',
                 <span class="ps-badge">-<?= $desconto ?>%</span>
             <?php endif; ?>
 
-            <?php // AÇÕES ?>
-            <div class="ps-card-actions">
-                
-                <?php if ($is_owned || $context === 'library'): ?>
-                    <!-- JOGO JÁ POSSUÍDO: Apenas ver/jogar -->
-                    <a href="<?= $url ?>" class="ps-action-btn" title="Ver Detalhes">
-                        <i class="fas fa-play"></i>
-                    </a>
-
-                <?php elseif ($context === 'store'): ?>
-                    <!-- LOJA: Wishlist + Carrinho -->
-                    <button class="ps-action-btn wishlist-btn <?= $in_wishlist ? 'active' : '' ?>" 
-                            onclick="toggleWishlist(<?= $id ?>, this)"
-                            title="Lista de Desejos">
-                        <i class="<?= $in_wishlist ? 'fas' : 'far' ?> fa-heart"></i>
-                    </button>
-                    
-                    <?php if ($in_cart): ?>
-                        <a href="<?= SITE_URL ?>/pages/carrinho.php" class="ps-action-btn cart-btn active" title="Ver no Carrinho">
-                            <i class="fas fa-check"></i>
-                        </a>
-                    <?php else: ?>
-                        <button class="ps-action-btn cart-btn" 
-                                onclick="addToCart(<?= $id ?>)"
-                                title="Adicionar ao Carrinho">
-                            <i class="fas fa-plus"></i>
-                        </button>
-                    <?php endif; ?>
-                    
-                <?php elseif ($context === 'wishlist'): ?>
-                    <!-- WISHLIST -->
-                    <button class="ps-action-btn cart-btn <?= $in_cart ? 'active' : '' ?>" 
-                            onclick="addToCart(<?= $id ?>)"
-                            title="<?= $in_cart ? 'No Carrinho' : 'Adicionar ao Carrinho' ?>">
-                        <i class="fas <?= $in_cart ? 'fa-check' : 'fa-cart-plus' ?>"></i>
-                    </button>
-                    <button class="ps-action-btn remove-btn" 
-                            onclick="Wishlist.remove(<?= $id ?>, this)"
-                            title="Remover da Lista">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
-                <?php endif; ?>
-            </div>
+            
         </div>
 
         <div class="ps-card-info">
