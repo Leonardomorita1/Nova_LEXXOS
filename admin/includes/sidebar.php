@@ -807,6 +807,14 @@ try {
                 Eventos
             </a>
         </li>
+
+        <li>
+            <a href="<?= SITE_URL ?>/admin/saques.php" 
+               class="<?= $current_page == 'saques.php' ? 'active' : '' ?>">
+                <i class="fas fa-wallet"></i>
+                Saques
+            </a>
+        </li>
         
         <div class="admin-sidebar-divider"></div>
         <span class="admin-sidebar-section-title">Suporte</span>
@@ -972,6 +980,13 @@ try {
             <i class="fas fa-calendar-alt"></i>
             <span>Eventos</span>
             <i class="fas fa-chevron-right chevron"></i>
+        </a>
+
+        <a href="<?= SITE_URL ?>/admin/saques.php"
+              class="admin-sheet-menu-item <?= $current_page == 'saques.php' ? 'active' : '' ?>">
+                <i class="fas fa-wallet"></i>
+                <span>Saques</span>
+                <i class="fas fa-chevron-right chevron"></i>
         </a>
         
         <div class="admin-sheet-divider"></div>

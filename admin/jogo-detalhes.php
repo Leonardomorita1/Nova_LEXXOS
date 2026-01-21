@@ -1,20 +1,18 @@
 <?php
 
-
 require_once '../config/config.php';
 require_once '../config/database.php';
 
 requireLogin();
 
-if (getUserType() !== 'admin') { 
-    header('Location: ' . SITE_URL . '/pages/home.php'); 
-    exit; 
+if (getUserType() !== 'admin') {
+    header('Location: ' . SITE_URL . '/pages/home.php');
+    exit;
 }
 
 $database = new Database();
 $pdo = $database->getConnection();
 
-// Verificar se o ID foi passado
 $jogo_id = $_GET['id'] ?? $_GET['jogo_id'] ?? null;
 
 if (!$jogo_id || !is_numeric($jogo_id)) {
@@ -26,20 +24,15 @@ if (!$jogo_id || !is_numeric($jogo_id)) {
 $success = '';
 $error = '';
 
-// Função auxiliar para formatar tamanho de arquivo
+// Funções auxiliares
 function formatFileSizeCustom($bytes) {
     if (!$bytes) return '0 bytes';
-    if ($bytes >= 1073741824) {
-        return number_format($bytes / 1073741824, 2) . ' GB';
-    } elseif ($bytes >= 1048576) {
-        return number_format($bytes / 1048576, 2) . ' MB';
-    } elseif ($bytes >= 1024) {
-        return number_format($bytes / 1024, 2) . ' KB';
-    }
+    if ($bytes >= 1073741824) return number_format($bytes / 1073741824, 2) . ' GB';
+    if ($bytes >= 1048576) return number_format($bytes / 1048576, 2) . ' MB';
+    if ($bytes >= 1024) return number_format($bytes / 1024, 2) . ' KB';
     return $bytes . ' bytes';
 }
 
-// Função para formatar preço (caso não exista)
 if (!function_exists('formatPrice')) {
     function formatPrice($centavos) {
         if ($centavos == 0) return 'Gratuito';
@@ -47,7 +40,6 @@ if (!function_exists('formatPrice')) {
     }
 }
 
-// Função sanitize (caso não exista)
 if (!function_exists('sanitize')) {
     function sanitize($str) {
         return htmlspecialchars($str ?? '', ENT_QUOTES, 'UTF-8');
@@ -61,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     try {
         switch ($action) {
             case 'aprovar':
-                $stmt = $pdo->prepare("UPDATE jogo SET status = 'publicado', atualizado_em = NOW(), motivo_rejeicao = NULL WHERE id = ?");
+                $stmt = $pdo->prepare("UPDATE jogo SET status = 'publicado', atualizado_em = NOW(), publicado_em = NOW(), motivo_rejeicao = NULL WHERE id = ?");
                 $stmt->execute([$jogo_id]);
                 $success = 'Jogo aprovado e publicado com sucesso!';
                 break;
@@ -97,14 +89,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 break;
                 
             case 'toggle_destaque':
-                // Verificar se coluna destaque existe
-                try {
-                    $stmt = $pdo->prepare("UPDATE jogo SET destaque = NOT destaque, atualizado_em = NOW() WHERE id = ?");
-                    $stmt->execute([$jogo_id]);
-                    $success = 'Destaque atualizado!';
-                } catch (PDOException $e) {
-                    $error = 'Coluna destaque não existe no banco.';
-                }
+                $stmt = $pdo->prepare("UPDATE jogo SET destaque = NOT destaque, atualizado_em = NOW() WHERE id = ?");
+                $stmt->execute([$jogo_id]);
+                $success = 'Destaque atualizado!';
                 break;
         }
     } catch (Exception $e) {
@@ -112,13 +99,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// Buscar jogo - Query simplificada primeiro
+// Buscar jogo completo
 try {
     $stmt = $pdo->prepare("
-        SELECT j.*, 
-               d.nome_estudio, 
-               d.slug as dev_slug,
-               d.id as dev_id
+        SELECT j.*,
+               d.nome_estudio, d.slug as dev_slug, d.id as dev_id,
+               d.descricao_curta as dev_descricao, d.logo_url as dev_logo,
+               d.website as dev_website, d.twitter as dev_twitter,
+               d.instagram as dev_instagram, d.discord as dev_discord,
+               d.youtube as dev_youtube, d.verificado as dev_verificado,
+               d.status as dev_status
         FROM jogo j
         LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id
         WHERE j.id = ?
@@ -126,552 +116,557 @@ try {
     $stmt->execute([$jogo_id]);
     $jogo = $stmt->fetch(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
-    die("Erro na query do jogo: " . $e->getMessage());
+    die("Erro na query: " . $e->getMessage());
 }
 
 if (!$jogo) {
-    $_SESSION['admin_error'] = 'Jogo não encontrado (ID: ' . $jogo_id . ')';
+    $_SESSION['admin_error'] = 'Jogo não encontrado.';
     header('Location: ' . SITE_URL . '/admin/jogos.php');
     exit;
 }
 
-// Buscar email do desenvolvedor separadamente
+// Buscar email do desenvolvedor
 $dev_email = '';
 if ($jogo['dev_id']) {
     try {
-        $stmt = $pdo->prepare("
-            SELECT u.email 
-            FROM desenvolvedor d 
-            JOIN usuario u ON d.usuario_id = u.id 
-            WHERE d.id = ?
-        ");
+        $stmt = $pdo->prepare("SELECT u.email FROM desenvolvedor d JOIN usuario u ON d.usuario_id = u.id WHERE d.id = ?");
         $stmt->execute([$jogo['dev_id']]);
         $dev = $stmt->fetch(PDO::FETCH_ASSOC);
         $dev_email = $dev['email'] ?? '';
-    } catch (PDOException $e) {
-        // Ignorar se falhar
-    }
+    } catch (PDOException $e) {}
 }
 
 // Buscar categorias
 $categorias = [];
 try {
-    $stmt = $pdo->prepare("
-        SELECT c.id, c.nome
-        FROM categoria c
-        JOIN jogo_categoria jc ON c.id = jc.categoria_id
-        WHERE jc.jogo_id = ?
-        ORDER BY c.nome
-    ");
+    $stmt = $pdo->prepare("SELECT c.id, c.nome FROM categoria c JOIN jogo_categoria jc ON c.id = jc.categoria_id WHERE jc.jogo_id = ? ORDER BY c.nome");
     $stmt->execute([$jogo_id]);
     $categorias = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    // Tabela pode não existir
-}
+} catch (PDOException $e) {}
 
 // Buscar plataformas
 $plataformas = [];
 try {
-    $stmt = $pdo->prepare("
-        SELECT p.id, p.nome
-        FROM plataforma p
-        JOIN jogo_plataforma jp ON p.id = jp.plataforma_id
-        WHERE jp.jogo_id = ?
-    ");
+    $stmt = $pdo->prepare("SELECT p.id, p.nome FROM plataforma p JOIN jogo_plataforma jp ON p.id = jp.plataforma_id WHERE jp.jogo_id = ?");
     $stmt->execute([$jogo_id]);
     $plataformas = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    // Tabela pode não existir
-}
+} catch (PDOException $e) {}
 
 // Buscar tags
 $tags = [];
 try {
-    $stmt = $pdo->prepare("
-        SELECT t.id, t.nome
-        FROM tag t
-        JOIN jogo_tag jt ON t.id = jt.tag_id
-        WHERE jt.jogo_id = ?
-        ORDER BY t.nome
-    ");
+    $stmt = $pdo->prepare("SELECT t.id, t.nome FROM tag t JOIN jogo_tag jt ON t.id = jt.tag_id WHERE jt.jogo_id = ? ORDER BY t.nome");
     $stmt->execute([$jogo_id]);
     $tags = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    // Tabela pode não existir
-}
+} catch (PDOException $e) {}
 
-// Buscar screenshots (tabela pode ter nome diferente)
+// Buscar screenshots
 $screenshots = [];
 try {
-    // Tentar nome comum
     $stmt = $pdo->prepare("SELECT * FROM jogo_imagens WHERE jogo_id = ? ORDER BY id");
     $stmt->execute([$jogo_id]);
     $screenshots = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     try {
-        // Tentar outro nome
         $stmt = $pdo->prepare("SELECT * FROM jogo_screenshots WHERE jogo_id = ? ORDER BY id");
         $stmt->execute([$jogo_id]);
         $screenshots = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (PDOException $e2) {
-        // Tabela não existe
-    }
+    } catch (PDOException $e2) {}
 }
 
 // Buscar arquivos
 $arquivos = [];
 try {
-    $stmt = $pdo->prepare("
-        SELECT ja.*, p.nome as plataforma_nome
-        FROM arquivo_jogo ja
-        LEFT JOIN plataforma p ON ja.plataforma_id = p.id
-        WHERE ja.jogo_id = ?
-        ORDER BY ja.id DESC
-    ");
+    $stmt = $pdo->prepare("SELECT ja.*, p.nome as plataforma_nome FROM arquivo_jogo ja LEFT JOIN plataforma p ON ja.plataforma_id = p.id WHERE ja.jogo_id = ? ORDER BY ja.id DESC");
     $stmt->execute([$jogo_id]);
     $arquivos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    // Tabela pode não existir
-}
+} catch (PDOException $e) {}
 
 // Status config
 $status_config = [
-    'rascunho' => ['label' => 'Rascunho', 'color' => '#6b7280', 'icon' => 'fa-file-alt', 'bg' => 'rgba(107, 114, 128, 0.15)'],
-    'em_revisao' => ['label' => 'Em Revisão', 'color' => '#f59e0b', 'icon' => 'fa-clock', 'bg' => 'rgba(245, 158, 11, 0.15)'],
-    'publicado' => ['label' => 'Publicado', 'color' => '#10b981', 'icon' => 'fa-check-circle', 'bg' => 'rgba(16, 185, 129, 0.15)'],
-    'suspenso' => ['label' => 'Suspenso', 'color' => '#ef4444', 'icon' => 'fa-ban', 'bg' => 'rgba(239, 68, 68, 0.15)'],
-    'removido' => ['label' => 'Removido', 'color' => '#dc2626', 'icon' => 'fa-trash', 'bg' => 'rgba(220, 38, 38, 0.15)']
+    'rascunho' => ['label' => 'Rascunho', 'color' => 'var(--text-secondary)', 'icon' => 'fa-file-alt'],
+    'em_revisao' => ['label' => 'Em Revisão', 'color' => 'var(--warning)', 'icon' => 'fa-clock'],
+    'publicado' => ['label' => 'Publicado', 'color' => 'var(--success)', 'icon' => 'fa-check-circle'],
+    'suspenso' => ['label' => 'Suspenso', 'color' => 'var(--danger)', 'icon' => 'fa-ban'],
+    'removido' => ['label' => 'Removido', 'color' => 'var(--danger)', 'icon' => 'fa-trash']
 ];
 $current_status = $status_config[$jogo['status']] ?? $status_config['rascunho'];
-
-// Verificar se coluna destaque existe
-$tem_destaque = isset($jogo['destaque']);
 
 $page_title = 'Detalhes: ' . ($jogo['titulo'] ?? 'Jogo') . ' - Admin';
 require_once '../includes/header.php';
 ?>
 
 <link rel="stylesheet" href="<?= SITE_URL; ?>/admin/assets/css/admin.css">
-
 <style>
-    .detail-grid {
-        display: grid;
-        grid-template-columns: 1fr 380px;
-        gap: 25px;
-        align-items: start;
-    }
+/* Layout Principal */
+.detail-page { padding: 20px 0; }
+.detail-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
 
-    .detail-card {
-        background: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 25px;
-        margin-bottom: 20px;
-    }
+/* Cards */
+.card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 16px;
+}
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+}
+.card-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+}
+.card-header h3 i { color: var(--accent); font-size: 14px; }
+.card-body { padding: 16px 18px; }
+.card-compact .card-body { padding: 12px 16px; }
 
-    .detail-card-header {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 20px;
-        padding-bottom: 15px;
-        border-bottom: 1px solid var(--border);
-    }
+/* Header da página */
+.page-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+.page-top-left h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-primary);
+}
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    margin-bottom: 12px;
+    transition: color 0.2s;
+}
+.back-link:hover { color: var(--accent); }
 
-    .detail-card-header h2 {
-        font-size: 18px;
-        font-weight: 600;
-        margin: 0;
-    }
+/* Status Badge */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+}
 
-    .detail-card-header i {
-        color: var(--accent);
-        font-size: 20px;
-    }
+/* Info Grid Compacto */
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+.info-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.info-grid.cols-1 { grid-template-columns: 1fr; }
+.info-item {
+    background: var(--bg-primary);
+    padding: 12px 14px;
+    border-radius: 8px;
+}
+.info-item .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+.info-item .value {
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+.info-item .value.large {
+    font-size: 20px;
+    font-weight: 700;
+}
+.info-item .value.mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
 
-    .page-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 25px;
-        flex-wrap: wrap;
-        gap: 20px;
-    }
+/* Tags */
+.tags-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag {
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+}
+.tag.accent { color: var(--accent); border-color: rgba(0, 174, 255, 0.3); }
 
-    .page-header-info h1 {
-        font-size: 26px;
-        font-weight: 700;
-        margin: 0 0 10px 0;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
+/* Read More/Less */
+.expandable-text {
+    position: relative;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+.expandable-text.collapsed { max-height: 100px; }
+.expandable-text.expanded { max-height: 2000px; }
+.expandable-text .gradient {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 40px;
+    background: linear-gradient(transparent, var(--bg-secondary));
+    pointer-events: none;
+}
+.expandable-text.expanded .gradient { display: none; }
+.expand-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 8px 0 0 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.expand-btn:hover { text-decoration: underline; }
 
-    .back-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        color: var(--text-secondary, #a0a0a0);
-        text-decoration: none;
-        font-size: 14px;
-        margin-bottom: 15px;
-        transition: color 0.2s;
-    }
+/* Stats */
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+.stat-item {
+    text-align: center;
+    padding: 14px 8px;
+    background: var(--bg-primary);
+    border-radius: 8px;
+}
+.stat-item .num {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.stat-item .txt {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-top: 2px;
+}
 
-    .back-link:hover {
-        color: var(--accent);
-    }
+/* Developer Info */
+.dev-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: var(--bg-primary);
+    border-radius: 8px;
+}
+.dev-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+.dev-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.dev-info { flex: 1; min-width: 0; }
+.dev-info .name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.dev-info .name .verified { color: var(--accent); font-size: 12px; }
+.dev-info .email { font-size: 12px; color: var(--text-secondary); }
+.dev-socials { display: flex; gap: 8px; margin-top: 10px; }
+.dev-socials a {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    font-size: 13px;
+    transition: all 0.2s;
+}
+.dev-socials a:hover { background: var(--accent); color: white; }
 
-    .status-badge-lg {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 20px;
-        border-radius: 25px;
-        font-size: 15px;
-        font-weight: 600;
-    }
+/* Media */
+.cover-preview {
+    width: 100%;
+    aspect-ratio: 16/9;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-primary);
+    margin-bottom: 12px;
+}
+.cover-preview img { width: 100%; height: 100%; object-fit: cover; }
+.screenshots-mini {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+.screenshot-thumb {
+    aspect-ratio: 16/9;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color 0.2s;
+}
+.screenshot-thumb:hover { border-color: var(--accent); }
+.screenshot-thumb img { width: 100%; height: 100%; object-fit: cover; }
 
-    .info-row {
-        margin-bottom: 18px;
-    }
+/* Arquivos */
+.file-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+.file-row:last-child { margin-bottom: 0; }
+.file-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+}
+.file-info { flex: 1; }
+.file-info .name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.file-info .meta { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
 
-    .info-row:last-child {
-        margin-bottom: 0;
-    }
+/* Buttons */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    text-decoration: none;
+}
+.btn-block { width: 100%; }
+.btn-sm { padding: 8px 14px; font-size: 12px; }
+.btn-success { background: var(--success); color: white; }
+.btn-success:hover { filter: brightness(1.1); }
+.btn-danger { background: var(--danger); color: white; }
+.btn-danger:hover { filter: brightness(1.1); }
+.btn-warning { background: var(--warning); color: #000; }
+.btn-warning:hover { filter: brightness(1.1); }
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-secondary { background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); }
+.btn-secondary:hover { border-color: var(--accent); }
+.btn-outline-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+.btn-outline-danger:hover { background: var(--danger); color: white; }
+.btn-group { display: flex; flex-direction: column; gap: 8px; }
 
-    .info-label {
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: var(--text-muted, #666);
-        margin-bottom: 6px;
-        display: block;
-    }
+/* Alerts */
+.alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+}
+.alert-success { background: rgba(40, 167, 69, 0.15); border: 1px solid rgba(40, 167, 69, 0.3); color: var(--success); }
+.alert-error { background: rgba(220, 53, 69, 0.15); border: 1px solid rgba(220, 53, 69, 0.3); color: var(--danger); }
+.alert-warning { background: rgba(255, 193, 7, 0.15); border: 1px solid rgba(255, 193, 7, 0.3); color: var(--warning); }
 
-    .info-value {
-        font-size: 15px;
-        color: var(--text-primary, #fff);
-    }
+/* Rejection Box */
+.rejection-box {
+    background: rgba(220, 53, 69, 0.1);
+    border: 1px solid rgba(220, 53, 69, 0.3);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-top: 12px;
+}
+.rejection-box .title { color: var(--danger); font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.rejection-box .content { color: var(--text-secondary); font-size: 13px; }
 
-    .info-value.large {
-        font-size: 24px;
-        font-weight: 700;
-    }
+/* Timestamps */
+.timestamps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    margin-top: 12px;
+}
+.timestamps span { display: flex; align-items: center; gap: 5px; }
 
-    .tag-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
+/* Modal Flutuante */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.25s ease;
+    backdrop-filter: blur(4px);
+}
+.modal-overlay.active { opacity: 1; visibility: visible; }
+.modal-container {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    width: 90%;
+    max-width: 440px;
+    transform: scale(0.9) translateY(-20px);
+    transition: transform 0.25s ease;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.modal-overlay.active .modal-container { transform: scale(1) translateY(0); }
+.modal-top {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.modal-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+.modal-icon.success { background: rgba(40, 167, 69, 0.15); color: var(--success); }
+.modal-icon.warning { background: rgba(255, 193, 7, 0.15); color: var(--warning); }
+.modal-icon.danger { background: rgba(220, 53, 69, 0.15); color: var(--danger); }
+.modal-title { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+.modal-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.modal-body { padding: 20px 24px; }
+.modal-body p { color: var(--text-secondary); font-size: 14px; margin: 0 0 16px 0; line-height: 1.5; }
+.modal-body textarea {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 14px;
+    resize: vertical;
+    min-height: 90px;
+    font-family: inherit;
+}
+.modal-body textarea:focus { outline: none; border-color: var(--accent); }
+.modal-body textarea::placeholder { color: var(--text-secondary); }
+.modal-body label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-primary); }
+.modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
 
-    .tag-item {
-        background: var(--bg-primary);
-        color: var(--text-secondary, #a0a0a0);
-        padding: 5px 12px;
-        border-radius: 15px;
-        font-size: 13px;
-    }
+/* Lightbox para Screenshots */
+.lightbox {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s;
+}
+.lightbox.active { opacity: 1; visibility: visible; }
+.lightbox img { max-width: 90%; max-height: 90%; border-radius: 8px; }
+.lightbox-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    border: none;
+    color: var(--text-primary);
+    font-size: 18px;
+    cursor: pointer;
+}
 
-    .tag-item.accent {
-        background: var(--bg-primary);
-        color: var(--accent);
-    }
+/* Requisitos Toggle */
+.req-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.req-tab {
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+}
+.req-tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+.req-content { display: none; }
+.req-content.active { display: block; }
 
-    .media-preview {
-        border-radius: 10px;
-        overflow: hidden;
-        margin-bottom: 15px;
-    }
-
-    .media-preview img {
-        max-width: 100%;
-        height: auto;
-        display: block;
-    }
-
-    .screenshots-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-        gap: 10px;
-    }
-
-    .screenshot-item {
-        aspect-ratio: 16/9;
-        border-radius: 8px;
-        overflow: hidden;
-        border: 1px solid var(--border, #2a2a4a);
-        cursor: pointer;
-        transition: transform 0.2s, border-color 0.2s;
-    }
-
-    .screenshot-item:hover {
-        transform: scale(1.02);
-        border-color: var(--accent);
-    }
-
-    .screenshot-item img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-        margin-bottom: 20px;
-    }
-
-    .stat-box {
-        background: var(--bg-primary);
-        border-radius: 10px;
-        padding: 18px;
-        text-align: center;
-    }
-
-    .stat-box .stat-value {
-        font-size: 28px;
-        font-weight: 700;
-        color: var(--text-primary, #fff);
-    }
-
-    .stat-box .stat-label {
-        font-size: 12px;
-        color: var(--text-muted, #666);
-        text-transform: uppercase;
-        margin-top: 5px;
-    }
-
-    .action-buttons {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 12px 20px;
-        border-radius: 8px;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s;
-        border: none;
-        text-decoration: none;
-    }
-
-    .btn-block { width: 100%; }
-
-    .btn-success {
-        background: linear-gradient(135deg, #10b981, #059669);
-        color: white;
-    }
-
-    .btn-danger {
-        background: linear-gradient(135deg, #ef4444, #dc2626);
-        color: white;
-    }
-
-    .btn-warning {
-        background: linear-gradient(135deg, #f59e0b, #d97706);
-        color: white;
-    }
-
-    .btn-primary {
-        background: var(--accent);
-        color: white;
-    }
-
-    .btn-secondary {
-        background: var(--bg-primary);
-        color: var(--text-primary, #fff);
-        border: 1px solid var(--border);
-    }
-
-    .btn-outline-danger {
-        background: transparent;
-        color: #ef4444;
-        border: 2px solid #ef4444;
-    }
-
-    .btn-outline-danger:hover {
-        background: #ef4444;
-        color: white;
-    }
-
-    .alert {
-        padding: 16px 20px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-
-    .alert-success {
-        background: rgba(16, 185, 129, 0.15);
-        border: 1px solid rgba(16, 185, 129, 0.3);
-        color: #10b981;
-    }
-
-    .alert-error {
-        background: rgba(239, 68, 68, 0.15);
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        color: #ef4444;
-    }
-
-    .alert-warning {
-        background: rgba(245, 158, 11, 0.15);
-        border: 1px solid rgba(245, 158, 11, 0.3);
-        color: #f59e0b;
-    }
-
-    .rejection-box {
-        background: rgba(239, 68, 68, 0.1);
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        border-radius: 10px;
-        padding: 18px;
-        margin-top: 15px;
-    }
-
-    .rejection-box h4 {
-        color: #ef4444;
-        margin: 0 0 10px 0;
-        font-size: 14px;
-    }
-
-    .description-text {
-        white-space: pre-wrap;
-        line-height: 1.7;
-        color: var(--text-secondary, #a0a0a0);
-    }
-
-    .dev-info {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 12px;
-        background: var(--bg-primary);
-        border-radius: 8px;
-    }
-
-    .dev-avatar {
-        width: 45px;
-        height: 45px;
-        border-radius: 50%;
-        background: var(--accent);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-weight: 600;
-    }
-
-    .files-list {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    .file-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 12px 15px;
-        background: var(--bg-primary);
-        border-radius: 8px;
-    }
-
-    .file-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 8px;
-        background: var(--bg-primary, #0f0f1a);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--accent);
-    }
-
-    /* Modal */
-    .modal-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-        opacity: 0;
-        visibility: hidden;
-        transition: all 0.3s;
-    }
-
-    .modal-overlay.active {
-        opacity: 1;
-        visibility: visible;
-    }
-
-    .modal-box {
-        background: var(--bg-secondary, #1a1a2e);
-        border: 1px solid var(--border, #2a2a4a);
-        border-radius: 16px;
-        padding: 30px;
-        max-width: 500px;
-        width: 90%;
-        transform: scale(0.9);
-        transition: transform 0.3s;
-    }
-
-    .modal-overlay.active .modal-box {
-        transform: scale(1);
-    }
-
-    .modal-header {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 20px;
-    }
-
-    .modal-icon {
-        width: 50px;
-        height: 50px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 22px;
-    }
-
-    .modal-icon.warning { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
-    .modal-icon.danger { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-    .modal-icon.success { background: rgba(16, 185, 129, 0.15); color: #10b981; }
-
-    .modal-title { font-size: 20px; font-weight: 700; }
-
-    .modal-body { margin-bottom: 25px; }
-    .modal-body p { color: var(--text-secondary, #a0a0a0); margin-bottom: 15px; }
-    .modal-body textarea {
-        width: 100%;
-        padding: 12px 15px;
-        background: var(--bg-primary, #0f0f1a);
-        border: 1px solid var(--border, #2a2a4a);
-        border-radius: 8px;
-        color: var(--text-primary, #fff);
-        resize: vertical;
-        min-height: 100px;
-    }
-
-    .modal-actions { display: flex; gap: 12px; justify-content: flex-end; }
-
-    @media (max-width: 992px) {
-        .detail-grid { grid-template-columns: 1fr; }
-    }
+@media (max-width: 992px) {
+    .detail-grid { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .info-grid.cols-3 { grid-template-columns: repeat(2, 1fr); }
+}
 </style>
 
 <div class="container">
@@ -679,309 +674,435 @@ require_once '../includes/header.php';
         <?php require_once 'includes/sidebar.php'; ?>
 
         <div class="admin-content">
-            <a href="<?= SITE_URL; ?>/admin/jogos.php" class="back-link">
-                <i class="fas fa-arrow-left"></i> Voltar para Jogos
-            </a>
+            <div class="detail-page">
+                <a href="<?= SITE_URL; ?>/admin/jogos.php" class="back-link">
+                    <i class="fas fa-arrow-left"></i> Voltar para Jogos
+                </a>
 
-            <div class="page-header">
-                <div class="page-header-info">
-                    <h1>
-                        <i class="fas fa-gamepad"></i>
-                        <?= sanitize($jogo['titulo'] ?? 'Sem título'); ?>
-                        <?php if ($tem_destaque && $jogo['destaque']): ?>
-                            <i class="fas fa-star" style="color: #f59e0b; font-size: 20px;" title="Em Destaque"></i>
-                        <?php endif; ?>
-                    </h1>
-                    <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                        <span class="status-badge-lg" style="background: <?= $current_status['bg'] ?>; color: <?= $current_status['color'] ?>;">
-                            <i class="fas <?= $current_status['icon'] ?>"></i>
-                            <?= $current_status['label'] ?>
-                        </span>
-                        <?php if (isset($jogo['criado_em'])): ?>
-                        <span style="color: var(--text-muted, #666); font-size: 14px;">
-                            <i class="fas fa-clock"></i> Criado em <?= date('d/m/Y H:i', strtotime($jogo['criado_em'])) ?>
-                        </span>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-
-            <?php if ($success): ?>
-                <div class="alert alert-success">
-                    <i class="fas fa-check-circle"></i>
-                    <span><?= $success ?></span>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($error): ?>
-                <div class="alert alert-error">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <span><?= $error ?></span>
-                </div>
-            <?php endif; ?>
-
-            <?php if (($jogo['status'] ?? '') === 'em_revisao'): ?>
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <span><strong>Este jogo está aguardando sua revisão.</strong> Analise as informações e aprove ou rejeite.</span>
-                </div>
-            <?php endif; ?>
-
-            <div class="detail-grid">
-                <!-- Coluna Principal -->
-                <div class="main-col">
-                    <div class="detail-card">
-                        <div class="detail-card-header">
-                            <i class="fas fa-info-circle"></i>
-                            <h2>Informações do Jogo</h2>
-                        </div>
-
-                        <?php if (!empty($jogo['imagem_capa'])): ?>
-                            <div class="media-preview" style="max-width: 280px;">
-                                <img src="<?= SITE_URL . $jogo['imagem_capa']; ?>" alt="Capa">
-                            </div>
-                        <?php endif; ?>
-
-                        <div class="info-row">
-                            <span class="info-label">Slug</span>
-                            <span class="info-value" style="font-family: monospace; color: var(--text-muted, #666);">
-                                <?= sanitize($jogo['slug'] ?? ''); ?>
+                <!-- Header -->
+                <div class="page-top">
+                    <div class="page-top-left">
+                        <h1>
+                            <?= sanitize($jogo['titulo'] ?? 'Sem título'); ?>
+                            <?php if (!empty($jogo['destaque'])): ?>
+                                <i class="fas fa-star" style="color: var(--warning); font-size: 18px;" title="Em Destaque"></i>
+                            <?php endif; ?>
+                        </h1>
+                        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            <span class="status-badge" style="color: <?= $current_status['color'] ?>;">
+                                <i class="fas <?= $current_status['icon'] ?>"></i>
+                                <?= $current_status['label'] ?>
+                            </span>
+                            <span style="color: var(--text-secondary); font-size: 12px;">
+                                ID: #<?= $jogo['id'] ?>
                             </span>
                         </div>
-
-                        <?php if (!empty($jogo['descricao_curta'])): ?>
-                        <div class="info-row">
-                            <span class="info-label">Descrição Curta</span>
-                            <span class="info-value"><?= sanitize($jogo['descricao_curta']); ?></span>
-                        </div>
-                        <?php endif; ?>
-
-                        <?php if (!empty($jogo['descricao_completa'])): ?>
-                        <div class="info-row">
-                            <span class="info-label">Descrição Completa</span>
-                            <div class="description-text"><?= nl2br(sanitize($jogo['descricao_completa'])); ?></div>
-                        </div>
-                        <?php endif; ?>
-
-                        <?php if (!empty($jogo['motivo_rejeicao'])): ?>
-                            <div class="rejection-box">
-                                <h4><i class="fas fa-exclamation-circle"></i> Motivo da Rejeição/Suspensão</h4>
-                                <p style="margin: 0; color: var(--text-secondary, #a0a0a0);">
-                                    <?= nl2br(sanitize($jogo['motivo_rejeicao'])); ?>
-                                </p>
-                            </div>
+                    </div>
+                    <div class="page-top-right">
+                        <?php if (!empty($jogo['slug'])): ?>
+                        <a href="<?= SITE_URL; ?>/pages/jogo.php?slug=<?= $jogo['slug']; ?>" class="btn btn-secondary btn-sm" target="_blank">
+                            <i class="fas fa-external-link-alt"></i> Ver na Loja
+                        </a>
                         <?php endif; ?>
                     </div>
-
-                    <!-- Screenshots -->
-                    <?php if (count($screenshots) > 0): ?>
-                    <div class="detail-card">
-                        <div class="detail-card-header">
-                            <i class="fas fa-images"></i>
-                            <h2>Screenshots (<?= count($screenshots) ?>)</h2>
-                        </div>
-
-                        <div class="screenshots-grid">
-                            <?php foreach ($screenshots as $shot): 
-                                $img_url = $shot['imagem'] ?? $shot['url'] ?? $shot['caminho'] ?? '';
-                                if ($img_url):
-                            ?>
-                                <div class="screenshot-item" onclick="window.open('<?= SITE_URL . $img_url ?>', '_blank')">
-                                    <img src="<?= SITE_URL . $img_url; ?>" alt="Screenshot">
-                                </div>
-                            <?php endif; endforeach; ?>
-                        </div>
-                    </div>
-                    <?php endif; ?>
-
-                    <!-- Arquivos -->
-                    <?php if (count($arquivos) > 0): ?>
-                    <div class="detail-card">
-                        <div class="detail-card-header">
-                            <i class="fas fa-file-archive"></i>
-                            <h2>Arquivos (<?= count($arquivos) ?>)</h2>
-                        </div>
-
-                        <div class="files-list">
-                            <?php foreach ($arquivos as $arquivo): ?>
-                                <div class="file-item">
-                                    <div class="file-icon">
-                                        <i class="fas fa-file-archive"></i>
-                                    </div>
-                                    <div style="flex: 1;">
-                                        <div style="font-weight: 500; font-size: 14px;">
-                                            <?= sanitize($arquivo['nome_arquivo'] ?? $arquivo['nome'] ?? 'Arquivo'); ?>
-                                        </div>
-                                        <div style="font-size: 12px; color: var(--text-muted, #666);">
-                                            <?= $arquivo['plataforma_nome'] ?? 'N/A' ?> •
-                                            v<?= sanitize($arquivo['versao'] ?? '1.0'); ?> •
-                                            <?= formatFileSizeCustom($arquivo['tamanho_bytes'] ?? $arquivo['tamanho'] ?? 0); ?>
-                                        </div>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                    <?php endif; ?>
                 </div>
 
-                <!-- Sidebar -->
-                <div class="side-col">
-                    <!-- Estatísticas -->
-                    <div class="detail-card">
-                        <div class="detail-card-header">
-                            <i class="fas fa-chart-bar"></i>
-                            <h2>Estatísticas</h2>
-                        </div>
+                <!-- Alerts -->
+                <?php if ($success): ?>
+                    <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?= $success ?></div>
+                <?php endif; ?>
+                <?php if ($error): ?>
+                    <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?= $error ?></div>
+                <?php endif; ?>
+                <?php if (($jogo['status'] ?? '') === 'em_revisao'): ?>
+                    <div class="alert alert-warning"><i class="fas fa-clock"></i> <strong>Aguardando revisão.</strong> Analise e aprove ou rejeite este jogo.</div>
+                <?php endif; ?>
 
-                        <div class="stats-grid">
-                            <div class="stat-box">
-                                <div class="stat-value"><?= number_format($jogo['total_vendas'] ?? 0); ?></div>
-                                <div class="stat-label">Vendas</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-value" style="display: flex; align-items: center; justify-content: center; gap: 5px;">
-                                    <i class="fas fa-star" style="color: #f59e0b; font-size: 18px;"></i>
-                                    <?= number_format($jogo['nota_media'] ?? 0, 1); ?>
+                <div class="detail-grid">
+                    <!-- Coluna Principal -->
+                    <div class="main-column">
+                        <!-- Estatísticas -->
+                        <div class="card">
+                            <div class="card-body" style="padding: 16px;">
+                                <div class="stats-row">
+                                    <div class="stat-item">
+                                        <div class="num"><?= number_format($jogo['total_vendas'] ?? 0); ?></div>
+                                        <div class="txt">Vendas</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="num"><?= number_format($jogo['total_downloads'] ?? 0); ?></div>
+                                        <div class="txt">Downloads</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="num"><?= number_format($jogo['total_visualizacoes'] ?? 0); ?></div>
+                                        <div class="txt">Views</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="num" style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                            <i class="fas fa-star" style="color: var(--warning); font-size: 16px;"></i>
+                                            <?= number_format($jogo['nota_media'] ?? 0, 1); ?>
+                                        </div>
+                                        <div class="txt"><?= $jogo['total_avaliacoes'] ?? 0 ?> avaliações</div>
+                                    </div>
                                 </div>
-                                <div class="stat-label"><?= $jogo['total_avaliacoes'] ?? 0 ?> avaliações</div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Desenvolvedor -->
-                    <div class="detail-card">
-                        <div class="detail-card-header">
-                            <i class="fas fa-user-tie"></i>
-                            <h2>Desenvolvedor</h2>
-                        </div>
-
-                        <div class="dev-info">
-                            <div class="dev-avatar">
-                                <?= strtoupper(substr($jogo['nome_estudio'] ?? 'D', 0, 1)); ?>
+                        <!-- Informações Básicas -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-info-circle"></i> Informações</h3>
                             </div>
-                            <div style="flex: 1;">
-                                <div style="font-weight: 600; font-size: 15px;">
-                                    <?= sanitize($jogo['nome_estudio'] ?? 'N/A'); ?>
+                            <div class="card-body">
+                                <div class="info-grid cols-3">
+                                    <div class="info-item">
+                                        <div class="label">Preço</div>
+                                        <div class="value large"><?= formatPrice($jogo['preco_centavos'] ?? 0); ?></div>
+                                    </div>
+                                    <?php if (!empty($jogo['em_promocao']) && !empty($jogo['preco_promocional_centavos'])): ?>
+                                    <div class="info-item">
+                                        <div class="label">Preço Promocional</div>
+                                        <div class="value large" style="color: var(--success);"><?= formatPrice($jogo['preco_promocional_centavos']); ?></div>
+                                    </div>
+                                    <?php endif; ?>
+                                    <div class="info-item">
+                                        <div class="label">Versão</div>
+                                        <div class="value"><?= sanitize($jogo['versao_atual'] ?? '1.0'); ?></div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="label">Classificação</div>
+                                        <div class="value"><?= sanitize($jogo['classificacao_etaria'] ?? 'L'); ?></div>
+                                    </div>
+                                    <?php if (!empty($jogo['tamanho_mb'])): ?>
+                                    <div class="info-item">
+                                        <div class="label">Tamanho</div>
+                                        <div class="value"><?= number_format($jogo['tamanho_mb'], 0, ',', '.'); ?> MB</div>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($jogo['data_lancamento'])): ?>
+                                    <div class="info-item">
+                                        <div class="label">Lançamento</div>
+                                        <div class="value"><?= date('d/m/Y', strtotime($jogo['data_lancamento'])); ?></div>
+                                    </div>
+                                    <?php endif; ?>
                                 </div>
-                                <?php if ($dev_email): ?>
-                                <div style="font-size: 13px; color: var(--text-muted, #666);">
-                                    <?= sanitize($dev_email); ?>
+
+                                <div class="info-grid cols-1" style="margin-top: 12px;">
+                                    <div class="info-item">
+                                        <div class="label">Slug</div>
+                                        <div class="value mono"><?= sanitize($jogo['slug'] ?? ''); ?></div>
+                                    </div>
+                                </div>
+
+                                <?php if (count($categorias) > 0 || count($plataformas) > 0 || count($tags) > 0): ?>
+                                <div style="margin-top: 16px;">
+                                    <?php if (count($categorias) > 0): ?>
+                                    <div style="margin-bottom: 10px;">
+                                        <div class="label" style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Categorias</div>
+                                        <div class="tags-wrap">
+                                            <?php foreach ($categorias as $cat): ?>
+                                                <span class="tag accent"><?= sanitize($cat['nome']); ?></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if (count($plataformas) > 0): ?>
+                                    <div style="margin-bottom: 10px;">
+                                        <div class="label" style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Plataformas</div>
+                                        <div class="tags-wrap">
+                                            <?php foreach ($plataformas as $plat): ?>
+                                                <span class="tag"><?= sanitize($plat['nome']); ?></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if (count($tags) > 0): ?>
+                                    <div>
+                                        <div class="label" style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Tags</div>
+                                        <div class="tags-wrap">
+                                            <?php foreach ($tags as $tag): ?>
+                                                <span class="tag"><?= sanitize($tag['nome']); ?></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
                                 </div>
                                 <?php endif; ?>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Detalhes -->
-                    <div class="detail-card">
-                        <div class="detail-card-header">
-                            <i class="fas fa-tag"></i>
-                            <h2>Detalhes</h2>
-                        </div>
-
-                        <div class="info-row">
-                            <span class="info-label">Preço</span>
-                            <span class="info-value large">
-                                <?= formatPrice($jogo['preco_centavos'] ?? 0); ?>
-                            </span>
-                        </div>
-
-                        <?php if (!empty($jogo['em_promocao']) && !empty($jogo['preco_promocional_centavos'])): ?>
-                            <div class="info-row">
-                                <span class="info-label">Preço Promocional</span>
-                                <span class="info-value large" style="color: #10b981;">
-                                    <?= formatPrice($jogo['preco_promocional_centavos']); ?>
-                                </span>
+                        <!-- Descrições -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-align-left"></i> Descrição</h3>
                             </div>
-                        <?php endif; ?>
-
-                        <?php if (!empty($jogo['classificacao_etaria'])): ?>
-                        <div class="info-row">
-                            <span class="info-label">Classificação Etária</span>
-                            <span class="tag-item accent"><?= $jogo['classificacao_etaria']; ?></span>
-                        </div>
-                        <?php endif; ?>
-
-                        <?php if (count($categorias) > 0): ?>
-                            <div class="info-row">
-                                <span class="info-label">Categorias</span>
-                                <div class="tag-list">
-                                    <?php foreach ($categorias as $cat): ?>
-                                        <span class="tag-item accent"><?= sanitize($cat['nome']); ?></span>
-                                    <?php endforeach; ?>
+                            <div class="card-body">
+                                <?php if (!empty($jogo['descricao_curta'])): ?>
+                                <div style="margin-bottom: 16px;">
+                                    <div class="label" style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Descrição Curta</div>
+                                    <p style="color: var(--text-primary); font-size: 14px; margin: 0; line-height: 1.6;"><?= sanitize($jogo['descricao_curta']); ?></p>
                                 </div>
-                            </div>
-                        <?php endif; ?>
+                                <?php endif; ?>
 
-                        <?php if (count($plataformas) > 0): ?>
-                            <div class="info-row">
-                                <span class="info-label">Plataformas</span>
-                                <div class="tag-list">
-                                    <?php foreach ($plataformas as $plat): ?>
-                                        <span class="tag-item"><?= sanitize($plat['nome']); ?></span>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-
-                        <?php if (count($tags) > 0): ?>
-                            <div class="info-row">
-                                <span class="info-label">Tags</span>
-                                <div class="tag-list">
-                                    <?php foreach ($tags as $tag): ?>
-                                        <span class="tag-item"><?= sanitize($tag['nome']); ?></span>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-
-                    <!-- Ações -->
-                    <div class="detail-card">
-                        <div class="detail-card-header">
-                            <i class="fas fa-cog"></i>
-                            <h2>Ações</h2>
-                        </div>
-
-                        <div class="action-buttons">
-                            <?php if (($jogo['status'] ?? '') === 'em_revisao'): ?>
-                                <button type="button" class="btn btn-success btn-block" onclick="showModal('aprovar')">
-                                    <i class="fas fa-check"></i> Aprovar e Publicar
-                                </button>
-                                <button type="button" class="btn btn-danger btn-block" onclick="showModal('rejeitar')">
-                                    <i class="fas fa-times"></i> Rejeitar
-                                </button>
-                            <?php endif; ?>
-
-                            <?php if (($jogo['status'] ?? '') === 'publicado'): ?>
-                                <button type="button" class="btn btn-warning btn-block" onclick="showModal('suspender')">
-                                    <i class="fas fa-ban"></i> Suspender
-                                </button>
-                            <?php endif; ?>
-
-                            <?php if (($jogo['status'] ?? '') === 'suspenso'): ?>
-                                <form method="POST">
-                                    <input type="hidden" name="action" value="reativar">
-                                    <button type="submit" class="btn btn-success btn-block">
-                                        <i class="fas fa-redo"></i> Reativar
+                                <?php if (!empty($jogo['descricao_completa'])): ?>
+                                <div>
+                                    <div class="label" style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Descrição Completa</div>
+                                    <div class="expandable-text collapsed" id="descricaoCompleta">
+                                        <div style="color: var(--text-secondary); font-size: 14px; line-height: 1.7; white-space: pre-wrap;"><?= sanitize($jogo['descricao_completa']); ?></div>
+                                        <div class="gradient"></div>
+                                    </div>
+                                    <button type="button" class="expand-btn" onclick="toggleExpand('descricaoCompleta', this)">
+                                        <i class="fas fa-chevron-down"></i> <span>Ler mais</span>
                                     </button>
-                                </form>
-                            <?php endif; ?>
+                                </div>
+                                <?php endif; ?>
 
-                            <?php if (($jogo['status'] ?? '') !== 'removido'): ?>
-                                <button type="button" class="btn btn-outline-danger btn-block" onclick="showModal('remover')">
-                                    <i class="fas fa-trash"></i> Remover
-                                </button>
-                            <?php endif; ?>
+                                <?php if (!empty($jogo['motivo_rejeicao'])): ?>
+                                <div class="rejection-box">
+                                    <div class="title"><i class="fas fa-exclamation-circle"></i> Motivo da Rejeição/Suspensão</div>
+                                    <div class="content"><?= nl2br(sanitize($jogo['motivo_rejeicao'])); ?></div>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
 
-                            <hr style="border-color: var(--border, #2a2a4a); margin: 10px 0;">
+                        <!-- Requisitos do Sistema -->
+                        <?php if (!empty($jogo['requisitos_minimos']) || !empty($jogo['requisitos_recomendados'])): ?>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-desktop"></i> Requisitos do Sistema</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="req-tabs">
+                                    <?php if (!empty($jogo['requisitos_minimos'])): ?>
+                                    <button class="req-tab active" onclick="switchReqTab('minimos', this)">Mínimos</button>
+                                    <?php endif; ?>
+                                    <?php if (!empty($jogo['requisitos_recomendados'])): ?>
+                                    <button class="req-tab <?= empty($jogo['requisitos_minimos']) ? 'active' : '' ?>" onclick="switchReqTab('recomendados', this)">Recomendados</button>
+                                    <?php endif; ?>
+                                </div>
+                                <?php if (!empty($jogo['requisitos_minimos'])): ?>
+                                <div class="req-content active" id="req-minimos">
+                                    <div style="color: var(--text-secondary); font-size: 13px; line-height: 1.7; white-space: pre-wrap;"><?= sanitize($jogo['requisitos_minimos']); ?></div>
+                                </div>
+                                <?php endif; ?>
+                                <?php if (!empty($jogo['requisitos_recomendados'])): ?>
+                                <div class="req-content <?= empty($jogo['requisitos_minimos']) ? 'active' : '' ?>" id="req-recomendados">
+                                    <div style="color: var(--text-secondary); font-size: 13px; line-height: 1.7; white-space: pre-wrap;"><?= sanitize($jogo['requisitos_recomendados']); ?></div>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php endif; ?>
 
-                            <?php if (!empty($jogo['slug'])): ?>
-                            <a href="<?= SITE_URL; ?>/pages/jogo.php?slug=<?= $jogo['slug']; ?>" class="btn btn-primary btn-block" target="_blank">
-                                <i class="fas fa-external-link-alt"></i> Ver na Loja
-                            </a>
-                            <?php endif; ?>
+                        <!-- Mídia -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-images"></i> Mídia</h3>
+                            </div>
+                            <div class="card-body">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                                    <?php if (!empty($jogo['imagem_capa'])): ?>
+                                    <div>
+                                        <div class="label" style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Capa</div>
+                                        <div class="cover-preview">
+                                            <img src="<?= SITE_URL . $jogo['imagem_capa']; ?>" alt="Capa">
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($jogo['imagem_banner'])): ?>
+                                    <div>
+                                        <div class="label" style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Banner</div>
+                                        <div class="cover-preview">
+                                            <img src="<?= SITE_URL . $jogo['imagem_banner']; ?>" alt="Banner">
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+
+                                <?php if (!empty($jogo['video_trailer'])): ?>
+                                <div style="margin-bottom: 16px;">
+                                    <div class="label" style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Trailer</div>
+                                    <div class="info-item">
+                                        <a href="<?= sanitize($jogo['video_trailer']); ?>" target="_blank" style="color: var(--accent); font-size: 13px;">
+                                            <i class="fas fa-play-circle"></i> <?= sanitize($jogo['video_trailer']); ?>
+                                        </a>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+
+                                <?php if (count($screenshots) > 0): ?>
+                                <div>
+                                    <div class="label" style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Screenshots (<?= count($screenshots) ?>)</div>
+                                    <div class="screenshots-mini">
+                                        <?php foreach ($screenshots as $shot): 
+                                            $img_url = $shot['imagem'] ?? $shot['url'] ?? $shot['caminho'] ?? '';
+                                            if ($img_url):
+                                        ?>
+                                        <div class="screenshot-thumb" onclick="openLightbox('<?= SITE_URL . $img_url ?>')">
+                                            <img src="<?= SITE_URL . $img_url; ?>" alt="Screenshot">
+                                        </div>
+                                        <?php endif; endforeach; ?>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <!-- Arquivos -->
+                        <?php if (count($arquivos) > 0): ?>
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-file-archive"></i> Arquivos (<?= count($arquivos) ?>)</h3>
+                            </div>
+                            <div class="card-body">
+                                <?php foreach ($arquivos as $arquivo): ?>
+                                <div class="file-row">
+                                    <div class="file-icon"><i class="fas fa-file-archive"></i></div>
+                                    <div class="file-info">
+                                        <div class="name"><?= sanitize($arquivo['nome_arquivo'] ?? $arquivo['nome'] ?? 'Arquivo'); ?></div>
+                                        <div class="meta">
+                                            <?= $arquivo['plataforma_nome'] ?? 'N/A' ?> • 
+                                            v<?= sanitize($arquivo['versao'] ?? '1.0'); ?> • 
+                                            <?= formatFileSizeCustom($arquivo['tamanho_bytes'] ?? $arquivo['tamanho'] ?? 0); ?>
+                                        </div>
+                                    </div>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- Sidebar -->
+                    <div class="side-column">
+                        <!-- Ações -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-bolt"></i> Ações</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="btn-group">
+                                    <?php if (($jogo['status'] ?? '') === 'em_revisao'): ?>
+                                        <button type="button" class="btn btn-success btn-block" onclick="showModal('aprovar')">
+                                            <i class="fas fa-check"></i> Aprovar
+                                        </button>
+                                        <button type="button" class="btn btn-danger btn-block" onclick="showModal('rejeitar')">
+                                            <i class="fas fa-times"></i> Rejeitar
+                                        </button>
+                                    <?php endif; ?>
+
+                                    <?php if (($jogo['status'] ?? '') === 'publicado'): ?>
+                                        <form method="POST" style="width: 100%;">
+                                            <input type="hidden" name="action" value="toggle_destaque">
+                                            <button type="submit" class="btn btn-<?= !empty($jogo['destaque']) ? 'warning' : 'secondary' ?> btn-block">
+                                                <i class="fas fa-star"></i> <?= !empty($jogo['destaque']) ? 'Remover Destaque' : 'Destacar' ?>
+                                            </button>
+                                        </form>
+                                        <button type="button" class="btn btn-outline-danger btn-block" onclick="showModal('suspender')">
+                                            <i class="fas fa-ban"></i> Suspender
+                                        </button>
+                                    <?php endif; ?>
+
+                                    <?php if (($jogo['status'] ?? '') === 'suspenso'): ?>
+                                        <form method="POST" style="width: 100%;">
+                                            <input type="hidden" name="action" value="reativar">
+                                            <button type="submit" class="btn btn-success btn-block">
+                                                <i class="fas fa-redo"></i> Reativar
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+
+                                    <?php if (($jogo['status'] ?? '') !== 'removido'): ?>
+                                        <button type="button" class="btn btn-outline-danger btn-block" onclick="showModal('remover')">
+                                            <i class="fas fa-trash"></i> Remover
+                                        </button>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Desenvolvedor -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="fas fa-user-tie"></i> Desenvolvedor</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="dev-card">
+                                    <div class="dev-avatar">
+                                        <?php if (!empty($jogo['dev_logo'])): ?>
+                                            <img src="<?= SITE_URL . $jogo['dev_logo']; ?>" alt="">
+                                        <?php else: ?>
+                                            <?= strtoupper(substr($jogo['nome_estudio'] ?? 'D', 0, 1)); ?>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="dev-info">
+                                        <div class="name">
+                                            <?= sanitize($jogo['nome_estudio'] ?? 'N/A'); ?>
+                                            <?php if (!empty($jogo['dev_verificado'])): ?>
+                                                <i class="fas fa-check-circle verified" title="Verificado"></i>
+                                            <?php endif; ?>
+                                        </div>
+                                        <?php if ($dev_email): ?>
+                                            <div class="email"><?= sanitize($dev_email); ?></div>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                
+                                <?php 
+                                $has_social = !empty($jogo['dev_website']) || !empty($jogo['dev_twitter']) || 
+                                              !empty($jogo['dev_instagram']) || !empty($jogo['dev_discord']) || 
+                                              !empty($jogo['dev_youtube']);
+                                if ($has_social): 
+                                ?>
+                                <div class="dev-socials">
+                                    <?php if (!empty($jogo['dev_website'])): ?>
+                                        <a href="<?= sanitize($jogo['dev_website']); ?>" target="_blank" title="Website"><i class="fas fa-globe"></i></a>
+                                    <?php endif; ?>
+                                    <?php if (!empty($jogo['dev_twitter'])): ?>
+                                        <a href="<?= sanitize($jogo['dev_twitter']); ?>" target="_blank" title="Twitter"><i class="fab fa-twitter"></i></a>
+                                    <?php endif; ?>
+                                    <?php if (!empty($jogo['dev_instagram'])): ?>
+                                        <a href="<?= sanitize($jogo['dev_instagram']); ?>" target="_blank" title="Instagram"><i class="fab fa-instagram"></i></a>
+                                    <?php endif; ?>
+                                    <?php if (!empty($jogo['dev_discord'])): ?>
+                                        <a href="<?= sanitize($jogo['dev_discord']); ?>" target="_blank" title="Discord"><i class="fab fa-discord"></i></a>
+                                    <?php endif; ?>
+                                    <?php if (!empty($jogo['dev_youtube'])): ?>
+                                        <a href="<?= sanitize($jogo['dev_youtube']); ?>" target="_blank" title="YouTube"><i class="fab fa-youtube"></i></a>
+                                    <?php endif; ?>
+                                </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+
+                        <!-- Datas -->
+                        <div class="card card-compact">
+                            <div class="card-header">
+                                <h3><i class="fas fa-calendar-alt"></i> Histórico</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="info-grid cols-1" style="gap: 8px;">
+                                    <?php if (!empty($jogo['criado_em'])): ?>
+                                    <div class="info-item">
+                                        <div class="label">Criado em</div>
+                                        <div class="value"><?= date('d/m/Y H:i', strtotime($jogo['criado_em'])); ?></div>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($jogo['publicado_em'])): ?>
+                                    <div class="info-item">
+                                        <div class="label">Publicado em</div>
+                                        <div class="value"><?= date('d/m/Y H:i', strtotime($jogo['publicado_em'])); ?></div>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($jogo['atualizado_em'])): ?>
+                                    <div class="info-item">
+                                        <div class="label">Atualizado em</div>
+                                        <div class="value"><?= date('d/m/Y H:i', strtotime($jogo['atualizado_em'])); ?></div>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -990,23 +1111,26 @@ require_once '../includes/header.php';
     </div>
 </div>
 
-<!-- Modal -->
+<!-- Modal de Confirmação -->
 <div class="modal-overlay" id="modalOverlay">
-    <div class="modal-box">
-        <div class="modal-header">
+    <div class="modal-container">
+        <div class="modal-top">
             <div class="modal-icon" id="modalIcon"><i class="fas fa-question"></i></div>
-            <h3 class="modal-title" id="modalTitle">Confirmação</h3>
-        </div>
-        <div class="modal-body">
-            <p id="modalText">Tem certeza?</p>
-            <div id="modalMotivo" style="display: none;">
-                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Motivo:</label>
-                <textarea id="motivoInput" placeholder="Descreva o motivo..." form="modalForm" name="motivo"></textarea>
+            <div>
+                <div class="modal-title" id="modalTitle">Confirmar Ação</div>
+                <div class="modal-subtitle" id="modalSubtitle">Jogo: <?= sanitize($jogo['titulo'] ?? ''); ?></div>
             </div>
         </div>
         <form method="POST" id="modalForm">
             <input type="hidden" name="action" id="modalAction" value="">
-            <div class="modal-actions">
+            <div class="modal-body">
+                <p id="modalText">Tem certeza que deseja realizar esta ação?</p>
+                <div id="modalMotivo" style="display: none;">
+                    <label for="motivoInput">Motivo</label>
+                    <textarea id="motivoInput" name="motivo" placeholder="Descreva o motivo..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
                 <button type="submit" class="btn btn-primary" id="modalConfirm">Confirmar</button>
             </div>
@@ -1014,7 +1138,14 @@ require_once '../includes/header.php';
     </div>
 </div>
 
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+    <button class="lightbox-close"><i class="fas fa-times"></i></button>
+    <img id="lightboxImg" src="" alt="">
+</div>
+
 <script>
+// Modal Functions
 function showModal(action) {
     const overlay = document.getElementById('modalOverlay');
     const icon = document.getElementById('modalIcon');
@@ -1024,56 +1155,70 @@ function showModal(action) {
     const motivoInput = document.getElementById('motivoInput');
     const actionInput = document.getElementById('modalAction');
     const confirmBtn = document.getElementById('modalConfirm');
-    
+
     actionInput.value = action;
     motivoDiv.style.display = 'none';
     motivoInput.required = false;
     motivoInput.value = '';
-    
-    switch(action) {
-        case 'aprovar':
-            icon.className = 'modal-icon success';
-            icon.innerHTML = '<i class="fas fa-check"></i>';
-            title.textContent = 'Aprovar Jogo';
-            text.textContent = 'O jogo será publicado e ficará visível na loja.';
-            confirmBtn.className = 'btn btn-success';
-            confirmBtn.textContent = 'Aprovar';
-            break;
-            
-        case 'rejeitar':
-            icon.className = 'modal-icon danger';
-            icon.innerHTML = '<i class="fas fa-times"></i>';
-            title.textContent = 'Rejeitar Jogo';
-            text.textContent = 'O jogo voltará para rascunho.';
+
+    const configs = {
+        aprovar: {
+            iconClass: 'success',
+            icon: 'fa-check',
+            title: 'Aprovar Jogo',
+            text: 'O jogo será publicado e ficará visível na loja imediatamente.',
+            btnClass: 'btn-success',
+            btnText: 'Aprovar'
+        },
+        rejeitar: {
+            iconClass: 'danger',
+            icon: 'fa-times',
+            title: 'Rejeitar Jogo',
+            text: 'O jogo voltará para rascunho e o desenvolvedor será notificado.',
+            btnClass: 'btn-danger',
+            btnText: 'Rejeitar',
+            motivo: true,
+            motivoRequired: true,
+            motivoPlaceholder: 'Explique o motivo da rejeição para o desenvolvedor...'
+        },
+        suspender: {
+            iconClass: 'warning',
+            icon: 'fa-ban',
+            title: 'Suspender Jogo',
+            text: 'O jogo será removido da loja temporariamente.',
+            btnClass: 'btn-warning',
+            btnText: 'Suspender',
+            motivo: true,
+            motivoPlaceholder: 'Motivo da suspensão (opcional)...'
+        },
+        remover: {
+            iconClass: 'danger',
+            icon: 'fa-trash',
+            title: 'Remover Jogo',
+            text: 'O jogo será marcado como removido permanentemente.',
+            btnClass: 'btn-danger',
+            btnText: 'Remover'
+        }
+    };
+
+    const config = configs[action];
+    if (config) {
+        icon.className = `modal-icon ${config.iconClass}`;
+        icon.innerHTML = `<i class="fas ${config.icon}"></i>`;
+        title.textContent = config.title;
+        text.textContent = config.text;
+        confirmBtn.className = `btn ${config.btnClass}`;
+        confirmBtn.textContent = config.btnText;
+
+        if (config.motivo) {
             motivoDiv.style.display = 'block';
-            motivoInput.required = true;
-            motivoInput.placeholder = 'Explique o motivo da rejeição...';
-            confirmBtn.className = 'btn btn-danger';
-            confirmBtn.textContent = 'Rejeitar';
-            break;
-            
-        case 'suspender':
-            icon.className = 'modal-icon warning';
-            icon.innerHTML = '<i class="fas fa-ban"></i>';
-            title.textContent = 'Suspender Jogo';
-            text.textContent = 'O jogo será removido da loja temporariamente.';
-            motivoDiv.style.display = 'block';
-            motivoInput.placeholder = 'Motivo da suspensão (opcional)...';
-            confirmBtn.className = 'btn btn-warning';
-            confirmBtn.textContent = 'Suspender';
-            break;
-            
-        case 'remover':
-            icon.className = 'modal-icon danger';
-            icon.innerHTML = '<i class="fas fa-trash"></i>';
-            title.textContent = 'Remover Jogo';
-            text.textContent = 'Esta ação marcará o jogo como removido.';
-            confirmBtn.className = 'btn btn-danger';
-            confirmBtn.textContent = 'Remover';
-            break;
+            motivoInput.required = config.motivoRequired || false;
+            motivoInput.placeholder = config.motivoPlaceholder || '';
+        }
     }
-    
+
     overlay.classList.add('active');
+    if (config.motivo) motivoInput.focus();
 }
 
 function closeModal() {
@@ -1085,8 +1230,46 @@ document.getElementById('modalOverlay').addEventListener('click', function(e) {
 });
 
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape') {
+        closeModal();
+        closeLightbox();
+    }
 });
+
+// Expand/Collapse Text
+function toggleExpand(id, btn) {
+    const el = document.getElementById(id);
+    const isCollapsed = el.classList.contains('collapsed');
+    
+    if (isCollapsed) {
+        el.classList.remove('collapsed');
+        el.classList.add('expanded');
+        btn.innerHTML = '<i class="fas fa-chevron-up"></i> <span>Ler menos</span>';
+    } else {
+        el.classList.remove('expanded');
+        el.classList.add('collapsed');
+        btn.innerHTML = '<i class="fas fa-chevron-down"></i> <span>Ler mais</span>';
+    }
+}
+
+// Requirements Tabs
+function switchReqTab(tab, btn) {
+    document.querySelectorAll('.req-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.req-content').forEach(c => c.classList.remove('active'));
+    
+    btn.classList.add('active');
+    document.getElementById('req-' + tab).classList.add('active');
+}
+
+// Lightbox
+function openLightbox(src) {
+    document.getElementById('lightboxImg').src = src;
+    document.getElementById('lightbox').classList.add('active');
+}
+
+function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('active');
+}
 </script>
 
 <?php require_once '../includes/footer.php'; ?>

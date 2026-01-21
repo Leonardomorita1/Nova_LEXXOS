@@ -1,5 +1,5 @@
 <?php
-// pages/jogo.php - Epic Games + PlayStation Style
+// pages/jogo.php - PlayStation App + Epic Games Style (IMPROVED)
 require_once '../config/config.php';
 require_once '../config/database.php';
 
@@ -7,19 +7,49 @@ $database = new Database();
 $pdo = $database->getConnection();
 $slug = $_GET['slug'] ?? '';
 $user_id = $_SESSION['user_id'] ?? null;
+$user_type = $_SESSION['user_type'] ?? null;
 
-if (empty($slug)) { header('Location: ' . SITE_URL); exit; }
+if (empty($slug)) { 
+    header('Location: ' . SITE_URL); 
+    exit; 
+}
 
-// Buscar jogo
+// Buscar jogo (sem filtro de status inicialmente)
 $stmt = $pdo->prepare("
-    SELECT j.*, d.nome_estudio, d.slug as dev_slug, d.logo_url, d.verificado as dev_verificado
-    FROM jogo j LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id 
-    WHERE j.slug = ? AND j.status = 'publicado'
+    SELECT j.*, d.nome_estudio, d.slug as dev_slug, d.logo_url, d.verificado as dev_verificado,
+           d.usuario_id as dev_usuario_id
+    FROM jogo j 
+    LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id 
+    WHERE j.slug = ?
 ");
 $stmt->execute([$slug]);
 $jogo = $stmt->fetch();
 
-if (!$jogo) { header('Location: ' . SITE_URL); exit; }
+if (!$jogo) { 
+    header('Location: ' . SITE_URL); 
+    exit; 
+}
+
+// VERIFICAÇÃO DE PERMISSÃO DE ACESSO
+$pode_acessar = false;
+
+if ($jogo['status'] === 'publicado') {
+    $pode_acessar = true;
+} elseif ($user_id) {
+    if ($user_type === 'admin') {
+        $pode_acessar = true;
+    } elseif ($user_type === 'desenvolvedor' && $jogo['dev_usuario_id'] == $user_id) {
+        $pode_acessar = true;
+    }
+}
+
+if (!$pode_acessar) {
+    $_SESSION['error'] = 'Este jogo não está disponível.';
+    header('Location: ' . SITE_URL);
+    exit;
+}
+
+$is_preview = ($jogo['status'] !== 'publicado');
 
 // Verificar arquivo
 $stmt = $pdo->prepare("SELECT * FROM arquivo_jogo WHERE jogo_id = ? AND ativo = 1 ORDER BY criado_em DESC LIMIT 1");
@@ -27,165 +57,177 @@ $stmt->execute([$jogo['id']]);
 $arquivo_info = $stmt->fetch();
 $tem_arquivo = (bool)$arquivo_info;
 
-// 1. LÓGICA DE VERIFICAÇÃO DE IDADE (CORRIGIDA)
+// LÓGICA DE VERIFICAÇÃO DE IDADE
 $idade_bloqueada = false;
 
-if ($user_id) {
+if ($user_id && !$is_preview) {
     $stmt = $pdo->prepare("SELECT data_nascimento FROM usuario WHERE id = ?");
     $stmt->execute([$user_id]);
-    $usuario = $stmt->fetch();
+    $usuario_data = $stmt->fetch();
 
-    if ($usuario && $usuario['data_nascimento']) {
-        $idade = (new DateTime($usuario['data_nascimento']))->diff(new DateTime())->y;
+    if ($usuario_data && $usuario_data['data_nascimento']) {
+        $idade = (new DateTime($usuario_data['data_nascimento']))->diff(new DateTime())->y;
         $classificacao = $jogo['classificacao_etaria'];
 
-        // CORREÇÃO CRÍTICA:
-        // Verifica se classificação NÃO é 'L' E se a idade é menor que o número da classificação.
-        // O (int) garante que o PHP compare números corretamente.
         if ($classificacao !== 'L' && $idade < (int)$classificacao) {
             $idade_bloqueada = true;
         }
     }
 }
 
-// 2. EXIBIÇÃO DO BLOQUEIO (DESIGN NOVO)
+// EXIBIÇÃO DO BLOQUEIO DE IDADE (TELA CHEIA)
 if ($idade_bloqueada) {
     $page_title = 'Conteúdo Restrito - ' . SITE_NAME;
     require_once '../includes/header.php';
     ?>
-    
     <style>
-        /* Container principal centralizado */
-        .restriction-wrapper {
+        .age-restriction-page {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
             display: flex;
             align-items: center;
             justify-content: center;
-            min-height: 75vh;
-            padding: 20px;
-            position: relative;
+            background: var(--bg-primary);
             overflow: hidden;
         }
-
-        /* Efeito de fundo (Opcional - dá um brilho vermelho sutil atrás) */
-        .restriction-wrapper::before {
+        .age-restriction-page::before {
             content: '';
             position: absolute;
-            width: 300px;
-            height: 300px;
-            background: radial-gradient(circle, rgba(239, 68, 68, 0.2) 0%, rgba(0,0,0,0) 70%);
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 0;
-            pointer-events: none;
+            inset: 0;
+            background: url('<?= SITE_URL . ($jogo['imagem_banner'] ?: $jogo['imagem_capa']) ?>') center/cover no-repeat;
+            filter: blur(30px) brightness(0.2);
+            transform: scale(1.1);
         }
-
-        /* Card Glassmorphism */
-        .restriction-card {
+        .age-restriction-page::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(220, 53, 69, 0.1) 0%, transparent 70%);
+        }
+        .age-card {
             position: relative;
             z-index: 1;
-            background: rgba(30, 41, 59, 0.75); /* Cor escura translúcida */
-            backdrop-filter: blur(16px);       /* O desfoque do vidro */
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.1); /* Borda fina e sutil */
+            background: rgba(30, 31, 32, 0.9);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
             border-radius: 24px;
-            padding: 3rem 2.5rem;
-            max-width: 420px;
-            width: 100%;
+            padding: 48px 40px;
+            max-width: 440px;
+            width: 90%;
             text-align: center;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
-            animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
+            animation: ageCardIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
         }
-
-        /* Ícone */
-        .icon-lock {
-            width: 70px;
-            height: 70px;
-            background: rgba(239, 68, 68, 0.15); /* Fundo vermelho suave */
-            color: #ef4444; /* Vermelho alerta */
+        @keyframes ageCardIn {
+            from { opacity: 0; transform: scale(0.9) translateY(30px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .age-icon {
+            width: 80px;
+            height: 80px;
+            background: rgba(220, 53, 69, 0.15);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 1.5rem;
-            font-size: 28px;
-            box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+            margin: 0 auto 24px;
+            font-size: 32px;
+            color: var(--danger);
+            box-shadow: 0 0 40px rgba(220, 53, 69, 0.2);
         }
-
-        /* Tipografia */
-        .restriction-card h1 {
+        .age-card h1 {
             font-size: 1.75rem;
             font-weight: 700;
-            color: #f8fafc;
-            margin: 0 0 0.5rem 0;
+            color: var(--text-primary);
+            margin: 0 0 16px 0;
         }
-
-        .restriction-card p {
-            color: #94a3b8; /* Cinza azulado */
+        .age-card p {
+            color: var(--text-secondary);
             font-size: 1rem;
-            line-height: 1.6;
-            margin-bottom: 2rem;
+            line-height: 1.7;
+            margin: 0 0 32px 0;
         }
-
-        /* Badge de Idade */
         .age-badge {
             display: inline-flex;
             align-items: center;
-            background: #ef4444;
+            justify-content: center;
+            background: var(--danger);
             color: white;
             font-weight: 800;
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 0.95rem;
-            vertical-align: middle;
-            margin-left: 4px;
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 1rem;
+            margin: 0 4px;
         }
-
-        /* Botão */
-        .btn-back {
+        .age-game-info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 16px;
+            background: var(--bg-primary);
+            border-radius: 12px;
+            margin-bottom: 24px;
+            text-align: left;
+        }
+        .age-game-info img {
+            width: 60px;
+            height: 60px;
+            border-radius: 10px;
+            object-fit: cover;
+        }
+        .age-game-info .info h4 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin: 0 0 4px 0;
+            color: var(--text-primary);
+        }
+        .age-game-info .info span {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+        .age-btn {
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
             width: 100%;
-            padding: 14px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            color: #fff;
-            text-decoration: none;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
             border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
             font-weight: 600;
-            transition: all 0.2s ease;
-            box-sizing: border-box; /* Garante que o padding não estoure a largura */
+            text-decoration: none;
+            transition: all 0.2s;
         }
-
-        .btn-back:hover {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 255, 255, 0.3);
-            transform: translateY(-2px);
-        }
-
-        @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
+        .age-btn:hover {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
         }
     </style>
 
-    <div class="restriction-wrapper">
-        <div class="restriction-card">
-            <div class="icon-lock">
+    <div class="age-restriction-page">
+        <div class="age-card">
+            <div class="age-icon">
                 <i class="fas fa-lock"></i>
             </div>
-            
-            <h1>Acesso Restrito</h1>
-            
+            <h1>Conteúdo Restrito</h1>
+            <div class="age-game-info">
+                <img src="<?= SITE_URL . ($jogo['imagem_capa'] ?: '/assets/images/no-image.png') ?>" alt="">
+                <div class="info">
+                    <h4><?= sanitize($jogo['titulo']) ?></h4>
+                    <span><?= sanitize($jogo['nome_estudio']) ?></span>
+                </div>
+            </div>
             <p>
                 Este título possui classificação indicativa para maiores de 
-                <span class="age-badge"><?= $jogo['classificacao_etaria'] ?>+</span> anos.
-                <br>Sua conta não atende aos requisitos.
+                <span class="age-badge"><?= $jogo['classificacao_etaria'] ?>+</span>
+                anos. Sua conta não atende aos requisitos de idade.
             </p>
-            
-            <a href="<?= SITE_URL ?>/" class="btn-back">
+            <a href="<?= SITE_URL ?>/" class="age-btn">
                 <i class="fas fa-arrow-left"></i> 
                 Voltar para a Loja
             </a>
@@ -197,7 +239,6 @@ if ($idade_bloqueada) {
     exit;
 }
 
-
 // Status do usuário
 $in_library = $in_cart = $in_wishlist = false;
 if ($user_id) {
@@ -206,8 +247,10 @@ if ($user_id) {
     $in_wishlist = isInWishlist($user_id, $jogo['id'], $pdo);
 }
 
-// Incrementar views
-$pdo->prepare("UPDATE jogo SET total_visualizacoes = total_visualizacoes + 1 WHERE id = ?")->execute([$jogo['id']]);
+// Incrementar views (apenas para jogos publicados)
+if (!$is_preview) {
+    $pdo->prepare("UPDATE jogo SET total_visualizacoes = total_visualizacoes + 1 WHERE id = ?")->execute([$jogo['id']]);
+}
 
 // Buscar dados relacionados
 $categorias = $pdo->prepare("SELECT c.* FROM categoria c JOIN jogo_categoria jc ON c.id = jc.categoria_id WHERE jc.jogo_id = ?");
@@ -242,7 +285,7 @@ if ($user_id) {
     $my_review = $stmt->fetch();
 }
 
-// Jogos relacionados
+// Jogos relacionados (apenas publicados)
 $cat_ids = array_column($categorias, 'id');
 $related_sql = "SELECT DISTINCT j.*, d.nome_estudio FROM jogo j 
     LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id 
@@ -260,290 +303,1821 @@ $preco_final = ($jogo['em_promocao'] && $jogo['preco_promocional_centavos']) ? $
 $desconto = calculateDiscount($jogo['preco_centavos'], $jogo['preco_promocional_centavos'], $jogo['em_promocao']);
 $is_free = $preco_final == 0;
 
-function getYoutubeId($url) { preg_match('/(?:embed\/|v=|youtu\.be\/)([^&?\/]+)/', $url, $m); return $m[1] ?? ''; }
+function getYoutubeId($url) { 
+    preg_match('/(?:embed\/|v=|youtu\.be\/)([^&?\/]+)/', $url, $m); 
+    return $m[1] ?? ''; 
+}
+
+// Preparar mídia para o carrossel
+$media_items = [];
+if ($jogo['video_trailer']) {
+    $media_items[] = [
+        'type' => 'video',
+        'url' => $jogo['video_trailer'],
+        'thumb' => 'https://img.youtube.com/vi/' . getYoutubeId($jogo['video_trailer']) . '/mqdefault.jpg'
+    ];
+}
+foreach ($imagens as $img) {
+    $media_items[] = [
+        'type' => 'image',
+        'url' => SITE_URL . $img['imagem'],
+        'thumb' => SITE_URL . $img['imagem']
+    ];
+}
 
 $page_title = $jogo['titulo'] . ' - ' . SITE_NAME;
 require_once '../includes/header.php';
+
 ?>
 
 <style>
-/* ========== EPIC + PLAYSTATION STYLE ========== */
-.gp{background:var(--bg-primary);min-height:100vh}
-.gc{max-width:1200px;margin:0 auto;padding:0 20px}
 
-/* Hero */
-.hero{position:relative;height:420px;overflow:hidden}
-.hero-bg{position:absolute;inset:0;background:url('<?= SITE_URL . ($jogo['imagem_banner'] ?: $jogo['imagem_capa']) ?>') center/cover}
-.hero-bg::after{content:'';position:absolute;inset:0;background:linear-gradient(to top,var(--bg-primary) 0%,rgba(19,19,20,.6) 50%,rgba(19,19,20,.3) 100%)}
 
-/* Layout */
-.layout{display:grid;grid-template-columns:1fr 360px;gap:40px;margin-top:-140px;position:relative;z-index:2;padding-bottom:60px}
-.main{min-width:0}
+/* ========== BASE ========== */
+.game-page {
+    background: var(--bg-primary);
+    min-height: 100vh;
+    padding-bottom: 60px;
+}
 
-/* Media Gallery */
-.media{background:var(--bg-secondary);border-radius:12px;overflow:hidden;margin-bottom:32px}
-.media-view{aspect-ratio:16/9;background:#000;position:relative}
-.media-view img,.media-view iframe{width:100%;height:100%;object-fit:cover;border:0}
-.thumbs{display:flex;gap:8px;padding:12px;background:var(--bg-tertiary);overflow-x:auto;scrollbar-width:none}
-.thumbs::-webkit-scrollbar{display:none}
-.thumb{flex:0 0 140px;height:80px;border-radius:6px;overflow:hidden;cursor:pointer;position:relative;border:2px solid transparent;opacity:.7;transition:.2s}
-.thumb:hover,.thumb.active{opacity:1;border-color:var(--accent)}
-.thumb img{width:100%;height:100%;object-fit:cover}
-.thumb.vid::after{content:'\f04b';font-family:'Font Awesome 6 Free';font-weight:900;position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);color:#fff;font-size:20px}
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
 
-/* Info Section */
-.info{padding:32px 0}
-.title{font-size:2.5rem;font-weight:700;margin-bottom:16px;line-height:1.2}
-.meta{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:20px;font-size:.9rem;color:var(--text-secondary)}
-.meta i{color:var(--accent);margin-right:6px}
-.meta a{color:var(--accent);text-decoration:none}
-.meta a:hover{text-decoration:underline}
-.rating{display:inline-flex;align-items:center;gap:6px;background:var(--bg-secondary);padding:6px 12px;border-radius:6px}
-.rating i{color:var(--warning)}
-.cats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-.cat{background:var(--accent);color:#fff;padding:6px 14px;border-radius:6px;font-size:.8rem;font-weight:600;text-decoration:none;transition:.2s}
-.cat:hover{filter:brightness(1.15)}
-.tags{display:flex;flex-wrap:wrap;gap:8px}
-.tag{background:var(--bg-secondary);color:var(--text-secondary);padding:6px 12px;border-radius:6px;font-size:.8rem;transition:.2s}
-.tag:hover{color:var(--text-primary)}
+/* ========== PREVIEW BANNER ========== */
+.preview-banner {
+    background: linear-gradient(135deg, var(--warning), #ff9800);
+    color: #000;
+    padding: 12px 20px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
 
-/* Content Blocks */
-.block{background:var(--bg-secondary);border-radius:12px;padding:28px;margin-bottom:24px}
-.block-head{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border);font-size:1.1rem;font-weight:600}
-.block-head i{color:var(--accent)}
-.desc{color:var(--text-secondary);line-height:1.8;white-space:pre-wrap}
+/* ========== MOBILE HEADER (PS App Style) ========== */
+.mobile-header {
+    display: none;
+    position: relative;
+    z-index: 10;
+    background: var(--bg-primary);
+}
 
-/* Sidebar */
-.side{position:sticky;top:24px}
+.mobile-header-bg {
+    position: absolute;
+    inset: 0;
+    background: url('<?= SITE_URL . ($jogo['imagem_banner'] ?: $jogo['imagem_capa']) ?>') center/cover;
+    opacity: 0.15;
+    filter: blur(20px);
+    z-index: -1;
+}
 
-/* Purchase Card */
-.buy-card{background:var(--bg-secondary);border-radius:12px;overflow:hidden;margin-bottom:20px}
-.cover{aspect-ratio:1/1;position:relative;overflow:hidden}
-.cover img{width:100%;height:100%;object-fit:cover}
-.cover .badge{position:absolute;top:12px;left:12px;padding:6px 12px;border-radius:6px;font-size:.75rem;font-weight:700;text-transform:uppercase}
-.badge-off{background:var(--success);color:#fff}
-.badge-own{background:var(--accent);color:#fff}
-.buy-body{padding:24px}
-.price-row{display:flex;align-items:center;gap:12px;margin-bottom:16px}
-.price{font-size:2rem;font-weight:700}
-.price.free{color:var(--success)}
-.price-old{color:var(--text-secondary);text-decoration:line-through;font-size:1rem}
-.disc{background:var(--success);color:#fff;padding:4px 10px;border-radius:4px;font-weight:700;font-size:.85rem}
-.owned{display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;background:rgba(40,167,69,.1);border:1px solid var(--success);border-radius:8px;color:var(--success);font-weight:600;margin-bottom:16px}
-.unavail{text-align:center;padding:20px;background:rgba(255,193,7,.08);border:1px solid var(--warning);border-radius:8px;margin-bottom:16px}
-.unavail i{font-size:32px;color:var(--warning);margin-bottom:10px}
-.unavail h4{color:var(--warning);font-size:.9rem}
-.btns{display:flex;flex-direction:column;gap:10px}
-.btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:14px 20px;border-radius:8px;font-size:.95rem;font-weight:600;border:none;cursor:pointer;text-decoration:none;transition:.2s}
-.btn-p{background:var(--accent);color:#fff}
-.btn-p:hover{filter:brightness(1.1)}
-.btn-s{background:var(--success);color:#fff}
-.btn-s:hover{filter:brightness(1.1)}
-.btn-o{background:transparent;border:1px solid var(--border);color:var(--text-primary)}
-.btn-o:hover{border-color:var(--accent);color:var(--accent)}
-.btn-o.wl.active{border-color:var(--danger);color:var(--danger)}
-.plats{display:flex;align-items:center;gap:12px;padding-top:16px;margin-top:16px;border-top:1px solid var(--border);font-size:.85rem;color:var(--text-secondary)}
-.plats-icons{display:flex;gap:12px;font-size:1.2rem}
+.mobile-game-info {
+    position: relative;
+    display: flex;
+    gap: 16px;
+    padding: 20px 16px;
+}
 
-/* Info Cards */
-.info-card{background:var(--bg-secondary);border-radius:12px;padding:20px;margin-bottom:16px}
-.info-card h4{font-size:.8rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:16px}
-.info-list{display:flex;flex-direction:column;gap:12px}
-.info-item{display:flex;justify-content:space-between;font-size:.9rem}
-.info-item .l{color:var(--text-secondary)}
-.info-item .v{font-weight:500}
-.dev-link{display:flex;align-items:center;gap:12px;padding:14px;background:var(--bg-tertiary);border-radius:8px;text-decoration:none;transition:.2s}
-.dev-link:hover{background:#303133}
-.dev-link img{width:48px;height:48px;border-radius:8px;object-fit:cover}
-.dev-link .n{font-weight:600;display:flex;align-items:center;gap:6px;margin-bottom:4px}
-.dev-link .n i{color:var(--accent);font-size:.75rem}
-.dev-link .r{font-size:.8rem;color:var(--text-secondary)}
-.req-tabs{display:flex;gap:8px;margin-bottom:16px}
-.req-tab{flex:1;padding:10px;background:var(--bg-tertiary);border:none;border-radius:6px;color:var(--text-secondary);font-size:.85rem;font-weight:500;cursor:pointer;transition:.2s}
-.req-tab.active{background:var(--accent);color:#fff}
-.req-txt{font-size:.85rem;color:var(--text-secondary);line-height:1.6;white-space:pre-wrap}
+.mobile-cover {
+    width: 100px;
+    height: 100px;
+    border-radius: 16px;
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
 
-/* Reviews */
-.rev-sum{display:flex;gap:24px;padding:20px;background:var(--bg-tertiary);border-radius:10px;margin-bottom:20px}
-.rev-score{text-align:center;min-width:100px}
-.rev-score .num{font-size:3rem;font-weight:700;color:var(--accent);line-height:1}
-.rev-score .stars{display:flex;justify-content:center;gap:2px;margin:8px 0;color:var(--warning);font-size:.85rem}
-.rev-score .cnt{font-size:.8rem;color:var(--text-secondary)}
-.rev-bars{flex:1}
-.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:.8rem;color:var(--text-secondary)}
-.bar-track{flex:1;height:8px;background:var(--bg-primary);border-radius:4px;overflow:hidden}
-.bar-fill{height:100%;background:var(--accent);border-radius:4px}
-.rev-card{padding:20px;background:var(--bg-tertiary);border-radius:10px;margin-bottom:12px}
-.rev-card.mine{border:1px solid var(--accent);position:relative}
-.rev-card.mine::before{content:'Sua Avaliação';position:absolute;top:-10px;left:16px;background:var(--accent);color:#fff;padding:2px 10px;border-radius:4px;font-size:.7rem;font-weight:700;text-transform:uppercase}
-.rev-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
-.rev-author{display:flex;align-items:center;gap:12px}
-.rev-author img{width:40px;height:40px;border-radius:50%;object-fit:cover}
-.rev-author .name{font-weight:600;font-size:.95rem;margin-bottom:4px}
-.rev-author .meta{display:flex;align-items:center;gap:8px;font-size:.8rem}
-.rev-author .meta .stars{color:var(--warning)}
-.rev-author .meta .date{color:var(--text-secondary)}
-.rev-acts{display:flex;gap:6px}
-.rev-acts button{padding:6px 10px;background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--text-secondary);font-size:.75rem;cursor:pointer;transition:.2s}
-.rev-acts button:hover{border-color:var(--accent);color:var(--accent)}
-.rev-acts button.del:hover{border-color:var(--danger);color:var(--danger)}
-.rev-txt{font-size:.9rem;color:var(--text-secondary);line-height:1.6}
-.write-rev{width:100%;padding:14px;background:var(--bg-tertiary);border:1px dashed var(--border);border-radius:8px;color:var(--text-primary);font-size:.9rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:.2s;margin-bottom:16px}
-.write-rev:hover{border-color:var(--accent);color:var(--accent)}
-.no-rev{text-align:center;padding:40px;color:var(--text-secondary)}
-.no-rev i{font-size:40px;opacity:.3;margin-bottom:12px}
+.mobile-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
 
-/* Related Games */
-.related{padding:60px 0}
-.related h2{font-size:1.5rem;font-weight:600;margin-bottom:24px}
-.rel-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
-.rel-card{background:var(--bg-secondary);border-radius:12px;overflow:hidden;text-decoration:none;transition:.3s;border:1px solid transparent}
-.rel-card:hover{transform:translateY(-6px);border-color:var(--accent);box-shadow:0 12px 40px rgba(0,0,0,.4)}
-.rel-cover{aspect-ratio:1/1;overflow:hidden}
-.rel-cover img{width:100%;height:100%;object-fit:cover;transition:.3s}
-.rel-card:hover .rel-cover img{transform:scale(1.05)}
-.rel-info{padding:16px}
-.rel-info h4{font-size:.95rem;font-weight:600;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary)}
-.rel-info .dev{font-size:.8rem;color:var(--text-secondary);margin-bottom:10px}
-.rel-price{display:flex;align-items:center;gap:8px;font-size:.9rem}
-.rel-price .off{background:var(--success);color:#fff;padding:2px 6px;border-radius:4px;font-size:.7rem;font-weight:700}
-.rel-price .old{color:var(--text-secondary);text-decoration:line-through;font-size:.8rem}
-.rel-price .cur{font-weight:600;color:var(--text-primary)}
-.rel-price .free{color:var(--success);font-weight:600}
+.mobile-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
 
-/* Modal */
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:9999;padding:20px}
-.modal.show{display:flex}
-.modal-box{background:var(--bg-secondary);border-radius:12px;width:100%;max-width:480px;animation:modalIn .2s ease}
-@keyframes modalIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
-.modal-head{display:flex;justify-content:space-between;align-items:center;padding:20px 24px;border-bottom:1px solid var(--border)}
-.modal-head h3{font-size:1.1rem}
-.modal-close{width:32px;height:32px;border-radius:6px;border:none;background:var(--bg-tertiary);color:var(--text-secondary);font-size:1rem;cursor:pointer;transition:.2s}
-.modal-close:hover{background:var(--border);color:var(--text-primary)}
-.modal-body{padding:24px}
-.star-sel{display:flex;justify-content:center;gap:8px;margin-bottom:24px}
-.star-sel i{font-size:2.2rem;color:var(--border);cursor:pointer;transition:.15s}
-.star-sel i:hover,.star-sel i.on{color:var(--warning);transform:scale(1.1)}
-.rev-input{width:100%;min-height:120px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:16px;color:var(--text-primary);font-size:.9rem;font-family:inherit;resize:vertical}
-.rev-input:focus{outline:none;border-color:var(--accent)}
-.modal-foot{display:flex;gap:12px;padding:20px 24px;border-top:1px solid var(--border)}
-.modal-foot .btn{flex:1}
+.mobile-details .title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 6px 0;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
 
-/* Toast */
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(100px);background:var(--bg-secondary);border:1px solid var(--border);padding:14px 24px;border-radius:8px;display:flex;align-items:center;gap:10px;font-size:.9rem;z-index:10000;opacity:0;transition:.3s}
-.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
-.toast.success{border-color:var(--success)}.toast.success i{color:var(--success)}
-.toast.error{border-color:var(--danger)}.toast.error i{color:var(--danger)}
+.mobile-details .dev {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.mobile-details .rating {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+}
+
+.mobile-details .rating i {
+    color: var(--warning);
+}
+
+.mobile-details .rating span {
+    color: var(--text-secondary);
+}
+
+/* ========== MOBILE ACTION BAR (PS App Style) ========== */
+.mobile-action-bar {
+    display: none;
+    padding: 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.mobile-price-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.mobile-price-row .discount {
+    background: var(--success);
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.mobile-price-row .old-price {
+    color: var(--text-secondary);
+    text-decoration: line-through;
+    font-size: 0.9rem;
+}
+
+.mobile-price-row .price {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.mobile-price-row .price.free {
+    color: var(--success);
+}
+
+.mobile-owned-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: rgba(40, 167, 69, 0.15);
+    border: 1px solid var(--success);
+    border-radius: 10px;
+    color: var(--success);
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 14px;
+}
+
+.mobile-unavailable {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background: rgba(255, 193, 7, 0.1);
+    border: 1px solid var(--warning);
+    border-radius: 10px;
+    color: var(--warning);
+    font-size: 0.9rem;
+    margin-bottom: 14px;
+}
+
+.mobile-buttons {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.mobile-btn-main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px 20px;
+    border-radius: 12px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.mobile-btn-main.primary {
+    background: var(--accent);
+    color: #fff;
+}
+
+.mobile-btn-main.success {
+    background: var(--success);
+    color: #fff;
+}
+
+.mobile-btn-main.outline {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
+.mobile-btn-circle {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    text-decoration: none;
+}
+
+.mobile-btn-circle.wishlist {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.mobile-btn-circle.wishlist.active {
+    background: rgba(220, 53, 69, 0.15);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+.mobile-btn-circle.download {
+    background: var(--success);
+    color: #fff;
+}
+
+.mobile-btn-circle.library {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+/* ========== MOBILE CAROUSEL ========== */
+.mobile-carousel {
+    display: none;
+    position: relative;
+    z-index: 5;
+    background: var(--bg-primary);
+}
+
+.carousel-container {
+    position: relative;
+    overflow: hidden;
+}
+
+.carousel-track {
+    display: flex;
+    transition: transform 0.3s ease;
+    touch-action: pan-y;
+}
+
+.carousel-slide {
+    flex: 0 0 100%;
+    aspect-ratio: 16/9;
+    background: var(--bg-secondary);
+}
+
+.carousel-slide img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.carousel-slide iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+.carousel-dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px;
+    background: var(--bg-primary);
+}
+
+.carousel-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: all 0.3s;
+    cursor: pointer;
+}
+
+.carousel-dot.active {
+    background: var(--accent);
+    width: 24px;
+    border-radius: 4px;
+}
+
+/* ========== DESKTOP HERO ========== */
+.desktop-hero {
+    position: relative;
+    height: 450px;
+    overflow: hidden;
+}
+
+.hero-bg {
+    position: absolute;
+    inset: 0;
+    background: url('<?= SITE_URL . ($jogo['imagem_banner'] ?: $jogo['imagem_capa']) ?>') center/cover;
+}
+
+.hero-bg::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, var(--bg-primary) 0%, rgba(19,19,20,0.7) 50%, rgba(19,19,20,0.4) 100%);
+}
+
+/* ========== LAYOUT ========== */
+.main-layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 32px;
+    margin-top: -160px;
+    position: relative;
+    z-index: 2;
+}
+
+.main-content {
+    min-width: 0;
+}
+
+.sidebar {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+}
+
+/* ========== DESKTOP MEDIA GALLERY ========== */
+.media-gallery {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 24px;
+    border: 1px solid var(--border);
+}
+
+.media-main {
+    aspect-ratio: 16/9;
+    background: #000;
+    position: relative;
+}
+
+.media-main img,
+.media-main iframe {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border: 0;
+}
+
+/* Thumbnail Navigation */
+.media-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px;
+    background: var(--bg-tertiary);
+}
+
+.nav-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.nav-btn:hover:not(:disabled) {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.media-thumbs-wrapper {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.media-thumbs {
+    display: flex;
+    gap: 10px;
+    transition: transform 0.3s ease;
+}
+
+.media-thumb {
+    flex: 0 0 140px;
+    height: 80px;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    border: 2px solid transparent;
+    opacity: 0.6;
+    transition: all 0.2s;
+}
+
+.media-thumb:hover,
+.media-thumb.active {
+    opacity: 1;
+    border-color: var(--accent);
+}
+
+.media-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.media-thumb.video::after {
+    content: '\f04b';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.5);
+    color: #fff;
+    font-size: 18px;
+}
+
+/* ========== GAME INFO ========== */
+.game-info {
+    padding: 28px 0;
+}
+
+.game-title {
+    font-size: 2.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 16px 0;
+    line-height: 1.2;
+}
+
+.game-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.meta-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.meta-item i {
+    color: var(--accent);
+}
+
+.meta-item a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.meta-item a:hover {
+    text-decoration: underline;
+}
+
+.rating-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-secondary);
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.rating-badge i {
+    color: var(--warning);
+}
+
+.rating-badge strong {
+    color: var(--text-primary);
+}
+
+/* ========== TAGS & CATEGORIES ========== */
+.categories-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.category-tag {
+    background: var(--accent);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: filter 0.2s;
+}
+
+.category-tag:hover {
+    filter: brightness(1.15);
+}
+
+.tags-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tag-item {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+}
+
+.tag-item:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+/* ========== CONTENT BLOCKS ========== */
+.content-block {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+}
+
+.block-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+}
+
+.block-header i {
+    color: var(--accent);
+}
+
+.description-text {
+    color: var(--text-secondary);
+    line-height: 1.8;
+    font-size: 0.95rem;
+    white-space: pre-wrap;
+}
+
+.description-text.collapsed {
+    max-height: 150px;
+    overflow: hidden;
+    position: relative;
+}
+
+.description-text.collapsed::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: linear-gradient(transparent, var(--bg-secondary));
+}
+
+.expand-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 0 0;
+    font-weight: 500;
+}
+
+.expand-btn:hover {
+    text-decoration: underline;
+}
+
+/* ========== SIDEBAR CARDS ========== */
+.sidebar-card {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+}
+
+.sidebar-cover {
+    aspect-ratio: 1/1;
+    position: relative;
+    overflow: hidden;
+}
+
+.sidebar-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.promo-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: var(--success);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.owned-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: var(--accent);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.sidebar-body {
+    padding: 20px;
+}
+
+/* ========== PRICE ========== */
+.price-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.price-main {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.price-main.free {
+    color: var(--success);
+}
+
+.price-old {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    text-decoration: line-through;
+}
+
+.discount-badge {
+    background: var(--success);
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+/* ========== OWNED STATE ========== */
+.owned-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px;
+    background: rgba(40, 167, 69, 0.1);
+    border: 1px solid var(--success);
+    border-radius: 10px;
+    color: var(--success);
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 16px;
+}
+
+/* ========== UNAVAILABLE STATE ========== */
+.unavailable-state {
+    text-align: center;
+    padding: 24px;
+    background: rgba(255, 193, 7, 0.08);
+    border: 1px solid var(--warning);
+    border-radius: 10px;
+    margin-bottom: 16px;
+}
+
+.unavailable-state i {
+    font-size: 36px;
+    color: var(--warning);
+    margin-bottom: 12px;
+}
+
+.unavailable-state h4 {
+    color: var(--warning);
+    font-size: 1rem;
+    margin: 0 0 6px 0;
+}
+
+.unavailable-state p {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+/* ========== BUTTONS ========== */
+.btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px 20px;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: #fff;
+}
+
+.btn-primary:hover {
+    filter: brightness(1.1);
+}
+
+.btn-success {
+    background: var(--success);
+    color: #fff;
+}
+
+.btn-success:hover {
+    filter: brightness(1.1);
+}
+
+.btn-outline {
+    background: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.btn-outline:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.btn-outline.wishlist.active {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* ========== PLATFORMS ========== */
+.platforms-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-top: 16px;
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.platforms-icons {
+    display: flex;
+    gap: 12px;
+    font-size: 1.2rem;
+}
+
+/* ========== INFO CARD ========== */
+.info-card {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+}
+
+.info-card h4 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    margin: 0 0 16px 0;
+}
+
+.info-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+}
+
+.info-row .label {
+    color: var(--text-secondary);
+}
+
+.info-row .value {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+/* ========== DEVELOPER LINK ========== */
+.dev-link {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    background: var(--bg-tertiary);
+    border-radius: 10px;
+    text-decoration: none;
+    transition: background 0.2s;
+}
+
+.dev-link:hover {
+    background: #353637;
+}
+
+.dev-link img {
+    width: 50px;
+    height: 50px;
+    border-radius: 10px;
+    object-fit: cover;
+}
+
+.dev-link .name {
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.dev-link .name i {
+    color: var(--accent);
+    font-size: 0.75rem;
+}
+
+.dev-link .sub {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+/* ========== REQUIREMENTS TABS ========== */
+.req-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.req-tab {
+    flex: 1;
+    padding: 10px;
+    background: var(--bg-tertiary);
+    border: none;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.req-tab.active {
+    background: var(--accent);
+    color: #fff;
+}
+
+.req-text {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    white-space: pre-wrap;
+}
+
+/* ========== REVIEWS ========== */
+.reviews-summary {
+    display: flex;
+    gap: 24px;
+    padding: 20px;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    margin-bottom: 20px;
+}
+
+.reviews-score {
+    text-align: center;
+    min-width: 100px;
+}
+
+.reviews-score .number {
+    font-size: 3rem;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+}
+
+.reviews-score .stars {
+    display: flex;
+    justify-content: center;
+    gap: 2px;
+    margin: 8px 0;
+    color: var(--warning);
+    font-size: 0.9rem;
+}
+
+.reviews-score .count {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.reviews-bars {
+    flex: 1;
+}
+
+.bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.bar-track {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-primary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 4px;
+    transition: width 0.3s;
+}
+
+.review-card {
+    padding: 20px;
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    margin-bottom: 12px;
+}
+
+.review-card.mine {
+    border: 1px solid var(--accent);
+    position: relative;
+}
+
+.review-card.mine::before {
+    content: 'Sua Avaliação';
+    position: absolute;
+    top: -10px;
+    left: 16px;
+    background: var(--accent);
+    color: #fff;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.review-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.review-author {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.review-author img {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.review-author .name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.review-author .meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+}
+
+.review-author .meta .stars {
+    color: var(--warning);
+}
+
+.review-author .meta .date {
+    color: var(--text-secondary);
+}
+
+.review-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.review-actions button {
+    padding: 6px 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.review-actions button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.review-actions button.delete:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+.review-text {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.7;
+}
+
+.write-review-btn {
+    width: 100%;
+    padding: 16px;
+    background: var(--bg-tertiary);
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.2s;
+    margin-bottom: 16px;
+}
+
+.write-review-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.no-reviews {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-secondary);
+}
+
+.no-reviews i {
+    font-size: 48px;
+    opacity: 0.3;
+    margin-bottom: 12px;
+}
+
+/* ========== RELATED GAMES ========== */
+.related-section {
+    padding: 48px 0;
+}
+
+.related-section h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 24px 0;
+}
+
+.related-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+}
+
+.related-card {
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    overflow: hidden;
+    text-decoration: none;
+    transition: all 0.3s;
+    border: 1px solid transparent;
+}
+
+.related-card:hover {
+    transform: translateY(-6px);
+    border-color: var(--accent);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.related-cover {
+    aspect-ratio: 1/1;
+    overflow: hidden;
+}
+
+.related-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s;
+}
+
+.related-card:hover .related-cover img {
+    transform: scale(1.05);
+}
+
+.related-info {
+    padding: 16px;
+}
+
+.related-info h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 6px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.related-info .dev {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+}
+
+.related-price {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+
+.related-price .discount {
+    background: var(--success);
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.related-price .old {
+    color: var(--text-secondary);
+    text-decoration: line-through;
+    font-size: 0.8rem;
+}
+
+.related-price .current {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.related-price .free {
+    color: var(--success);
+    font-weight: 600;
+}
+
+/* ========== MODAL ========== */
+.modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.9);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 20px;
+}
+
+.modal.show {
+    display: flex;
+}
+
+.modal-content {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 480px;
+    animation: modalIn 0.25s ease;
+}
+
+@keyframes modalIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+    font-size: 1.1rem;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.modal-close {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: none;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.modal-close:hover {
+    background: var(--border);
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 24px;
+}
+
+.star-selector {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 24px;
+}
+
+.star-selector i {
+    font-size: 2.5rem;
+    color: var(--border);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.star-selector i:hover,
+.star-selector i.active {
+    color: var(--warning);
+    transform: scale(1.15);
+}
+
+.review-textarea {
+    width: 100%;
+    min-height: 120px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-family: inherit;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.review-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.modal-footer {
+    display: flex;
+    gap: 12px;
+    padding: 20px 24px;
+    border-top: 1px solid var(--border);
+}
+
+.modal-footer .btn {
+    flex: 1;
+}
+
+/* ========== TOAST ========== */
+.toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    padding: 14px 24px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem;
+    z-index: 10000;
+    opacity: 0;
+    transition: all 0.3s;
+}
+
+.toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+}
+
+.toast.success {
+    border-color: var(--success);
+}
+
+.toast.success i {
+    color: var(--success);
+}
+
+.toast.error {
+    border-color: var(--danger);
+}
+
+.toast.error i {
+    color: var(--danger);
+}
 
 /* ========== RESPONSIVE ========== */
-@media(max-width:1024px){
-    .layout{grid-template-columns:1fr 320px;gap:24px}
-    .rel-grid{grid-template-columns:repeat(3,1fr)}
+@media (max-width: 1024px) {
+    .main-layout {
+        grid-template-columns: 1fr 340px;
+        gap: 24px;
+    }
+    
+    .related-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
 }
-@media(max-width:768px){
-    .hero{height:260px}
-    .layout{display:block;margin-top:-80px}
-    .side{position:relative;top:0;margin-bottom:24px}
-    .cover{aspect-ratio:16/9}
-    .title{font-size:1.8rem}
-    .rel-grid{grid-template-columns:repeat(2,1fr);gap:12px}
-    .rev-sum{flex-direction:column;text-align:center}
-    .rel-info{padding:12px}
-    .rel-info h4{font-size:.85rem}
+
+@media (max-width: 768px) {
+    /* Esconder elementos desktop */
+    .desktop-hero,
+    .media-gallery,
+    .game-title {
+        display: none;
+    }
+    
+    /* Mostrar elementos mobile */
+    .mobile-header,
+    .mobile-action-bar,
+    .mobile-carousel {
+        display: block;
+    }
+    
+    .main-layout {
+        display: block;
+        margin-top: 0;
+    }
+    
+    .sidebar {
+        display: none;
+    }
+    
+    .game-info {
+        padding: 20px 16px;
+    }
+    
+    .container {
+        padding: 0;
+    }
+    
+    .main-content .container,
+    .related-section {
+        padding: 0 16px;
+    }
+    
+    .content-block {
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        margin-bottom: 0;
+        margin-top: -1px;
+    }
+    
+    .related-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+    
+    .reviews-summary {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .related-info {
+        padding: 12px;
+    }
+    
+    .related-info h4 {
+        font-size: 0.85rem;
+    }
+    
+    .toast {
+        bottom: 80px;
+        left: 16px;
+        right: 16px;
+        transform: translateX(0) translateY(100px);
+    }
+    
+    .toast.show {
+        transform: translateX(0) translateY(0);
+    }
 }
-@media(max-width:480px){
-    .gc{padding:0 16px}
-    .block{padding:20px}
-    .buy-body{padding:20px}
-    .rel-grid{gap:10px}
-    .thumb{flex:0 0 120px;height:68px}
+
+@media (max-width: 480px) {
+    .mobile-cover {
+        width: 85px;
+        height: 85px;
+    }
+    
+    .mobile-details .title {
+        font-size: 1.1rem;
+    }
+    
+    .mobile-btn-main {
+        padding: 12px 16px;
+        font-size: 0.9rem;
+    }
+    
+    .mobile-btn-circle {
+        width: 48px;
+        height: 48px;
+        font-size: 1.1rem;
+    }
+    
+    .reviews-summary {
+        padding: 16px;
+    }
+    
+    .reviews-score .number {
+        font-size: 2.5rem;
+    }
+    
+    .related-grid {
+        gap: 10px;
+    }
 }
 </style>
 
-<div class="gp">
-    <!-- Hero Banner -->
-    <div class="hero"><div class="hero-bg"></div></div>
+<div class="game-page">
+    <!-- Preview Banner -->
+    <?php if ($is_preview): ?>
+    <div class="preview-banner">
+        <i class="fas fa-eye"></i>
+        <span>Modo de Visualização - Este jogo ainda não está publicado</span>
+        <span style="background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 4px; margin-left: 10px;">
+            Status: <?= ucfirst(str_replace('_', ' ', $jogo['status'])) ?>
+        </span>
+    </div>
+    <?php endif; ?>
+
+    <!-- ==================== MOBILE SECTION ==================== -->
     
-    <div class="gc">
-        <div class="layout">
+    <!-- Mobile Header (PS App Style) -->
+    <div class="mobile-header">
+        <div class="mobile-header-bg"></div>
+        <div class="mobile-game-info">
+            <div class="mobile-cover">
+                <img src="<?= SITE_URL . ($jogo['imagem_capa'] ?: '/assets/images/no-image.png') ?>" alt="">
+            </div>
+            <div class="mobile-details">
+                <h1 class="title"><?= sanitize($jogo['titulo']) ?></h1>
+                <div class="dev"><?= sanitize($jogo['nome_estudio']) ?></div>
+                <div class="rating">
+                    <i class="fas fa-star"></i>
+                    <strong><?= number_format($jogo['nota_media'], 1) ?></strong>
+                    <span>(<?= $total_reviews ?>)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <br><br><br>
+
+    
+
+    <!-- Mobile Action Bar (PS App Style) -->
+    <div class="mobile-action-bar">
+        <?php if (!$tem_arquivo): ?>
+            <!-- Jogo não disponível -->
+            <div class="mobile-unavailable">
+                <i class="fas fa-clock"></i>
+                <span>Em Breve - Ainda não disponível para download</span>
+            </div>
+            <div class="mobile-buttons">
+                <?php if ($user_id): ?>
+                    <button class="mobile-btn-main outline" disabled style="flex:1;">
+                        <i class="fas fa-clock"></i> Indisponível
+                    </button>
+                    <button class="mobile-btn-circle wishlist <?= $in_wishlist ? 'active' : '' ?>" 
+                            data-action="wishlist" data-id="<?= $jogo['id'] ?>" title="Lista de Desejos">
+                        <i class="fas fa-heart"></i>
+                    </button>
+                <?php else: ?>
+                    <a href="<?= SITE_URL ?>/auth/login.php" class="mobile-btn-main primary" style="flex:1;">
+                        <i class="fas fa-sign-in-alt"></i> Entrar
+                    </a>
+                <?php endif; ?>
+            </div>
+
+        <?php elseif ($in_library): ?>
+            <!-- Usuário já possui o jogo -->
+            <div class="mobile-owned-badge">
+                <i class="fas fa-check-circle"></i> Você possui este jogo
+            </div>
+            <div class="mobile-buttons">
+                <a href="<?= SITE_URL ?>/user/biblioteca.php" class="mobile-btn-main outline" style="flex:1;">
+                    <i class="fas fa-gamepad"></i> Biblioteca
+                </a>
+                <a href="<?= SITE_URL ?>/user/download-jogo.php?jogo_id=<?= $jogo['id'] ?>" 
+                   class="mobile-btn-circle download" title="Baixar">
+                    <i class="fas fa-download"></i>
+                </a>
+            </div>
+
+        <?php else: ?>
+            <!-- Jogo disponível para compra -->
+            <div class="mobile-price-row">
+                <?php if ($desconto > 0): ?>
+                    <span class="discount">-<?= $desconto ?>%</span>
+                    <span class="old-price"><?= formatPrice($jogo['preco_centavos']) ?></span>
+                <?php endif; ?>
+                <span class="price <?= $is_free ? 'free' : '' ?>">
+                    <?= $is_free ? 'Gratuito' : formatPrice($preco_final) ?>
+                </span>
+            </div>
+            <div class="mobile-buttons">
+                <?php if ($user_id): ?>
+                    <button class="mobile-btn-main <?= $in_cart ? 'success' : 'primary' ?>" 
+                            data-action="cart" data-id="<?= $jogo['id'] ?>" style="flex:1;">
+                        <i class="fas <?= $in_cart ? 'fa-check' : 'fa-cart-plus' ?>"></i>
+                        <span><?= $in_cart ? 'No Carrinho' : 'Adicionar ao Carrinho' ?></span>
+                    </button>
+                    <button class="mobile-btn-circle wishlist <?= $in_wishlist ? 'active' : '' ?>" 
+                            data-action="wishlist" data-id="<?= $jogo['id'] ?>" title="Lista de Desejos">
+                        <i class="fas fa-heart"></i>
+                    </button>
+                <?php else: ?>
+                    <a href="<?= SITE_URL ?>/auth/login.php" class="mobile-btn-main primary" style="flex:1;">
+                        <i class="fas fa-sign-in-alt"></i> Entrar para Comprar
+                    </a>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- Mobile Carousel -->
+    <?php if (count($media_items) > 0): ?>
+    <div class="mobile-carousel">
+        <div class="carousel-container">
+            <div class="carousel-track" id="carouselTrack">
+                <?php foreach ($media_items as $index => $media): ?>
+                <div class="carousel-slide" data-index="<?= $index ?>">
+                    <?php if ($media['type'] === 'video'): ?>
+                        <iframe src="<?= $media['url'] ?>" allowfullscreen loading="lazy"></iframe>
+                    <?php else: ?>
+                        <img src="<?= $media['url'] ?>" alt="" loading="lazy">
+                    <?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php if (count($media_items) > 1): ?>
+        <div class="carousel-dots" id="carouselDots">
+            <?php foreach ($media_items as $index => $media): ?>
+            <div class="carousel-dot <?= $index === 0 ? 'active' : '' ?>" data-index="<?= $index ?>"></div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <!-- ==================== DESKTOP SECTION ==================== -->
+    
+    <!-- Desktop Hero -->
+    <div class="desktop-hero">
+        <div class="hero-bg"></div>
+    </div>
+
+    <div class="container">
+        <div class="main-layout">
             <!-- Main Content -->
-            <div class="main">
-                <!-- Media Gallery -->
-                <?php if ($jogo['video_trailer'] || count($imagens) > 0): ?>
-                <div class="media">
-                    <div class="media-view" id="mediaView">
-                        <?php if ($jogo['video_trailer']): ?>
-                            <iframe src="<?= $jogo['video_trailer'] ?>" allowfullscreen></iframe>
-                        <?php elseif (count($imagens) > 0): ?>
-                            <img src="<?= SITE_URL . $imagens[0]['imagem'] ?>" alt="">
+            <div class="main-content">
+                <!-- Desktop Media Gallery with Navigation Buttons -->
+                <?php if (count($media_items) > 0): ?>
+                <div class="media-gallery">
+                    <div class="media-main" id="mediaMain">
+                        <?php if ($media_items[0]['type'] === 'video'): ?>
+                            <iframe src="<?= $media_items[0]['url'] ?>" allowfullscreen></iframe>
+                        <?php else: ?>
+                            <img src="<?= $media_items[0]['url'] ?>" alt="">
                         <?php endif; ?>
                     </div>
-                    <?php if (($jogo['video_trailer'] ? 1 : 0) + count($imagens) > 1): ?>
-                    <div class="thumbs">
-                        <?php if ($jogo['video_trailer']): ?>
-                        <div class="thumb vid active" data-type="video" data-src="<?= $jogo['video_trailer'] ?>">
-                            <img src="https://img.youtube.com/vi/<?= getYoutubeId($jogo['video_trailer']) ?>/mqdefault.jpg" alt="">
+                    <?php if (count($media_items) > 1): ?>
+                    <div class="media-nav">
+                        <button class="nav-btn" id="navPrev" disabled>
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <div class="media-thumbs-wrapper">
+                            <div class="media-thumbs" id="mediaThumbs">
+                                <?php foreach ($media_items as $index => $media): ?>
+                                <div class="media-thumb <?= $media['type'] === 'video' ? 'video' : '' ?> <?= $index === 0 ? 'active' : '' ?>" 
+                                     data-index="<?= $index ?>"
+                                     data-type="<?= $media['type'] ?>" 
+                                     data-url="<?= $media['url'] ?>">
+                                    <img src="<?= $media['thumb'] ?>" alt="">
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
                         </div>
-                        <?php endif; ?>
-                        <?php foreach ($imagens as $i => $img): ?>
-                        <div class="thumb <?= (!$jogo['video_trailer'] && $i === 0) ? 'active' : '' ?>" data-type="image" data-src="<?= SITE_URL . $img['imagem'] ?>">
-                            <img src="<?= SITE_URL . $img['imagem'] ?>" alt="">
-                        </div>
-                        <?php endforeach; ?>
+                        <button class="nav-btn" id="navNext">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
                     </div>
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
 
                 <!-- Game Info -->
-                <div class="info">
-                    <h1 class="title"><?= sanitize($jogo['titulo']) ?></h1>
-                    <div class="meta">
-                        <span class="rating"><i class="fas fa-star"></i> <strong><?= number_format($jogo['nota_media'], 1) ?></strong> <span style="color:var(--text-secondary)">(<?= $total_reviews ?>)</span></span>
-                        <span><i class="fas fa-building"></i> <a href="<?= SITE_URL ?>/pages/desenvolvedor.php?slug=<?= $jogo['dev_slug'] ?>"><?= sanitize($jogo['nome_estudio']) ?></a></span>
-                        <span><i class="fas fa-calendar"></i> <?= date('d/m/Y', strtotime($jogo['data_lancamento'] ?? $jogo['criado_em'])) ?></span>
-                        <span><i class="fas fa-download"></i> <?= number_format($jogo['total_vendas'], 0, ',', '.') ?></span>
-                        <?php if ($jogo['classificacao_etaria'] > 0): ?>
-                        <span><i class="fas fa-shield-alt"></i> <?= $jogo['classificacao_etaria'] ?>+</span>
+                <div class="game-info">
+                    <h1 class="game-title"><?= sanitize($jogo['titulo']) ?></h1>
+                    
+                    <div class="game-meta">
+                        <div class="rating-badge">
+                            <i class="fas fa-star"></i>
+                            <strong><?= number_format($jogo['nota_media'], 1) ?></strong>
+                            <span style="color: var(--text-secondary);">(<?= $total_reviews ?>)</span>
+                        </div>
+                        <div class="meta-item">
+                            <i class="fas fa-building"></i>
+                            <a href="<?= SITE_URL ?>/pages/desenvolvedor.php?slug=<?= $jogo['dev_slug'] ?>"><?= sanitize($jogo['nome_estudio']) ?></a>
+                        </div>
+                        <div class="meta-item">
+                            <i class="fas fa-calendar"></i>
+                            <?= date('d/m/Y', strtotime($jogo['data_lancamento'] ?? $jogo['criado_em'])) ?>
+                        </div>
+                        <div class="meta-item">
+                            <i class="fas fa-download"></i>
+                            <?= number_format($jogo['total_vendas'], 0, ',', '.') ?>
+                        </div>
+                        <?php if ($jogo['classificacao_etaria'] !== 'L'): ?>
+                        <div class="meta-item">
+                            <i class="fas fa-shield-alt"></i>
+                            <?= $jogo['classificacao_etaria'] ?>+
+                        </div>
                         <?php endif; ?>
                     </div>
+
                     <?php if (!empty($categorias)): ?>
-                    <div class="cats">
+                    <div class="categories-list">
                         <?php foreach ($categorias as $c): ?>
-                        <a href="<?= SITE_URL ?>/pages/categoria.php?slug=<?= $c['slug'] ?>" class="cat"><?= sanitize($c['nome']) ?></a>
+                        <a href="<?= SITE_URL ?>/pages/categoria.php?slug=<?= $c['slug'] ?>" class="category-tag"><?= sanitize($c['nome']) ?></a>
                         <?php endforeach; ?>
                     </div>
                     <?php endif; ?>
+
                     <?php if (!empty($tags)): ?>
-                    <div class="tags">
+                    <div class="tags-list">
                         <?php foreach ($tags as $t): ?>
-                        <span class="tag"><?= sanitize($t['nome']) ?></span>
+                        <span class="tag-item"><?= sanitize($t['nome']) ?></span>
                         <?php endforeach; ?>
                     </div>
                     <?php endif; ?>
                 </div>
 
                 <!-- Description -->
-                <div class="block">
-                    <div class="block-head"><i class="fas fa-info-circle"></i> Sobre o Jogo</div>
-                    <div class="desc"><?= nl2br(sanitize($jogo['descricao_completa'] ?: $jogo['descricao_curta'])) ?></div>
+                <div class="content-block">
+                    <div class="block-header">
+                        <i class="fas fa-info-circle"></i>
+                        Sobre o Jogo
+                    </div>
+                    <div class="description-text <?= strlen($jogo['descricao_completa'] ?? '') > 400 ? 'collapsed' : '' ?>" id="descriptionText">
+                        <?= nl2br(sanitize($jogo['descricao_completa'] ?: $jogo['descricao_curta'])) ?>
+                    </div>
+                    <?php if (strlen($jogo['descricao_completa'] ?? '') > 400): ?>
+                    <button class="expand-btn" onclick="toggleDescription()">
+                        <i class="fas fa-chevron-down" id="expandIcon"></i>
+                        <span id="expandText">Ler mais</span>
+                    </button>
+                    <?php endif; ?>
                 </div>
 
                 <!-- Reviews -->
-                <div class="block" id="reviews">
-                    <div class="block-head"><i class="fas fa-star"></i> Avaliações</div>
-                    
-                    <div class="rev-sum">
-                        <div class="rev-score">
-                            <div class="num"><?= number_format($jogo['nota_media'], 1) ?></div>
-                            <div class="stars"><?php for ($i = 1; $i <= 5; $i++): ?><i class="<?= $i <= round($jogo['nota_media']) ? 'fas' : 'far' ?> fa-star"></i><?php endfor; ?></div>
-                            <div class="cnt"><?= $total_reviews ?> avaliações</div>
+                <div class="content-block" id="reviews">
+                    <div class="block-header">
+                        <i class="fas fa-star"></i>
+                        Avaliações
+                    </div>
+
+                    <div class="reviews-summary">
+                        <div class="reviews-score">
+                            <div class="number"><?= number_format($jogo['nota_media'], 1) ?></div>
+                            <div class="stars">
+                                <?php for ($i = 1; $i <= 5; $i++): ?>
+                                <i class="<?= $i <= round($jogo['nota_media']) ? 'fas' : 'far' ?> fa-star"></i>
+                                <?php endfor; ?>
+                            </div>
+                            <div class="count"><?= $total_reviews ?> avaliações</div>
                         </div>
-                        <div class="rev-bars">
-                            <?php for ($r = 5; $r >= 1; $r--): $pct = $total_reviews > 0 ? ($rating_dist[$r] / $total_reviews) * 100 : 0; ?>
+                        <div class="reviews-bars">
+                            <?php for ($r = 5; $r >= 1; $r--): 
+                                $pct = $total_reviews > 0 ? ($rating_dist[$r] / $total_reviews) * 100 : 0; 
+                            ?>
                             <div class="bar-row">
                                 <span><?= $r ?></span>
-                                <div class="bar-track"><div class="bar-fill" style="width:<?= $pct ?>%"></div></div>
+                                <div class="bar-track">
+                                    <div class="bar-fill" style="width: <?= $pct ?>%"></div>
+                                </div>
                                 <span><?= $rating_dist[$r] ?></span>
                             </div>
                             <?php endfor; ?>
@@ -552,128 +2126,166 @@ require_once '../includes/header.php';
 
                     <?php if ($in_library): ?>
                         <?php if ($my_review): ?>
-                        <div class="rev-card mine">
-                            <div class="rev-top">
-                                <div class="rev-author">
-                                    <img src="<?= getAvatar($usuario['avatar_url'] ?? null) ?>" alt="">
+                        <div class="review-card mine">
+                            <div class="review-header">
+                                <div class="review-author">
+                                    <img src="<?= getAvatar($usuario_data['avatar_url'] ?? null) ?>" alt="">
                                     <div>
                                         <div class="name">Você</div>
                                         <div class="meta">
-                                            <span class="stars"><?php for ($i = 1; $i <= 5; $i++): ?><i class="<?= $i <= $my_review['nota'] ? 'fas' : 'far' ?> fa-star"></i><?php endfor; ?></span>
+                                            <span class="stars">
+                                                <?php for ($i = 1; $i <= 5; $i++): ?>
+                                                <i class="<?= $i <= $my_review['nota'] ? 'fas' : 'far' ?> fa-star"></i>
+                                                <?php endfor; ?>
+                                            </span>
                                             <span class="date"><?= date('d/m/Y', strtotime($my_review['criado_em'])) ?></span>
                                         </div>
                                     </div>
                                 </div>
-                                <div class="rev-acts">
-                                    <button onclick="openReview(<?= $my_review['nota'] ?>,'<?= addslashes(htmlspecialchars($my_review['comentario'])) ?>')"><i class="fas fa-edit"></i></button>
-                                    <form action="<?= SITE_URL ?>/api/avaliar.php" method="POST" style="display:inline" onsubmit="return confirm('Remover avaliação?')">
+                                <div class="review-actions">
+                                    <button onclick="openReviewModal(<?= $my_review['nota'] ?>, '<?= addslashes(htmlspecialchars($my_review['comentario'])) ?>')">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <form action="<?= SITE_URL ?>/api/avaliar.php" method="POST" style="display: inline;" onsubmit="return confirm('Remover avaliação?')">
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="jogo_id" value="<?= $jogo['id'] ?>">
-                                        <button type="submit" class="del"><i class="fas fa-trash"></i></button>
+                                        <button type="submit" class="delete"><i class="fas fa-trash"></i></button>
                                     </form>
                                 </div>
                             </div>
-                            <div class="rev-txt"><?= nl2br(sanitize($my_review['comentario'])) ?></div>
+                            <div class="review-text"><?= nl2br(sanitize($my_review['comentario'])) ?></div>
                         </div>
                         <?php else: ?>
-                        <button class="write-rev" onclick="openReview()"><i class="fas fa-pen"></i> Escrever uma avaliação</button>
+                        <button class="write-review-btn" onclick="openReviewModal()">
+                            <i class="fas fa-pen"></i> Escrever uma avaliação
+                        </button>
                         <?php endif; ?>
                     <?php elseif ($user_id): ?>
-                    <div style="text-align:center;padding:16px;background:var(--bg-tertiary);border-radius:8px;color:var(--text-secondary);font-size:.9rem;margin-bottom:16px">
+                    <div style="text-align: center; padding: 16px; background: var(--bg-tertiary); border-radius: 10px; color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">
                         <i class="fas fa-info-circle"></i> Adquira o jogo para deixar sua avaliação
                     </div>
                     <?php endif; ?>
 
-                    <?php $has_other = false; foreach ($avaliacoes as $rev): if ($rev['usuario_id'] == $user_id) continue; $has_other = true; ?>
-                    <div class="rev-card">
-                        <div class="rev-top">
-                            <div class="rev-author">
+                    <?php 
+                    $has_other_reviews = false;
+                    foreach ($avaliacoes as $rev): 
+                        if ($rev['usuario_id'] == $user_id) continue;
+                        $has_other_reviews = true;
+                    ?>
+                    <div class="review-card">
+                        <div class="review-header">
+                            <div class="review-author">
                                 <img src="<?= getAvatar($rev['avatar_url']) ?>" alt="">
                                 <div>
                                     <div class="name"><?= sanitize($rev['nome_usuario']) ?></div>
                                     <div class="meta">
-                                        <span class="stars"><?php for ($i = 1; $i <= 5; $i++): ?><i class="<?= $i <= $rev['nota'] ? 'fas' : 'far' ?> fa-star"></i><?php endfor; ?></span>
+                                        <span class="stars">
+                                            <?php for ($i = 1; $i <= 5; $i++): ?>
+                                            <i class="<?= $i <= $rev['nota'] ? 'fas' : 'far' ?> fa-star"></i>
+                                            <?php endfor; ?>
+                                        </span>
                                         <span class="date"><?= date('d/m/Y', strtotime($rev['criado_em'])) ?></span>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="rev-txt"><?= nl2br(sanitize($rev['comentario'])) ?></div>
+                        <div class="review-text"><?= nl2br(sanitize($rev['comentario'])) ?></div>
                     </div>
                     <?php endforeach; ?>
-                    <?php if (!$has_other && !$my_review): ?>
-                    <div class="no-rev"><i class="fas fa-comment-slash"></i><p>Nenhuma avaliação ainda</p></div>
+
+                    <?php if (!$has_other_reviews && !$my_review): ?>
+                    <div class="no-reviews">
+                        <i class="fas fa-comment-slash"></i>
+                        <p>Nenhuma avaliação ainda</p>
+                    </div>
                     <?php endif; ?>
                 </div>
             </div>
 
-            <!-- Sidebar -->
-            <div class="side">
+            <!-- Sidebar (Desktop Only) -->
+            <div class="sidebar">
                 <!-- Purchase Card -->
-                <div class="buy-card">
-                    <div class="cover">
+                <div class="sidebar-card">
+                    <div class="sidebar-cover">
                         <img src="<?= SITE_URL . ($jogo['imagem_capa'] ?: '/assets/images/no-image.png') ?>" alt="">
                         <?php if ($in_library): ?>
+                            <span class="owned-badge"><i class="fas fa-check"></i> Na Biblioteca</span>
                         <?php elseif ($desconto > 0): ?>
-                        <span class="badge badge-off">-<?= $desconto ?>%</span>
+                            <span class="promo-badge">-<?= $desconto ?>%</span>
                         <?php endif; ?>
                     </div>
-                    <div class="buy-body">
+                    <div class="sidebar-body">
                         <?php if (!$tem_arquivo): ?>
-                        <div class="unavail">
-                            <i class="fas fa-clock"></i>
-                            <h4>Em Breve</h4>
-                            <p style="font-size:.8rem;color:var(--text-secondary)">Ainda não disponível</p>
-                        </div>
-                        <div class="btns">
-                            <?php if ($user_id): ?>
-                            <button class="btn btn-o wl <?= $in_wishlist ? 'active' : '' ?>" data-action="wishlist" data-id="<?= $jogo['id'] ?>">
-                                <i class="fas fa-heart"></i> <span><?= $in_wishlist ? 'Na Lista' : 'Lista de Desejos' ?></span>
-                            </button>
-                            <?php else: ?>
-                            <a href="<?= SITE_URL ?>/auth/login.php" class="btn btn-p"><i class="fas fa-sign-in-alt"></i> Entrar</a>
-                            <?php endif; ?>
-                        </div>
+                            <div class="unavailable-state">
+                                <i class="fas fa-clock"></i>
+                                <h4>Em Breve</h4>
+                                <p>Ainda não disponível para download</p>
+                            </div>
+                            <div class="btn-group">
+                                <?php if ($user_id): ?>
+                                <button class="btn btn-outline wishlist <?= $in_wishlist ? 'active' : '' ?>" data-action="wishlist" data-id="<?= $jogo['id'] ?>">
+                                    <i class="fas fa-heart"></i>
+                                    <span><?= $in_wishlist ? 'Na Lista de Desejos' : 'Adicionar à Lista' ?></span>
+                                </button>
+                                <?php else: ?>
+                                <a href="<?= SITE_URL ?>/auth/login.php" class="btn btn-primary">
+                                    <i class="fas fa-sign-in-alt"></i> Entrar
+                                </a>
+                                <?php endif; ?>
+                            </div>
 
                         <?php elseif ($in_library): ?>
-                        <div class="owned"><i class="fas fa-check-circle"></i> Você possui este jogo</div>
-                        <div class="btns">
-                            <a href="<?= SITE_URL ?>/user/download-jogo.php?jogo_id=<?= $jogo['id'] ?>" class="btn btn-s"><i class="fas fa-download"></i> Baixar</a>
-                            <a href="<?= SITE_URL ?>/user/biblioteca.php" class="btn btn-o"><i class="fas fa-gamepad"></i> Biblioteca</a>
-                        </div>
+                            <div class="owned-state">
+                                <i class="fas fa-check-circle"></i> Você possui este jogo
+                            </div>
+                            <div class="btn-group">
+                                <a href="<?= SITE_URL ?>/user/download-jogo.php?jogo_id=<?= $jogo['id'] ?>" class="btn btn-success">
+                                    <i class="fas fa-download"></i> Baixar
+                                </a>
+                                <a href="<?= SITE_URL ?>/user/biblioteca.php" class="btn btn-outline">
+                                    <i class="fas fa-gamepad"></i> Biblioteca
+                                </a>
+                            </div>
 
                         <?php else: ?>
-                        <div class="price-row">
-                            <?php if ($desconto > 0): ?>
-                            <span class="disc">-<?= $desconto ?>%</span>
-                            <span class="price-old"><?= formatPrice($jogo['preco_centavos']) ?></span>
-                            <?php endif; ?>
-                            <span class="price <?= $is_free ? 'free' : '' ?>"><?= $is_free ? 'Gratuito' : formatPrice($preco_final) ?></span>
-                        </div>
-                        <div class="btns">
-                            <?php if ($user_id): ?>
-                            <button class="btn <?= $in_cart ? 'btn-s' : 'btn-p' ?>" data-action="cart" data-id="<?= $jogo['id'] ?>">
-                                <i class="fas <?= $in_cart ? 'fa-check' : 'fa-cart-plus' ?>"></i>
-                                <span><?= $in_cart ? 'No Carrinho' : 'Adicionar ao Carrinho' ?></span>
-                            </button>
-                            <?php if ($in_cart): ?>
-                            <a href="<?= SITE_URL ?>/user/carrinho.php" class="btn btn-o"><i class="fas fa-shopping-bag"></i> Finalizar Compra</a>
-                            <?php endif; ?>
-                            <button class="btn btn-o wl <?= $in_wishlist ? 'active' : '' ?>" data-action="wishlist" data-id="<?= $jogo['id'] ?>">
-                                <i class="fas fa-heart"></i> <span><?= $in_wishlist ? 'Na Lista' : 'Lista de Desejos' ?></span>
-                            </button>
-                            <?php else: ?>
-                            <a href="<?= SITE_URL ?>/auth/login.php" class="btn btn-p"><i class="fas fa-sign-in-alt"></i> Entrar para Comprar</a>
-                            <?php endif; ?>
-                        </div>
+                            <div class="price-section">
+                                <?php if ($desconto > 0): ?>
+                                    <span class="discount-badge">-<?= $desconto ?>%</span>
+                                    <span class="price-old"><?= formatPrice($jogo['preco_centavos']) ?></span>
+                                <?php endif; ?>
+                                <span class="price-main <?= $is_free ? 'free' : '' ?>">
+                                    <?= $is_free ? 'Gratuito' : formatPrice($preco_final) ?>
+                                </span>
+                            </div>
+                            <div class="btn-group">
+                                <?php if ($user_id): ?>
+                                    <button class="btn <?= $in_cart ? 'btn-success' : 'btn-primary' ?>" data-action="cart" data-id="<?= $jogo['id'] ?>">
+                                        <i class="fas <?= $in_cart ? 'fa-check' : 'fa-cart-plus' ?>"></i>
+                                        <span><?= $in_cart ? 'No Carrinho' : 'Adicionar ao Carrinho' ?></span>
+                                    </button>
+                                    <?php if ($in_cart): ?>
+                                    <a href="<?= SITE_URL ?>/user/carrinho.php" class="btn btn-outline">
+                                        <i class="fas fa-shopping-bag"></i> Finalizar Compra
+                                    </a>
+                                    <?php endif; ?>
+                                    <button class="btn btn-outline wishlist <?= $in_wishlist ? 'active' : '' ?>" data-action="wishlist" data-id="<?= $jogo['id'] ?>">
+                                        <i class="fas fa-heart"></i>
+                                        <span><?= $in_wishlist ? 'Na Lista' : 'Lista de Desejos' ?></span>
+                                    </button>
+                                <?php else: ?>
+                                    <a href="<?= SITE_URL ?>/auth/login.php" class="btn btn-primary">
+                                        <i class="fas fa-sign-in-alt"></i> Entrar para Comprar
+                                    </a>
+                                <?php endif; ?>
+                            </div>
                         <?php endif; ?>
 
                         <?php if (!empty($plataformas)): ?>
-                        <div class="plats">
+                        <div class="platforms-row">
                             <span>Plataformas</span>
-                            <div class="plats-icons">
+                            <div class="platforms-icons">
                                 <?php foreach ($plataformas as $p): ?>
-                                <i class="<?= $p['icone'] ?>" title="<?= $p['nome'] ?>"></i>
+                                <i class="<?= $p['icone'] ?? 'fas fa-desktop' ?>" title="<?= $p['nome'] ?>"></i>
                                 <?php endforeach; ?>
                             </div>
                         </div>
@@ -687,8 +2299,13 @@ require_once '../includes/header.php';
                     <a href="<?= SITE_URL ?>/pages/desenvolvedor.php?slug=<?= $jogo['dev_slug'] ?>" class="dev-link">
                         <img src="<?= SITE_URL . ($jogo['logo_url'] ?: '/assets/images/default-dev.png') ?>" alt="">
                         <div>
-                            <div class="n"><?= sanitize($jogo['nome_estudio']) ?> <?php if ($jogo['dev_verificado']): ?><i class="fas fa-check-circle"></i><?php endif; ?></div>
-                            <div class="r">Ver perfil</div>
+                            <div class="name">
+                                <?= sanitize($jogo['nome_estudio']) ?>
+                                <?php if ($jogo['dev_verificado']): ?>
+                                <i class="fas fa-check-circle"></i>
+                                <?php endif; ?>
+                            </div>
+                            <div class="sub">Ver perfil</div>
                         </div>
                     </a>
                 </div>
@@ -698,9 +2315,18 @@ require_once '../includes/header.php';
                 <div class="info-card">
                     <h4>Informações</h4>
                     <div class="info-list">
-                        <div class="info-item"><span class="l">Versão</span><span class="v"><?= sanitize($arquivo_info['versao']) ?></span></div>
-                        <div class="info-item"><span class="l">Tamanho</span><span class="v"><?= formatFileSize($arquivo_info['tamanho_bytes']) ?></span></div>
-                        <div class="info-item"><span class="l">Downloads</span><span class="v"><?= number_format($arquivo_info['downloads'], 0, ',', '.') ?></span></div>
+                        <div class="info-row">
+                            <span class="label">Versão</span>
+                            <span class="value"><?= sanitize($arquivo_info['versao']) ?></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Tamanho</span>
+                            <span class="value"><?= formatFileSize($arquivo_info['tamanho_bytes']) ?></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Downloads</span>
+                            <span class="value"><?= number_format($arquivo_info['downloads'], 0, ',', '.') ?></span>
+                        </div>
                     </div>
                 </div>
                 <?php endif; ?>
@@ -708,7 +2334,7 @@ require_once '../includes/header.php';
                 <!-- Requirements -->
                 <?php if ($jogo['requisitos_minimos'] || $jogo['requisitos_recomendados']): ?>
                 <div class="info-card">
-                    <h4>Requisitos</h4>
+                    <h4>Requisitos do Sistema</h4>
                     <div class="req-tabs">
                         <?php if ($jogo['requisitos_minimos']): ?>
                         <button class="req-tab active" data-req="min">Mínimos</button>
@@ -717,7 +2343,7 @@ require_once '../includes/header.php';
                         <button class="req-tab <?= !$jogo['requisitos_minimos'] ? 'active' : '' ?>" data-req="rec">Recomendados</button>
                         <?php endif; ?>
                     </div>
-                    <div class="req-txt" id="reqTxt"><?= sanitize($jogo['requisitos_minimos'] ?: $jogo['requisitos_recomendados']) ?></div>
+                    <div class="req-text" id="reqText"><?= sanitize($jogo['requisitos_minimos'] ?: $jogo['requisitos_recomendados']) ?></div>
                 </div>
                 <?php endif; ?>
             </div>
@@ -726,30 +2352,30 @@ require_once '../includes/header.php';
 
     <!-- Related Games -->
     <?php if (!empty($jogos_relacionados)): ?>
-    <div class="gc">
-        <div class="related">
+    <div class="container">
+        <div class="related-section">
             <h2>Jogos Relacionados</h2>
-            <div class="rel-grid">
-                <?php foreach ($jogos_relacionados as $rel): 
+            <div class="related-grid">
+                <?php foreach ($jogos_relacionados as $rel):
                     $rel_preco = ($rel['em_promocao'] && $rel['preco_promocional_centavos']) ? $rel['preco_promocional_centavos'] : $rel['preco_centavos'];
                     $rel_desc = calculateDiscount($rel['preco_centavos'], $rel['preco_promocional_centavos'], $rel['em_promocao']);
                 ?>
-                <a href="<?= SITE_URL ?>/pages/jogo.php?slug=<?= $rel['slug'] ?>" class="rel-card">
-                    <div class="rel-cover">
-                        <img src="<?= SITE_URL . ($rel['imagem_capa'] ?: '/assets/images/no-image.png') ?>" alt="">
+                <a href="<?= SITE_URL ?>/pages/jogo.php?slug=<?= $rel['slug'] ?>" class="related-card">
+                    <div class="related-cover">
+                        <img src="<?= SITE_URL . ($rel['imagem_capa'] ?: '/assets/images/no-image.png') ?>" alt="" loading="lazy">
                     </div>
-                    <div class="rel-info">
+                    <div class="related-info">
                         <h4><?= sanitize($rel['titulo']) ?></h4>
                         <div class="dev"><?= sanitize($rel['nome_estudio']) ?></div>
-                        <div class="rel-price">
+                        <div class="related-price">
                             <?php if ($rel_desc > 0): ?>
-                            <span class="off">-<?= $rel_desc ?>%</span>
-                            <span class="old"><?= formatPrice($rel['preco_centavos']) ?></span>
+                                <span class="discount">-<?= $rel_desc ?>%</span>
+                                <span class="old"><?= formatPrice($rel['preco_centavos']) ?></span>
                             <?php endif; ?>
                             <?php if ($rel_preco == 0): ?>
-                            <span class="free">Gratuito</span>
+                                <span class="free">Gratuito</span>
                             <?php else: ?>
-                            <span class="cur"><?= formatPrice($rel_preco) ?></span>
+                                <span class="current"><?= formatPrice($rel_preco) ?></span>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -762,139 +2388,312 @@ require_once '../includes/header.php';
 </div>
 
 <!-- Review Modal -->
-<div class="modal" id="revModal">
-    <div class="modal-box">
-        <div class="modal-head">
-            <h3 id="revTitle">Escrever Avaliação</h3>
-            <button class="modal-close" onclick="closeReview()"><i class="fas fa-times"></i></button>
+<div class="modal" id="reviewModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="reviewModalTitle">Escrever Avaliação</h3>
+            <button class="modal-close" onclick="closeReviewModal()">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
         <form action="<?= SITE_URL ?>/api/avaliar.php" method="POST">
-            <input type="hidden" name="action" id="revAction" value="add">
+            <input type="hidden" name="action" id="reviewAction" value="add">
             <input type="hidden" name="jogo_id" value="<?= $jogo['id'] ?>">
-            <input type="hidden" name="nota" id="revNota" required>
+            <input type="hidden" name="nota" id="reviewRating" required>
             <div class="modal-body">
-                <div class="star-sel" id="starSel">
+                <div class="star-selector" id="starSelector">
                     <?php for ($i = 1; $i <= 5; $i++): ?>
-                    <i class="far fa-star" data-v="<?= $i ?>"></i>
+                    <i class="far fa-star" data-value="<?= $i ?>"></i>
                     <?php endfor; ?>
                 </div>
-                <textarea name="comentario" id="revText" class="rev-input" placeholder="O que você achou?" required></textarea>
+                <textarea name="comentario" id="reviewText" class="review-textarea" placeholder="Conte sua experiência com o jogo..." required></textarea>
             </div>
-            <div class="modal-foot">
-                <button type="button" class="btn btn-o" onclick="closeReview()">Cancelar</button>
-                <button type="submit" class="btn btn-p"><i class="fas fa-paper-plane"></i> Publicar</button>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" onclick="closeReviewModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-paper-plane"></i> Publicar
+                </button>
             </div>
         </form>
     </div>
 </div>
 
 <!-- Toast -->
-<div class="toast" id="toast"><i class="fas fa-check-circle"></i><span id="toastMsg"></span></div>
+<div class="toast" id="toast">
+    <i class="fas fa-check-circle"></i>
+    <span id="toastMessage"></span>
+</div>
 
 <script>
 const SITE_URL = '<?= SITE_URL ?>';
 const isLogged = <?= $user_id ? 'true' : 'false' ?>;
 const reqMin = <?= json_encode($jogo['requisitos_minimos'] ?? '') ?>;
 const reqRec = <?= json_encode($jogo['requisitos_recomendados'] ?? '') ?>;
+const totalMedia = <?= count($media_items) ?>;
 
-// Media Gallery
-document.querySelectorAll('.thumb').forEach(t => {
-    t.onclick = function() {
-        document.querySelectorAll('.thumb').forEach(x => x.classList.remove('active'));
-        this.classList.add('active');
-        const v = document.getElementById('mediaView');
-        const {type, src} = this.dataset;
-        v.innerHTML = type === 'video' ? `<iframe src="${src}" allowfullscreen></iframe>` : `<img src="${src}" alt="">`;
-    };
-});
+// ==================== MOBILE CAROUSEL ====================
+const carouselTrack = document.getElementById('carouselTrack');
+const carouselDots = document.querySelectorAll('.carousel-dot');
+let currentSlide = 0;
+let startX = 0;
+let isDragging = false;
 
-// Requirements Tabs
-document.querySelectorAll('.req-tab').forEach(t => {
-    t.onclick = function() {
-        document.querySelectorAll('.req-tab').forEach(x => x.classList.remove('active'));
-        this.classList.add('active');
-        document.getElementById('reqTxt').textContent = this.dataset.req === 'min' ? reqMin : reqRec;
-    };
-});
+if (carouselTrack && totalMedia > 0) {
+    const slides = carouselTrack.children;
+    const totalSlides = slides.length;
 
-// Review Modal
-function openReview(n = 0, t = '') {
-    if (!isLogged) { showToast('Faça login', 'error'); setTimeout(() => location.href = `${SITE_URL}/auth/login.php`, 1000); return; }
-    document.getElementById('revModal').classList.add('show');
-    document.getElementById('revAction').value = n ? 'update' : 'add';
-    document.getElementById('revTitle').textContent = n ? 'Editar Avaliação' : 'Escrever Avaliação';
-    document.getElementById('revNota').value = n;
-    document.getElementById('revText').value = t;
-    updateStars(n);
-    document.body.style.overflow = 'hidden';
-}
+    function goToSlide(index) {
+        if (index < 0) index = 0;
+        if (index >= totalSlides) index = totalSlides - 1;
+        currentSlide = index;
+        carouselTrack.style.transform = `translateX(-${currentSlide * 100}%)`;
+        updateDots();
+    }
 
-function closeReview() {
-    document.getElementById('revModal').classList.remove('show');
-    document.body.style.overflow = '';
-}
+    function updateDots() {
+        carouselDots.forEach((dot, i) => {
+            dot.classList.toggle('active', i === currentSlide);
+        });
+    }
 
-const stars = document.querySelectorAll('#starSel i');
-const notaInput = document.getElementById('revNota');
+    // Touch events
+    carouselTrack.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        isDragging = true;
+    }, { passive: true });
 
-stars.forEach(s => {
-    s.onclick = () => { notaInput.value = s.dataset.v; updateStars(s.dataset.v); };
-    s.onmouseenter = () => updateStars(s.dataset.v);
-});
+    carouselTrack.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        const diff = startX - e.touches[0].clientX;
+        if (Math.abs(diff) > 50) {
+            if (diff > 0) goToSlide(currentSlide + 1);
+            else goToSlide(currentSlide - 1);
+            isDragging = false;
+        }
+    }, { passive: true });
 
-document.getElementById('starSel').onmouseleave = () => updateStars(notaInput.value || 0);
+    carouselTrack.addEventListener('touchend', () => {
+        isDragging = false;
+    });
 
-function updateStars(v) {
-    stars.forEach(s => {
-        const val = +s.dataset.v;
-        s.className = (val <= v ? 'fas' : 'far') + ' fa-star' + (val <= v ? ' on' : '');
+    // Dot click
+    carouselDots.forEach(dot => {
+        dot.addEventListener('click', () => {
+            goToSlide(parseInt(dot.dataset.index));
+        });
     });
 }
 
-document.getElementById('revModal').onclick = e => { if (e.target.id === 'revModal') closeReview(); };
-document.onkeydown = e => { if (e.key === 'Escape') closeReview(); };
+// ==================== DESKTOP MEDIA GALLERY WITH NAV BUTTONS ====================
+const mediaThumbs = document.getElementById('mediaThumbs');
+const navPrev = document.getElementById('navPrev');
+const navNext = document.getElementById('navNext');
+const thumbs = document.querySelectorAll('.media-thumb');
+let thumbOffset = 0;
+const thumbWidth = 150; // thumb width + gap
+const visibleThumbs = 4;
 
-// Actions
+function updateNavButtons() {
+    if (!navPrev || !navNext) return;
+    navPrev.disabled = thumbOffset <= 0;
+    navNext.disabled = thumbOffset >= (thumbs.length - visibleThumbs) * thumbWidth;
+}
+
+function scrollThumbs(direction) {
+    const maxOffset = Math.max(0, (thumbs.length - visibleThumbs) * thumbWidth);
+    thumbOffset += direction * thumbWidth * 2;
+    thumbOffset = Math.max(0, Math.min(thumbOffset, maxOffset));
+    mediaThumbs.style.transform = `translateX(-${thumbOffset}px)`;
+    updateNavButtons();
+}
+
+if (navPrev && navNext) {
+    navPrev.addEventListener('click', () => scrollThumbs(-1));
+    navNext.addEventListener('click', () => scrollThumbs(1));
+    updateNavButtons();
+}
+
+// Thumb clicks
+thumbs.forEach(thumb => {
+    thumb.addEventListener('click', function() {
+        thumbs.forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+        
+        const mediaMain = document.getElementById('mediaMain');
+        const { type, url } = this.dataset;
+        
+        if (type === 'video') {
+            mediaMain.innerHTML = `<iframe src="${url}" allowfullscreen></iframe>`;
+        } else {
+            mediaMain.innerHTML = `<img src="${url}" alt="">`;
+        }
+    });
+});
+
+// ==================== DESCRIPTION EXPAND ====================
+function toggleDescription() {
+    const text = document.getElementById('descriptionText');
+    const icon = document.getElementById('expandIcon');
+    const label = document.getElementById('expandText');
+    
+    if (!text) return;
+    
+    text.classList.toggle('collapsed');
+    
+    if (text.classList.contains('collapsed')) {
+        icon.className = 'fas fa-chevron-down';
+        label.textContent = 'Ler mais';
+    } else {
+        icon.className = 'fas fa-chevron-up';
+        label.textContent = 'Ler menos';
+    }
+}
+
+// ==================== REQUIREMENTS TABS ====================
+document.querySelectorAll('.req-tab').forEach(tab => {
+    tab.addEventListener('click', function() {
+        document.querySelectorAll('.req-tab').forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+        const reqText = document.getElementById('reqText');
+        if (reqText) {
+            reqText.textContent = this.dataset.req === 'min' ? reqMin : reqRec;
+        }
+    });
+});
+
+// ==================== REVIEW MODAL ====================
+const reviewModal = document.getElementById('reviewModal');
+const starSelector = document.getElementById('starSelector');
+const stars = starSelector?.querySelectorAll('i') || [];
+const ratingInput = document.getElementById('reviewRating');
+
+function openReviewModal(rating = 0, text = '') {
+    if (!isLogged) {
+        showToast('Faça login para avaliar', 'error');
+        setTimeout(() => window.location.href = `${SITE_URL}/auth/login.php`, 1500);
+        return;
+    }
+    
+    reviewModal.classList.add('show');
+    document.getElementById('reviewAction').value = rating ? 'update' : 'add';
+    document.getElementById('reviewModalTitle').textContent = rating ? 'Editar Avaliação' : 'Escrever Avaliação';
+    document.getElementById('reviewText').value = text;
+    ratingInput.value = rating;
+    updateStars(rating);
+    document.body.style.overflow = 'hidden';
+}
+
+function closeReviewModal() {
+    reviewModal.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+function updateStars(value) {
+    stars.forEach(star => {
+        const v = parseInt(star.dataset.value);
+        star.className = (v <= value ? 'fas' : 'far') + ' fa-star' + (v <= value ? ' active' : '');
+    });
+}
+
+stars.forEach(star => {
+    star.addEventListener('click', () => {
+        const value = parseInt(star.dataset.value);
+        ratingInput.value = value;
+        updateStars(value);
+    });
+    star.addEventListener('mouseenter', () => {
+        updateStars(parseInt(star.dataset.value));
+    });
+});
+
+starSelector?.addEventListener('mouseleave', () => {
+    updateStars(parseInt(ratingInput.value) || 0);
+});
+
+reviewModal?.addEventListener('click', (e) => {
+    if (e.target === reviewModal) closeReviewModal();
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeReviewModal();
+});
+
+// ==================== CART/WISHLIST ACTIONS ====================
 document.querySelectorAll('[data-action]').forEach(btn => {
-    btn.onclick = async function() {
-        if (!isLogged) { showToast('Faça login', 'error'); setTimeout(() => location.href = `${SITE_URL}/auth/login.php`, 1000); return; }
+    btn.addEventListener('click', async function() {
+        if (!isLogged) {
+            showToast('Faça login primeiro', 'error');
+            setTimeout(() => window.location.href = `${SITE_URL}/auth/login.php`, 1500);
+            return;
+        }
+
         this.disabled = true;
         const action = this.dataset.action;
         const id = this.dataset.id;
         const url = `${SITE_URL}/api/toggle-${action === 'cart' ? 'cart' : 'wishlist'}.php`;
-        
+
         try {
-            const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jogo_id: id }) });
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jogo_id: id })
+            });
             const data = await res.json();
+
             if (data.success) {
                 const added = data.action === 'added';
+                
+                // Update all buttons with same action and id
                 document.querySelectorAll(`[data-action="${action}"][data-id="${id}"]`).forEach(b => {
                     const icon = b.querySelector('i');
                     const span = b.querySelector('span');
+                    
                     if (action === 'cart') {
-                        b.className = b.className.replace(/btn-(p|s)/g, '') + (added ? ' btn-s' : ' btn-p');
+                        // Handle both desktop and mobile cart buttons
+                        if (b.classList.contains('mobile-btn-main')) {
+                            b.classList.remove('primary', 'success');
+                            b.classList.add(added ? 'success' : 'primary');
+                        } else {
+                            b.classList.remove('btn-primary', 'btn-success');
+                            b.classList.add(added ? 'btn-success' : 'btn-primary');
+                        }
                         if (icon) icon.className = `fas ${added ? 'fa-check' : 'fa-cart-plus'}`;
                         if (span) span.textContent = added ? 'No Carrinho' : 'Adicionar ao Carrinho';
                     } else {
+                        // Wishlist buttons
                         b.classList.toggle('active', added);
                         if (span) span.textContent = added ? 'Na Lista' : 'Lista de Desejos';
                     }
                 });
-                if (action === 'cart' && added) location.reload();
+
+                if (action === 'cart' && added) {
+                    setTimeout(() => location.reload(), 500);
+                }
+
                 showToast(data.message, 'success');
-            } else showToast(data.message, 'error');
-        } catch (e) { showToast('Erro', 'error'); }
+            } else {
+                showToast(data.message, 'error');
+            }
+        } catch (e) {
+            showToast('Erro ao processar', 'error');
+        }
+
         this.disabled = false;
-    };
+    });
 });
 
-function showToast(msg, type = 'success') {
-    const t = document.getElementById('toast');
-    t.className = 'toast ' + type;
-    t.querySelector('i').className = 'fas ' + (type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle');
-    document.getElementById('toastMsg').textContent = msg;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 3000);
+// ==================== TOAST ====================
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    const icon = toast.querySelector('i');
+    const msg = document.getElementById('toastMessage');
+
+    toast.className = `toast ${type}`;
+    icon.className = `fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}`;
+    msg.textContent = message;
+
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 3500);
 }
 </script>
 

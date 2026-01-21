@@ -1,297 +1,772 @@
 <?php
-// pages/home.php - Otimizada e Integrada
+// pages/home.php - Estilo Minimalista PlayStation
 require_once '../config/config.php';
 require_once '../config/database.php';
+require_once '../components/game-card.php'; // Seu componente global
 
 $database = new Database();
 $pdo = $database->getConnection();
 $user_id = isLoggedIn() ? $_SESSION['user_id'] : null;
 
-// --- 1. PRE-LOAD USER DATA (PERFORMANCE) ---
-// Carrega quais jogos o usuário tem e quais estão na wishlist/carrinho de uma vez
+// --- FUNÇÕES AUXILIARES ---
+if (!function_exists('formatPrice')) {
+    function formatPrice($centavos) {
+        return 'R$ ' . number_format($centavos / 100, 2, ',', '.');
+    }
+}
+
+// --- PRE-LOAD USER DATA (Performance) ---
 $meus_jogos = [];
 $minha_wishlist = [];
 $meu_carrinho = [];
 
 if ($user_id) {
-    // Jogos na Biblioteca
-    $stmt = $pdo->prepare("SELECT jogo_id FROM biblioteca WHERE usuario_id = ?");
-    $stmt->execute([$user_id]);
-    $meus_jogos = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    try {
+        $stmt = $pdo->prepare("SELECT jogo_id FROM biblioteca WHERE usuario_id = ?");
+        $stmt->execute([$user_id]);
+        $meus_jogos = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
 
-    // Jogos na Wishlist
-    $stmt = $pdo->prepare("SELECT jogo_id FROM lista_desejos WHERE usuario_id = ?");
-    $stmt->execute([$user_id]);
-    $minha_wishlist = $stmt->fetchAll(PDO::FETCH_COLUMN);
-    
-    // Jogos no Carrinho
-    $stmt = $pdo->prepare("SELECT jogo_id FROM carrinho WHERE usuario_id = ?");
-    $stmt->execute([$user_id]);
-    $meu_carrinho = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $stmt = $pdo->prepare("SELECT jogo_id FROM lista_desejos WHERE usuario_id = ?");
+        $stmt->execute([$user_id]);
+        $minha_wishlist = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+        
+        $stmt = $pdo->prepare("SELECT jogo_id FROM carrinho WHERE usuario_id = ?");
+        $stmt->execute([$user_id]);
+        $meu_carrinho = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    } catch (Exception $e) {}
 }
 
-// --- 2. DADOS DO HERO ---
-$stmt = $pdo->query("SELECT * FROM banner WHERE ativo = 1 ORDER BY ordem LIMIT 3");
-$banners = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// --- HERO BANNERS ---
+try {
+    $stmt = $pdo->query("SELECT * FROM banner WHERE ativo = 1 ORDER BY ordem LIMIT 5");
+    $banners = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) { $banners = []; }
 
-$stmt = $pdo->prepare("SELECT j.*, 'jogo' as tipo_origem FROM jogo j WHERE j.status = 'publicado' AND j.destaque = 1 ORDER BY j.criado_em DESC LIMIT 3");
-$stmt->execute();
-$jogos_carousel = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Jogos em destaque para hero
+try {
+    $stmt = $pdo->query("
+        SELECT j.*, d.nome_estudio 
+        FROM jogo j 
+        LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id 
+        WHERE j.status = 'publicado' AND j.destaque = 1 
+        ORDER BY j.criado_em DESC LIMIT 5
+    ");
+    $jogos_destaque = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) { $jogos_destaque = []; }
 
+// Combina para hero
 $hero_items = [];
 foreach ($banners as $b) {
     $hero_items[] = [
-        'titulo' => $b['titulo'], 
-        'subtitulo' => $b['subtitulo'], 
-        'imagem' => $b['imagem_desktop'], 
-        'url' => $b['url_destino'], 
-        'tipo' => 'banner', 
+        'tipo' => 'banner',
+        'titulo' => $b['titulo'] ?? 'Banner',
+        'subtitulo' => $b['subtitulo'] ?? '',
+        'imagem' => $b['imagem_desktop'] ?? '',
+        'url' => $b['url_destino'] ?? '#',
         'badge' => 'Novidade'
     ];
 }
-foreach ($jogos_carousel as $j) {
-    $img = strpos($j['imagem_banner'], 'http') === 0 ? $j['imagem_banner'] : SITE_URL . $j['imagem_banner'];
+foreach ($jogos_destaque as $j) {
+    $img = $j['imagem_banner'] ?: $j['imagem_capa'];
     $hero_items[] = [
-        'titulo' => $j['titulo'], 
-        'subtitulo' => $j['descricao_curta'], 
-        'imagem' => $img, 
-        'url' => SITE_URL . '/pages/jogo.php?slug=' . $j['slug'], 
-        'tipo' => 'jogo', 
-        'badge' => 'Destaque'
+        'tipo' => 'jogo',
+        'titulo' => $j['titulo'],
+        'subtitulo' => $j['descricao_curta'],
+        'imagem' => SITE_URL . $img,
+        'url' => SITE_URL . '/pages/jogo.php?slug=' . $j['slug'],
+        'badge' => $j['em_promocao'] ? 'Promoção' : 'Destaque',
+        'preco' => $j['preco_centavos'],
+        'preco_promo' => $j['preco_promocional_centavos'],
+        'em_promocao' => $j['em_promocao']
     ];
 }
+
 if (empty($hero_items)) {
-    $hero_items[] = ['titulo' => 'Bem-vindo', 'subtitulo' => 'Explore', 'imagem' => 'https://via.placeholder.com/1200x600', 'url' => '#', 'tipo' => 'banner', 'badge' => 'Info'];
+    $hero_items[] = [
+        'tipo' => 'banner',
+        'titulo' => 'Bem-vindo à ' . SITE_NAME,
+        'subtitulo' => 'Descubra jogos incríveis',
+        'imagem' => SITE_URL . '/assets/images/default-banner.jpg',
+        'url' => SITE_URL . '/pages/busca.php',
+        'badge' => 'Explore'
+    ];
 }
 
-// --- 3. LISTAS DE JOGOS ---
-function getGames($pdo, $type) {
-    $sql = "SELECT j.*, d.nome_estudio FROM jogo j LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id WHERE j.status = 'publicado' ";
-    if ($type == 'promocao') $sql .= "AND j.em_promocao = 1 ";
-    if ($type == 'lancamento') $sql .= "ORDER BY j.publicado_em DESC ";
-    else $sql .= "ORDER BY j.criado_em DESC ";
-    $sql .= "LIMIT 10";
-    return $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
-}
+// --- CATEGORIAS ---
+try {
+    $stmt = $pdo->query("
+        SELECT c.*, 
+            (SELECT COUNT(*) FROM jogo_categoria jc 
+             JOIN jogo j ON jc.jogo_id = j.id 
+             WHERE jc.categoria_id = c.id AND j.status = 'publicado') as total_jogos 
+        FROM categoria c WHERE c.ativa = 1 ORDER BY c.ordem, c.nome
+    ");
+    $categorias = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) { $categorias = []; }
 
-$destaques = getGames($pdo, 'padrao');
-$lancamentos = getGames($pdo, 'lancamento');
-$promocoes = getGames($pdo, 'promocao');
+// --- LANÇAMENTOS ---
+try {
+    $stmt = $pdo->query("
+        SELECT j.*, d.nome_estudio 
+        FROM jogo j 
+        LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id 
+        WHERE j.status = 'publicado' 
+        ORDER BY j.publicado_em DESC, j.criado_em DESC LIMIT 12
+    ");
+    $lancamentos = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) { $lancamentos = []; }
+
+// --- PROMOÇÕES ---
+try {
+    $stmt = $pdo->query("
+        SELECT j.*, d.nome_estudio 
+        FROM jogo j 
+        LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id 
+        WHERE j.status = 'publicado' AND j.em_promocao = 1 AND j.preco_promocional_centavos IS NOT NULL
+        ORDER BY (j.preco_centavos - j.preco_promocional_centavos) DESC LIMIT 12
+    ");
+    $promocoes = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) { $promocoes = []; }
+
+// --- MAIS POPULARES ---
+try {
+    $stmt = $pdo->query("
+        SELECT j.*, d.nome_estudio 
+        FROM jogo j 
+        LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id 
+        WHERE j.status = 'publicado' 
+        ORDER BY j.total_vendas DESC, j.nota_media DESC LIMIT 12
+    ");
+    $populares = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) { $populares = []; }
+
+// --- MELHORES AVALIADOS ---
+try {
+    $stmt = $pdo->query("
+        SELECT j.*, d.nome_estudio 
+        FROM jogo j 
+        LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id 
+        WHERE j.status = 'publicado' AND j.nota_media >= 4
+        ORDER BY j.nota_media DESC, j.total_avaliacoes DESC LIMIT 12
+    ");
+    $melhores = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) { $melhores = []; }
+
+// --- DESENVOLVEDORES ---
+try {
+    $stmt = $pdo->query("
+        SELECT d.*, COUNT(j.id) as total_jogos
+        FROM desenvolvedor d 
+        JOIN jogo j ON d.id = j.desenvolvedor_id AND j.status = 'publicado'
+        WHERE d.verificado = 1 AND d.status = 'ativo'
+        GROUP BY d.id ORDER BY total_jogos DESC LIMIT 6
+    ");
+    $desenvolvedores = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Exception $e) { $desenvolvedores = []; }
 
 $page_title = 'Home - ' . SITE_NAME;
 require_once '../includes/header.php';
-require_once '../components/game-card.php'; 
 ?>
 
-<!-- CSS HOME (Compacto) -->
 <style>
-    .home-container { max-width: 1400px; margin: 0 auto; padding: 20px; padding-bottom: 80px; }
-    
-    /* Hero */
-    .epic-wrapper { display: flex; gap: 20px; height: 520px; margin-bottom: 60px; }
-    .epic-main { flex: 1; position: relative; border-radius: 16px; overflow: hidden; background: #000; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
-    .epic-slide { position: absolute; inset: 0; opacity: 0; transition: opacity 0.5s; z-index: 1; }
-    .epic-slide.active { opacity: 1; z-index: 2; }
-    .epic-slide img { width: 100%; height: 100%; object-fit: cover; }
-    .epic-content { position: absolute; bottom: 0; left: 0; width: 100%; padding: 60px 40px; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); z-index: 3; }
-    .epic-badge { background: var(--accent); color: #fff; padding: 4px 10px; border-radius: 4px; font-weight: 700; font-size: 0.8rem; text-transform: uppercase; margin-bottom: 10px; display: inline-block; }
-    .epic-title { font-size: 3rem; font-weight: 800; color: #fff; line-height: 1.1; margin-bottom: 10px; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-    .epic-subtitle { color: rgba(255,255,255,0.8); font-size: 1.1rem; margin-bottom: 25px; max-width: 600px; }
-    .epic-btn { display: inline-flex; align-items: center; gap: 10px; background: #fff; color: #000; padding: 14px 30px; border-radius: 8px; font-weight: 700; text-decoration: none; transition: transform 0.2s; }
-    .epic-btn:hover { transform: translateY(-2px); }
-    
-    /* Nav Lateral */
-    .epic-nav { width: 300px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
-    .nav-item { display: flex; align-items: center; gap: 15px; padding: 15px; border-radius: 12px; cursor: pointer; background: rgba(255,255,255,0.05); transition: all 0.2s; border: 1px solid transparent; }
-    .nav-item:hover { background: rgba(255,255,255,0.1); }
-    .nav-item.active { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
-    .nav-item.active .nav-text { color: #fff; }
-    .nav-thumb { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; }
-    .nav-text { font-size: 1rem; color: rgba(255,255,255,0.7); font-weight: 600; line-height: 1.3; }
-    
-    /* Seções */
-    .section-header { display: flex; justify-content: space-between; align-items: center; margin-top: 60px; margin-bottom: 25px; }
-    .section-title { font-size: 1.8rem; color: #fff; font-weight: 700; display: flex; align-items: center; gap: 10px; }
-    .see-all { color: rgba(255,255,255,0.6); text-decoration: none; font-size: 0.95rem; display: flex; align-items: center; gap: 5px; transition: color 0.2s; padding: 8px 16px; border-radius: 20px; background: rgba(255,255,255,0.05); }
-    .see-all:hover { color: #fff; background: rgba(255,255,255,0.1); }
+:root {
+    --bg-primary: #0d0d0d;
+    --bg-secondary: #161616;
+    --bg-card: #1a1a1a;
+    --accent: #0070d1;
+    --accent-hover: #0058a3;
+    --success: #00d26a;
+    --text-primary: #fff;
+    --text-secondary: #888;
+    --border: #2a2a2a;
+    --radius: 8px;
+}
 
-    /* Categorias */
-    .genre-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 15px; margin-bottom: 40px; }
-    .genre-card { background: rgba(255,255,255,0.05); padding: 25px; border-radius: 16px; text-align: center; color: rgba(255,255,255,0.8); text-decoration: none; font-weight: 600; transition: 0.3s; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; align-items: center; gap: 10px; }
-    .genre-card i { font-size: 24px; color: var(--accent); margin-bottom: 5px; }
-    .genre-card:hover { background: rgba(255,255,255,0.1); transform: translateY(-5px); color: #fff; border-color: var(--accent); }
+.home-page {
+    background: var(--bg-primary);
+    min-height: 100vh;
+}
 
-    /* Promo Banner */
-    .promo-banner { background: linear-gradient(135deg, #FF416C 0%, #FF4B2B 100%); border-radius: 20px; padding: 50px; margin: 80px 0; color: #fff; text-align: center; position: relative; overflow: hidden; box-shadow: 0 20px 50px rgba(255, 75, 43, 0.3); }
-    .promo-banner::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"); }
-    .promo-content { position: relative; z-index: 2; }
-    .promo-banner h3 { font-size: 2.5rem; font-weight: 800; margin-bottom: 15px; }
-    .promo-banner p { margin-bottom: 30px; opacity: 0.9; font-size: 1.2rem; max-width: 600px; margin-left: auto; margin-right: auto; }
-    .promo-btn { background: #fff; color: #FF4B2B; padding: 15px 35px; border-radius: 30px; text-decoration: none; font-weight: 800; display: inline-block; transition: transform 0.2s; box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
-    .promo-btn:hover { transform: scale(1.05); }
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+}
 
-    /* Responsivo */
-    @media (max-width: 1024px) {
-        .epic-wrapper { flex-direction: column; height: auto; }
-        .epic-main { height: 450px; }
-        .epic-nav { width: 100%; flex-direction: row; overflow-x: auto; padding-bottom: 10px; }
-        .nav-item { min-width: 220px; }
-    }
-    @media (max-width: 768px) {
-        .epic-main { height: 400px; }
-        .epic-title { font-size: 2rem; }
-        .genre-grid { grid-template-columns: repeat(2, 1fr); }
-    }
+/* ===== HERO ===== */
+.hero {
+    position: relative;
+    height: 500px;
+    margin-bottom: 48px;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.hero-slide {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+}
+
+.hero-slide.active {
+    opacity: 1;
+}
+
+.hero-bg {
+    position: absolute;
+    inset: 0;
+}
+
+.hero-bg img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.hero-bg::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to right, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 60%, transparent 100%);
+}
+
+.hero-content {
+    position: absolute;
+    bottom: 60px;
+    left: 48px;
+    max-width: 500px;
+    z-index: 2;
+}
+
+.hero-badge {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+}
+
+.hero-badge.promo {
+    background: var(--success);
+}
+
+.hero-title {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 12px;
+    line-height: 1.2;
+}
+
+.hero-subtitle {
+    color: rgba(255,255,255,0.7);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+.hero-price {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.hero-price .discount {
+    background: var(--success);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.hero-price .old {
+    color: rgba(255,255,255,0.5);
+    text-decoration: line-through;
+    font-size: 14px;
+}
+
+.hero-price .current {
+    font-size: 24px;
+    font-weight: 700;
+    color: #fff;
+}
+
+.hero-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #fff;
+    color: #000;
+    padding: 14px 28px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.hero-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+
+/* Hero Nav */
+.hero-nav {
+    position: absolute;
+    bottom: 24px;
+    right: 24px;
+    display: flex;
+    gap: 8px;
+    z-index: 3;
+}
+
+.hero-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.3);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.hero-dot.active {
+    background: #fff;
+    transform: scale(1.2);
+}
+
+/* ===== SECTIONS ===== */
+.section {
+    margin-bottom: 48px;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.section-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.section-link {
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: color 0.2s;
+}
+
+.section-link:hover {
+    color: var(--accent);
+}
+
+/* ===== CATEGORIAS ===== */
+.categories-row {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scrollbar-width: none;
+}
+
+.categories-row::-webkit-scrollbar {
+    display: none;
+}
+
+.cat-chip {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    padding: 10px 18px;
+    border-radius: 20px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.cat-chip:hover {
+    background: var(--bg-card);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.cat-chip i {
+    font-size: 14px;
+    opacity: 0.7;
+}
+
+/* ===== GAMES GRID/CAROUSEL ===== */
+.games-row {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scrollbar-width: none;
+}
+
+.games-row::-webkit-scrollbar {
+    display: none;
+}
+
+/* Card PS - Customização mínima */
+.games-row .ps-card {
+    flex: 0 0 200px;
+}
+
+/* ===== PROMO BANNER ===== */
+.promo-section {
+    background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1a 100%);
+    border-radius: 12px;
+    padding: 40px;
+    margin: 48px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.promo-text h3 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 8px;
+}
+
+.promo-text p {
+    color: rgba(255,255,255,0.6);
+    margin: 0;
+    font-size: 14px;
+}
+
+.promo-btn {
+    background: var(--accent);
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.promo-btn:hover {
+    background: var(--accent-hover);
+}
+
+/* ===== DEVS ===== */
+.devs-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 16px;
+}
+
+.dev-card {
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    padding: 20px;
+    text-align: center;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+}
+
+.dev-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-4px);
+}
+
+.dev-logo {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    object-fit: cover;
+    margin: 0 auto 12px;
+    background: var(--bg-card);
+}
+
+.dev-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.dev-name i {
+    color: var(--accent);
+    font-size: 10px;
+    margin-left: 4px;
+}
+
+.dev-count {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 1024px) {
+    .hero { height: 400px; }
+    .hero-content { left: 32px; bottom: 40px; }
+    .hero-title { font-size: 1.8rem; }
+    .devs-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 768px) {
+    .container { padding: 0 16px 60px; }
+    .hero { height: 350px; border-radius: 8px; }
+    .hero-content { left: 20px; bottom: 24px; max-width: 280px; }
+    .hero-title { font-size: 1.4rem; }
+    .hero-subtitle { display: none; }
+    .hero-btn { padding: 12px 20px; font-size: 13px; }
+    .section-title { font-size: 16px; }
+    .games-row .ps-card { flex: 0 0 150px; }
+    .promo-section { flex-direction: column; text-align: center; gap: 20px; padding: 24px; }
+    .devs-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .dev-card { padding: 16px; }
+}
 </style>
 
-<div class="home-container">
-
-    <!-- HERO SECTION -->
-    <?php if (!empty($hero_items)): ?>
-    <div class="epic-wrapper">
-        <div class="epic-main">
-            <?php foreach ($hero_items as $i => $item): ?>
-                <div class="epic-slide <?= $i===0?'active':'' ?>" id="slide-<?= $i ?>">
-                    <img src="<?= $item['imagem'] ?>" alt="<?= sanitize($item['titulo']) ?>">
-                    <div class="epic-content">
-                        <span class="epic-badge"><?= $item['badge'] ?></span>
-                        <h2 class="epic-title"><?= sanitize($item['titulo']) ?></h2>
-                        <?php if ($item['subtitulo']): ?>
-                            <p class="epic-subtitle"><?= sanitize($item['subtitulo']) ?></p>
+<div class="home-page">
+    <div class="container">
+        
+        <!-- HERO -->
+        <section class="hero">
+            <?php foreach ($hero_items as $i => $item): 
+                $is_promo = ($item['badge'] ?? '') === 'Promoção';
+                $preco_final = isset($item['em_promocao']) && $item['em_promocao'] && isset($item['preco_promo']) 
+                    ? $item['preco_promo'] : ($item['preco'] ?? 0);
+                $desconto = 0;
+                if (isset($item['em_promocao']) && $item['em_promocao'] && isset($item['preco']) && $item['preco'] > 0 && isset($item['preco_promo'])) {
+                    $desconto = round((($item['preco'] - $item['preco_promo']) / $item['preco']) * 100);
+                }
+            ?>
+            <div class="hero-slide <?= $i === 0 ? 'active' : '' ?>" data-index="<?= $i ?>">
+                <div class="hero-bg">
+                    <img src="<?= htmlspecialchars($item['imagem']) ?>" alt="" onerror="this.src='<?= SITE_URL ?>/assets/images/default-banner.jpg'">
+                </div>
+                <div class="hero-content">
+                    <span class="hero-badge <?= $is_promo ? 'promo' : '' ?>"><?= htmlspecialchars($item['badge'] ?? 'Destaque') ?></span>
+                    <h2 class="hero-title"><?= htmlspecialchars($item['titulo']) ?></h2>
+                    <?php if (!empty($item['subtitulo'])): ?>
+                    <p class="hero-subtitle"><?= htmlspecialchars($item['subtitulo']) ?></p>
+                    <?php endif; ?>
+                    
+                    <?php if ($item['tipo'] === 'jogo' && isset($item['preco'])): ?>
+                    <div class="hero-price">
+                        <?php if ($preco_final == 0): ?>
+                            <span class="current" style="color: var(--success);">Gratuito</span>
+                        <?php else: ?>
+                            <?php if ($desconto > 0): ?>
+                                <span class="discount">-<?= $desconto ?>%</span>
+                                <span class="old"><?= formatPrice($item['preco']) ?></span>
+                            <?php endif; ?>
+                            <span class="current"><?= formatPrice($preco_final) ?></span>
                         <?php endif; ?>
-                        <a href="<?= $item['url'] ?>" class="epic-btn">
-                            CONFIRA AGORA <i class="fas fa-arrow-right"></i>
-                        </a>
                     </div>
+                    <?php endif; ?>
+                    
+                    <a href="<?= htmlspecialchars($item['url']) ?>" class="hero-btn">
+                        <?= $item['tipo'] === 'jogo' ? 'Ver Jogo' : 'Saiba Mais' ?>
+                        <i class="fas fa-arrow-right"></i>
+                    </a>
                 </div>
+            </div>
             <?php endforeach; ?>
-        </div>
-        <div class="epic-nav">
-            <?php foreach ($hero_items as $i => $item): ?>
-                <div class="nav-item <?= $i===0?'active':'' ?>" onclick="changeSlide(<?= $i ?>)">
-                    <img src="<?= $item['imagem'] ?>" class="nav-thumb" alt="Thumb">
-                    <span class="nav-text"><?= sanitize($item['titulo']) ?></span>
-                </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
-    <?php endif; ?>
+            
+            <?php if (count($hero_items) > 1): ?>
+            <div class="hero-nav">
+                <?php for ($i = 0; $i < count($hero_items); $i++): ?>
+                <div class="hero-dot <?= $i === 0 ? 'active' : '' ?>" data-index="<?= $i ?>"></div>
+                <?php endfor; ?>
+            </div>
+            <?php endif; ?>
+        </section>
 
-    <!-- CATEGORIAS -->
-    <div class="section-header">
-        <h2 class="section-title">Navegar por Gênero</h2>
-    </div>
-    <div class="genre-grid">
-        <a href="/pages/categoria.php?slug=acao" class="genre-card"><i class="fas fa-fist-raised"></i> Ação</a>
-        <a href="/pages/categoria.php?slug=rpg" class="genre-card"><i class="fas fa-dungeon"></i> RPG</a>
-        <a href="/pages/categoria.php?slug=aventura" class="genre-card"><i class="fas fa-compass"></i> Aventura</a>
-        <a href="/pages/categoria.php?slug=estrategia" class="genre-card"><i class="fas fa-chess"></i> Estratégia</a>
-        <a href="/pages/categoria.php?slug=indie" class="genre-card"><i class="fas fa-gamepad"></i> Indie</a>
-        <a href="/pages/categoria.php?slug=terror" class="genre-card"><i class="fas fa-ghost"></i> Terror</a>
-    </div>
+        <!-- CATEGORIAS -->
+        <?php if (!empty($categorias)): ?>
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">Explorar</h2>
+            </div>
+            <div class="categories-row">
+                <?php foreach ($categorias as $cat): ?>
+                <a href="<?= SITE_URL ?>/pages/categoria.php?slug=<?= $cat['slug'] ?>" class="cat-chip">
+                    <i class="fas fa-<?= htmlspecialchars($cat['icone'] ?: 'gamepad') ?>"></i>
+                    <?= htmlspecialchars($cat['nome']) ?>
+                </a>
+                <?php endforeach; ?>
+            </div>
+        </section>
+        <?php endif; ?>
 
-    <!-- DESTAQUES -->
-    <?php if (!empty($destaques)): ?>
-    <div class="section-header">
-        <h2 class="section-title"><i class="fas fa-star" style="color:#FFD700"></i> Em Destaque</h2>
-        <a href="busca.php?destaque=1" class="see-all">Ver todos <i class="fas fa-chevron-right"></i></a>
-    </div>
-    <div class="cards-grid">
-        <?php foreach ($destaques as $jogo): ?>
-            <?php 
-            // Passamos os estados pré-carregados
-            renderGameCard($jogo, $pdo, $user_id, 'store', [
-                'is_owned' => in_array($jogo['id'], $meus_jogos),
-                'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
-                'in_cart' => in_array($jogo['id'], $meu_carrinho)
-            ]); 
-            ?>
-        <?php endforeach; ?>
-    </div>
-    <?php endif; ?>
+        <!-- PROMOÇÕES -->
+        <?php if (!empty($promocoes)): ?>
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">🔥 Ofertas</h2>
+                <a href="<?= SITE_URL ?>/pages/busca.php?promocao=1" class="section-link">
+                    Ver todas <i class="fas fa-chevron-right"></i>
+                </a>
+            </div>
+            <div class="games-row">
+                <?php foreach ($promocoes as $jogo): 
+                    $extra = [
+                        'is_owned' => in_array($jogo['id'], $meus_jogos),
+                        'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
+                        'in_cart' => in_array($jogo['id'], $meu_carrinho)
+                    ];
+                    renderGameCard($jogo, $pdo, $user_id, 'store', $extra);
+                endforeach; ?>
+            </div>
+        </section>
+        <?php endif; ?>
 
-    <!-- BANNER PROMO -->
-    <div class="promo-banner">
-        <div class="promo-content">
-            <h3>Ofertas Imperdíveis</h3>
-            <p>Jogos incríveis com até 75% de desconto por tempo limitado.</p>
-            <a href="busca.php?promocao=1" class="promo-btn">Ver Ofertas</a>
-        </div>
-    </div>
+        <!-- LANÇAMENTOS -->
+        <?php if (!empty($lancamentos)): ?>
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">Novidades</h2>
+                <a href="<?= SITE_URL ?>/pages/busca.php?ordem=recente" class="section-link">
+                    Ver todos <i class="fas fa-chevron-right"></i>
+                </a>
+            </div>
+            <div class="games-row">
+                <?php foreach ($lancamentos as $jogo): 
+                    $extra = [
+                        'is_owned' => in_array($jogo['id'], $meus_jogos),
+                        'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
+                        'in_cart' => in_array($jogo['id'], $meu_carrinho)
+                    ];
+                    renderGameCard($jogo, $pdo, $user_id, 'store', $extra);
+                endforeach; ?>
+            </div>
+        </section>
+        <?php endif; ?>
 
-    <!-- LANÇAMENTOS -->
-    <?php if (!empty($lancamentos)): ?>
-    <div class="section-header">
-        <h2 class="section-title"><i class="fas fa-rocket" style="color:#ff4757"></i> Lançamentos</h2>
-        <a href="busca.php?ordem=recente" class="see-all">Ver todos <i class="fas fa-chevron-right"></i></a>
-    </div>
-    <div class="cards-grid">
-        <?php foreach ($lancamentos as $jogo): ?>
-            <?php 
-            renderGameCard($jogo, $pdo, $user_id, 'store', [
-                'is_owned' => in_array($jogo['id'], $meus_jogos),
-                'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
-                'in_cart' => in_array($jogo['id'], $meu_carrinho)
-            ]); 
-            ?>
-        <?php endforeach; ?>
-    </div>
-    <?php endif; ?>
+        <!-- PROMO BANNER -->
+        <section class="promo-section">
+            <div class="promo-text">
+                <h3>Descubra novos jogos</h3>
+                <p>Milhares de títulos esperando por você</p>
+            </div>
+            <a href="<?= SITE_URL ?>/pages/busca.php" class="promo-btn">
+                Explorar Catálogo <i class="fas fa-arrow-right"></i>
+            </a>
+        </section>
 
-    <!-- PROMOÇÕES -->
-    <?php if (!empty($promocoes)): ?>
-    <div class="section-header">
-        <h2 class="section-title"><i class="fas fa-percent" style="color:#2ed573"></i> Melhores Ofertas</h2>
-        <a href="busca.php?promocao=1" class="see-all">Ver todos <i class="fas fa-chevron-right"></i></a>
-    </div>
-    <div class="cards-grid">
-        <?php foreach ($promocoes as $jogo): ?>
-            <?php 
-            renderGameCard($jogo, $pdo, $user_id, 'store', [
-                'is_owned' => in_array($jogo['id'], $meus_jogos),
-                'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
-                'in_cart' => in_array($jogo['id'], $meu_carrinho)
-            ]); 
-            ?>
-        <?php endforeach; ?>
-    </div>
-    <?php endif; ?>
+        <!-- POPULARES -->
+        <?php if (!empty($populares)): ?>
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">Mais Populares</h2>
+                <a href="<?= SITE_URL ?>/pages/busca.php?ordem=popular" class="section-link">
+                    Ver todos <i class="fas fa-chevron-right"></i>
+                </a>
+            </div>
+            <div class="games-row">
+                <?php foreach ($populares as $jogo): 
+                    $extra = [
+                        'is_owned' => in_array($jogo['id'], $meus_jogos),
+                        'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
+                        'in_cart' => in_array($jogo['id'], $meu_carrinho)
+                    ];
+                    renderGameCard($jogo, $pdo, $user_id, 'store', $extra);
+                endforeach; ?>
+            </div>
+        </section>
+        <?php endif; ?>
 
+        <!-- MELHORES AVALIADOS -->
+        <?php if (!empty($melhores)): ?>
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">⭐ Melhor Avaliados</h2>
+            </div>
+            <div class="games-row">
+                <?php foreach ($melhores as $jogo): 
+                    $extra = [
+                        'is_owned' => in_array($jogo['id'], $meus_jogos),
+                        'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
+                        'in_cart' => in_array($jogo['id'], $meu_carrinho)
+                    ];
+                    renderGameCard($jogo, $pdo, $user_id, 'store', $extra);
+                endforeach; ?>
+            </div>
+        </section>
+        <?php endif; ?>
+
+        <!-- DESENVOLVEDORES -->
+        <?php if (!empty($desenvolvedores)): ?>
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">Desenvolvedores</h2>
+            </div>
+            <div class="devs-grid">
+                <?php foreach ($desenvolvedores as $dev): ?>
+                <a href="<?= SITE_URL ?>/pages/desenvolvedor.php?slug=<?= $dev['slug'] ?>" class="dev-card">
+                    <img src="<?= SITE_URL . ($dev['logo_url'] ?: '/assets/images/default-dev.png') ?>" alt="" class="dev-logo" onerror="this.src='<?= SITE_URL ?>/assets/images/default-dev.png'">
+                    <div class="dev-name">
+                        <?= htmlspecialchars($dev['nome_estudio']) ?>
+                        <?php if ($dev['verificado']): ?><i class="fas fa-check-circle"></i><?php endif; ?>
+                    </div>
+                    <div class="dev-count"><?= (int)$dev['total_jogos'] ?> jogos</div>
+                </a>
+                <?php endforeach; ?>
+            </div>
+        </section>
+        <?php endif; ?>
+
+    </div>
 </div>
 
 <script>
-    // Hero Slider
-    let current = 0;
-    const slides = document.querySelectorAll('.epic-slide');
-    const navs = document.querySelectorAll('.nav-item');
-    let interval;
+// Hero Slider Simples
+const slides = document.querySelectorAll('.hero-slide');
+const dots = document.querySelectorAll('.hero-dot');
+let current = 0;
+let interval;
+
+function goTo(index) {
+    if (index >= slides.length) index = 0;
+    if (index < 0) index = slides.length - 1;
     
-    function changeSlide(index) {
-        if(index >= slides.length) index = 0;
-        
-        slides.forEach(s => s.classList.remove('active'));
-        navs.forEach(n => n.classList.remove('active'));
-        
-        current = index;
-        
-        if(slides[current]) slides[current].classList.add('active');
-        if(navs[current]) navs[current].classList.add('active');
-        
-        // Reset timer
-        clearInterval(interval);
-        startTimer();
-    }
+    slides.forEach(s => s.classList.remove('active'));
+    dots.forEach(d => d.classList.remove('active'));
+    
+    current = index;
+    slides[current]?.classList.add('active');
+    dots[current]?.classList.add('active');
+    
+    clearInterval(interval);
+    startAuto();
+}
 
-    function startTimer() {
-        interval = setInterval(() => {
-            changeSlide(current + 1);
-        }, 6000);
-    }
+function startAuto() {
+    interval = setInterval(() => goTo(current + 1), 6000);
+}
 
-    // Iniciar apenas se houver slides
-    if (slides.length > 0) {
-        startTimer();
-    }
+dots.forEach((dot, i) => dot.addEventListener('click', () => goTo(i)));
+
+if (slides.length > 1) startAuto();
 </script>
 
 <?php require_once '../includes/footer.php'; ?>
