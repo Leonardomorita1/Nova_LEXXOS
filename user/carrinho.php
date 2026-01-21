@@ -339,7 +339,7 @@ require_once '../includes/header.php';
                     <i class="fas fa-lock"></i> Finalizar Compra
                 </a>
                 
-                <a href="<?= SITE_URL ?>/pages/loja.php" class="cart-continue-link">
+                <a href="<?= SITE_URL ?>/pages/home.php" class="cart-continue-link">
                     <i class="fas fa-arrow-left"></i> Continuar Comprando
                 </a>
             </aside>
@@ -353,7 +353,7 @@ require_once '../includes/header.php';
             </div>
             <h2>Seu carrinho está vazio</h2>
             <p>Explore nossa loja e encontre jogos incríveis para adicionar ao seu carrinho!</p>
-            <a href="<?= SITE_URL ?>/pages/loja.php" class="btn btn-primary btn-lg">
+            <a href="<?= SITE_URL ?>/pages/home.php" class="btn btn-primary btn-lg">
                 <i class="fas fa-gamepad"></i> Explorar Loja
             </a>
         </div>
