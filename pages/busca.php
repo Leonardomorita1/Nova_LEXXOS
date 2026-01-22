@@ -1,5 +1,5 @@
 <?php
-// pages/busca.php - Versão Profissional com Variáveis Globais
+// pages/busca.php - Versão Redesenhada
 require_once '../config/config.php';
 require_once '../config/database.php';
 
@@ -105,16 +105,19 @@ $where_clause = implode(' AND ', $where);
 $joins_clause = implode(' ', $joins);
 
 // ============================================
-// ORDENAÇÃO
+// ORDENAÇÃO - CORRIGIDA
 // ============================================
 $order_by = match($ordem) {
-    'preco_asc' => 'COALESCE(j.preco_promocional_centavos, j.preco_centavos) ASC',
-    'preco_desc' => 'COALESCE(j.preco_promocional_centavos, j.preco_centavos) DESC',
-    'nota' => 'j.nota_media DESC, j.total_avaliacoes DESC',
-    'vendas' => 'j.total_vendas DESC',
-    'recente' => 'j.publicado_em DESC',
+    'preco_asc' => 'COALESCE(j.preco_promocional_centavos, j.preco_centavos) ASC, j.titulo ASC',
+    'preco_desc' => 'COALESCE(j.preco_promocional_centavos, j.preco_centavos) DESC, j.titulo ASC',
+    'nota' => 'j.nota_media DESC, j.total_avaliacoes DESC, j.titulo ASC',
+    'vendas' => 'j.total_vendas DESC, j.nota_media DESC',
+    // CORREÇÃO: Usar COALESCE para garantir ordenação correta e adicionar fallback
+    'recente' => 'COALESCE(j.publicado_em, j.criado_em) DESC, j.id DESC',
+    'antigo' => 'COALESCE(j.publicado_em, j.criado_em) ASC, j.id ASC',
     'titulo' => 'j.titulo ASC',
-    'desconto' => 'j.porcentagem_desconto DESC',
+    'titulo_desc' => 'j.titulo DESC',
+    'desconto' => '(j.preco_centavos - COALESCE(j.preco_promocional_centavos, j.preco_centavos)) DESC, j.titulo ASC',
     default => !empty($q) 
         ? "CASE WHEN j.titulo LIKE '$q%' THEN 1 WHEN j.titulo LIKE '%$q%' THEN 2 ELSE 3 END, j.total_vendas DESC" 
         : 'j.total_vendas DESC, j.nota_media DESC'
@@ -208,10 +211,10 @@ if (!empty($plataforma)) {
     $plat_nome = reset($plat_nome);
     $filtros_ativos[] = ['tipo' => 'plataforma', 'valor' => $plataforma, 'label' => $plat_nome['nome'] ?? $plataforma, 'icon' => 'desktop'];
 }
-if ($promocao) $filtros_ativos[] = ['tipo' => 'promocao', 'valor' => 1, 'label' => 'Em Promoção', 'icon' => 'fire'];
+if ($promocao) $filtros_ativos[] = ['tipo' => 'promocao', 'valor' => 1, 'label' => 'Em Promoção', 'icon' => 'bolt'];
 if ($gratuito) $filtros_ativos[] = ['tipo' => 'gratuito', 'valor' => 1, 'label' => 'Gratuitos', 'icon' => 'gift'];
-if ($preco_min !== null) $filtros_ativos[] = ['tipo' => 'preco_min', 'valor' => $preco_min, 'label' => 'Min: R$ ' . number_format($preco_min, 2, ',', '.'), 'icon' => 'tag'];
-if ($preco_max !== null) $filtros_ativos[] = ['tipo' => 'preco_max', 'valor' => $preco_max, 'label' => 'Max: R$ ' . number_format($preco_max, 2, ',', '.'), 'icon' => 'tag'];
+if ($preco_min !== null) $filtros_ativos[] = ['tipo' => 'preco_min', 'valor' => $preco_min, 'label' => 'Min: R$ ' . number_format($preco_min, 2, ',', '.'), 'icon' => 'coins'];
+if ($preco_max !== null) $filtros_ativos[] = ['tipo' => 'preco_max', 'valor' => $preco_max, 'label' => 'Max: R$ ' . number_format($preco_max, 2, ',', '.'), 'icon' => 'coins'];
 if ($nota_min > 0) $filtros_ativos[] = ['tipo' => 'nota_min', 'valor' => $nota_min, 'label' => $nota_min . '+ estrelas', 'icon' => 'star'];
 
 $page_title = !empty($q) ? "Busca: $q - " . SITE_NAME : "Explorar Jogos - " . SITE_NAME;
@@ -223,9 +226,8 @@ require_once '../includes/header.php';
 
 <style>
 /* ============================================
-   BUSCA PAGE - USANDO VARIÁVEIS GLOBAIS
+   SEARCH PAGE - REDESIGNED
    ============================================ */
-
 .search-page {
     min-height: 100vh;
     background: var(--bg-primary);
@@ -233,46 +235,69 @@ require_once '../includes/header.php';
 }
 
 /* ============================================
-   SEARCH HERO
+   SEARCH HERO - MODERN DESIGN
    ============================================ */
 .search-hero {
-    background: linear-gradient(180deg, rgba(0, 174, 255, 0.08) 0%, transparent 100%);
-    padding: 40px 20px 30px;
+    position: relative;
+    background: var(--bg-secondary);
+    padding: 48px 24px 40px;
     border-bottom: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.search-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: 
+        radial-gradient(ellipse at 20% 0%, rgba(0, 174, 255, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 100%, rgba(145, 71, 255, 0.06) 0%, transparent 50%);
+    pointer-events: none;
 }
 
 .search-hero .container {
+    position: relative;
     max-width: 1400px;
     margin: 0 auto;
+    z-index: 1;
 }
 
 .search-hero-content {
-    max-width: 700px;
+    max-width: 720px;
     margin: 0 auto;
     text-align: center;
 }
 
 .search-title {
-    font-size: 2rem;
+    font-size: 2.2rem;
     font-weight: 700;
     color: var(--text-primary);
-    margin-bottom: 25px;
+    margin-bottom: 28px;
     line-height: 1.2;
 }
 
-.search-title .search-label {
+.search-title .highlight {
+    background: linear-gradient(135deg, var(--accent), #9147ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.search-label {
     display: block;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 500;
     color: var(--text-secondary);
     margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
-/* Search Form */
+/* Search Form - Glass Effect */
 .search-main-form {
     display: flex;
     gap: 12px;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 }
 
 .search-input-wrapper {
@@ -280,28 +305,34 @@ require_once '../includes/header.php';
     position: relative;
     display: flex;
     align-items: center;
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
     border: 2px solid var(--border);
-    border-radius: 14px;
+    border-radius: 16px;
     padding: 0 20px;
-    transition: all 0.3s;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
 }
 
 .search-input-wrapper:focus-within {
     border-color: var(--accent);
-    box-shadow: 0 0 0 4px rgba(0, 174, 255, 0.15);
+    box-shadow: 0 4px 20px rgba(0, 174, 255, 0.15), 0 0 0 4px rgba(0, 174, 255, 0.1);
 }
 
 .search-input-wrapper > i {
     color: var(--text-secondary);
     font-size: 18px;
+    transition: color 0.3s;
+}
+
+.search-input-wrapper:focus-within > i {
+    color: var(--accent);
 }
 
 .search-input-wrapper input {
     flex: 1;
     background: none;
     border: none;
-    padding: 16px 15px;
+    padding: 18px 15px;
     font-size: 1rem;
     color: var(--text-primary);
     outline: none;
@@ -312,39 +343,91 @@ require_once '../includes/header.php';
 }
 
 .search-clear {
-    background: none;
+    background: var(--bg-secondary);
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
     padding: 8px;
-    border-radius: 50%;
+    border-radius: 8px;
     transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .search-clear:hover {
     color: var(--text-primary);
-    background: rgba(255,255,255,0.1);
+    background: var(--border);
 }
 
 .search-submit-btn {
     display: flex;
     align-items: center;
     gap: 10px;
-    background: var(--accent);
-    color: var(--bg-primary);
+    background: linear-gradient(135deg, var(--accent), #0095d9);
+    color: #fff;
     border: none;
-    padding: 16px 28px;
-    border-radius: 14px;
+    padding: 18px 32px;
+    border-radius: 16px;
     font-weight: 600;
     font-size: 1rem;
     cursor: pointer;
     transition: all 0.3s;
+    box-shadow: 0 4px 15px rgba(0, 174, 255, 0.3);
 }
 
 .search-submit-btn:hover {
-    opacity: 0.85;
     transform: translateY(-2px);
+    box-shadow: 0 6px 25px rgba(0, 174, 255, 0.4);
 }
+
+/* Quick Filters */
+.quick-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.quick-filter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    padding: 10px 18px;
+    border-radius: 25px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+}
+
+.quick-filter-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0, 174, 255, 0.05);
+}
+
+.quick-filter-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.quick-filter-btn i {
+    font-size: 14px;
+}
+
+.quick-filter-btn.sale { color: var(--success); border-color: rgba(40, 167, 69, 0.3); }
+.quick-filter-btn.sale:hover { background: rgba(40, 167, 69, 0.1); border-color: var(--success); }
+.quick-filter-btn.sale.active { background: var(--success); color: #fff; }
+
+.quick-filter-btn.free { color: #f9ca24; border-color: rgba(249, 202, 36, 0.3); }
+.quick-filter-btn.free:hover { background: rgba(249, 202, 36, 0.1); border-color: #f9ca24; }
+.quick-filter-btn.free.active { background: #f9ca24; color: #000; }
 
 /* Search Suggestions */
 .search-suggestions {
@@ -352,7 +435,10 @@ require_once '../includes/header.php';
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
 }
 
 .suggestions-label {
@@ -361,19 +447,19 @@ require_once '../includes/header.php';
 }
 
 .suggestion-tag {
-    background: rgba(255,255,255,0.05);
+    background: transparent;
     color: var(--text-secondary);
     padding: 6px 14px;
     border-radius: 20px;
     font-size: 0.85rem;
     text-decoration: none;
     transition: all 0.2s;
-    border: 1px solid transparent;
+    border: 1px solid var(--border);
 }
 
 .suggestion-tag:hover {
     background: var(--accent);
-    color: var(--bg-primary);
+    color: #fff;
     border-color: var(--accent);
 }
 
@@ -382,15 +468,15 @@ require_once '../includes/header.php';
    ============================================ */
 .search-content {
     display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: 30px;
+    grid-template-columns: 260px 1fr;
+    gap: 32px;
     max-width: 1400px;
     margin: 0 auto;
-    padding: 30px 20px;
+    padding: 32px 24px;
 }
 
 /* ============================================
-   SIDEBAR FILTERS
+   SIDEBAR FILTERS - REDESIGNED
    ============================================ */
 .search-sidebar {
     position: sticky;
@@ -399,13 +485,16 @@ require_once '../includes/header.php';
     max-height: calc(100vh - 110px);
     overflow-y: auto;
     background: var(--bg-secondary);
-    border-radius: 16px;
+    border-radius: 20px;
     border: 1px solid var(--border);
-    padding: 20px;
 }
 
 .search-sidebar::-webkit-scrollbar {
     width: 6px;
+}
+
+.search-sidebar::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 .search-sidebar::-webkit-scrollbar-thumb {
@@ -417,45 +506,50 @@ require_once '../includes/header.php';
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 15px;
+    padding: 20px;
     border-bottom: 1px solid var(--border);
+    background: rgba(0, 174, 255, 0.03);
 }
 
 .sidebar-header h2 {
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
     display: flex;
     align-items: center;
     gap: 10px;
+    margin: 0;
 }
 
 .sidebar-header h2 i {
     color: var(--accent);
+    font-size: 16px;
 }
 
 .clear-filters {
-    color: var(--accent);
-    font-size: 0.85rem;
+    color: var(--danger);
+    font-size: 0.8rem;
     text-decoration: none;
     font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    transition: all 0.2s;
 }
 
 .clear-filters:hover {
-    text-decoration: underline;
+    background: rgba(255, 107, 107, 0.1);
 }
 
 /* Filter Groups */
 .filter-group {
-    margin-bottom: 15px;
     border-bottom: 1px solid var(--border);
-    padding-bottom: 15px;
 }
 
 .filter-group:last-child {
     border-bottom: none;
-    margin-bottom: 0;
 }
 
 .filter-header {
@@ -466,11 +560,15 @@ require_once '../includes/header.php';
     background: none;
     border: none;
     color: var(--text-primary);
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 600;
-    padding: 10px 0;
+    padding: 16px 20px;
     cursor: pointer;
-    transition: color 0.2s;
+    transition: all 0.2s;
+}
+
+.filter-header:hover {
+    background: rgba(255,255,255,0.02);
 }
 
 .filter-header span {
@@ -481,12 +579,13 @@ require_once '../includes/header.php';
 
 .filter-header span i {
     color: var(--text-secondary);
-    width: 18px;
+    width: 16px;
+    font-size: 14px;
 }
 
 .filter-header > i {
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 11px;
     transition: transform 0.3s;
 }
 
@@ -499,73 +598,104 @@ require_once '../includes/header.php';
 }
 
 .filter-content {
-    padding-top: 10px;
+    padding: 0 16px 16px;
 }
 
-/* Filter Checkboxes */
-.filter-checkbox {
+/* Filter Items */
+.filter-item {
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 10px 12px;
-    margin: 0 -12px;
+    margin: 0 -4px;
     border-radius: 10px;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: all 0.2s;
+    position: relative;
 }
 
-.filter-checkbox:hover {
+.filter-item:hover {
     background: rgba(255,255,255,0.03);
 }
 
-.filter-checkbox input {
+.filter-item.selected {
+    background: rgba(0, 174, 255, 0.08);
+}
+
+.filter-item input {
     display: none;
 }
 
-.checkbox-custom {
-    width: 20px;
-    height: 20px;
+/* Custom Radio/Checkbox */
+.filter-check {
+    width: 18px;
+    height: 18px;
     border: 2px solid var(--border);
-    border-radius: 6px;
+    border-radius: 5px;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
     flex-shrink: 0;
+    background: var(--bg-primary);
 }
 
-.filter-checkbox input:checked + .checkbox-custom {
+.filter-item input[type="radio"] + .filter-check {
+    border-radius: 50%;
+}
+
+.filter-item input:checked + .filter-check {
     background: var(--accent);
     border-color: var(--accent);
 }
 
-.filter-checkbox input:checked + .checkbox-custom::after {
-    content: '✓';
-    color: var(--bg-primary);
-    font-size: 12px;
-    font-weight: bold;
+.filter-item input:checked + .filter-check::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #fff;
+    border-radius: 2px;
+}
+
+.filter-item input[type="radio"]:checked + .filter-check::after {
+    border-radius: 50%;
+    width: 6px;
+    height: 6px;
 }
 
 .filter-label {
     flex: 1;
-    font-size: 0.9rem;
-    color: var(--text-secondary);
+    font-size: 0.88rem;
+    color: var(--text-primary);
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
+.filter-item.selected .filter-label {
+    color: var(--accent);
+    font-weight: 500;
+}
+
 .filter-label i {
-    font-size: 14px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    width: 16px;
 }
 
 .filter-count {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
-    background: rgba(255,255,255,0.05);
+    background: var(--bg-primary);
     padding: 2px 8px;
     border-radius: 10px;
+    min-width: 28px;
+    text-align: center;
 }
+
+/* Special Filter Items */
+.filter-item.promo .filter-label i { color: var(--success); }
+.filter-item.free .filter-label i { color: #f9ca24; }
 
 /* Stars Rating Filter */
 .filter-rating .stars {
@@ -574,17 +704,17 @@ require_once '../includes/header.php';
 }
 
 .filter-rating .stars i {
-    font-size: 12px;
-    color: var(--text-secondary);
+    font-size: 11px;
+    color: var(--border);
 }
 
 .filter-rating .stars i.filled {
-    color: var(--warning);
+    color: #f9ca24;
 }
 
 /* Price Range */
 .price-range {
-    margin-top: 15px;
+    padding: 8px 0;
 }
 
 .price-inputs {
@@ -599,21 +729,27 @@ require_once '../includes/header.php';
     display: flex;
     align-items: center;
     background: var(--bg-primary);
-    border-radius: 8px;
-    padding: 0 10px;
+    border-radius: 10px;
+    padding: 0 12px;
     border: 1px solid var(--border);
+    transition: border-color 0.2s;
+}
+
+.price-field:focus-within {
+    border-color: var(--accent);
 }
 
 .price-field span {
     color: var(--text-secondary);
     font-size: 0.85rem;
+    font-weight: 500;
 }
 
 .price-field input {
     flex: 1;
     background: none;
     border: none;
-    padding: 10px 8px;
+    padding: 12px 8px;
     font-size: 0.9rem;
     color: var(--text-primary);
     width: 100%;
@@ -622,55 +758,66 @@ require_once '../includes/header.php';
 
 .price-separator {
     color: var(--text-secondary);
+    font-size: 12px;
 }
 
 .price-apply {
     width: 100%;
-    background: rgba(0, 174, 255, 0.15);
+    background: var(--bg-primary);
     color: var(--accent);
     border: 1px solid var(--accent);
-    padding: 10px;
-    border-radius: 8px;
+    padding: 12px;
+    border-radius: 10px;
     font-weight: 600;
+    font-size: 0.9rem;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .price-apply:hover {
     background: var(--accent);
-    color: var(--bg-primary);
+    color: #fff;
 }
 
 /* ============================================
-   RESULTS AREA
+   RESULTS AREA - IMPROVED
    ============================================ */
 .search-results {
     min-width: 0;
 }
 
+/* Results Header */
 .results-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 20px;
-    margin-bottom: 25px;
+    margin-bottom: 24px;
     flex-wrap: wrap;
 }
 
 .results-info {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
 }
 
 .results-count {
-    font-size: 0.95rem;
+    font-size: 1rem;
     color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .results-count strong {
     color: var(--text-primary);
     font-weight: 700;
+    font-size: 1.1rem;
+}
+
+.results-count i {
+    color: var(--accent);
 }
 
 /* Active Filters Chips */
@@ -684,13 +831,23 @@ require_once '../includes/header.php';
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    background: rgba(0, 174, 255, 0.1);
+    background: linear-gradient(135deg, rgba(0, 174, 255, 0.1), rgba(145, 71, 255, 0.1));
     color: var(--accent);
-    padding: 6px 12px;
-    border-radius: 20px;
+    padding: 8px 14px;
+    border-radius: 25px;
     font-size: 0.85rem;
     font-weight: 500;
-    border: 1px solid rgba(0, 174, 255, 0.3);
+    border: 1px solid rgba(0, 174, 255, 0.2);
+    animation: chipIn 0.3s ease;
+}
+
+@keyframes chipIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.filter-chip i {
+    font-size: 12px;
 }
 
 .chip-remove {
@@ -703,12 +860,15 @@ require_once '../includes/header.php';
     border-radius: 50%;
     color: var(--accent);
     font-size: 10px;
+    text-decoration: none;
     transition: all 0.2s;
+    margin-left: 4px;
 }
 
 .chip-remove:hover {
     background: var(--danger);
     color: white;
+    transform: rotate(90deg);
 }
 
 /* Results Actions */
@@ -730,25 +890,31 @@ require_once '../includes/header.php';
     font-weight: 600;
     cursor: pointer;
     position: relative;
+    transition: all 0.2s;
+}
+
+.filter-toggle-btn:hover {
+    border-color: var(--accent);
 }
 
 .filter-badge {
     position: absolute;
-    top: -5px;
-    right: -5px;
+    top: -6px;
+    right: -6px;
     background: var(--accent);
-    color: var(--bg-primary);
-    width: 20px;
-    height: 20px;
+    color: #fff;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     font-size: 11px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0, 174, 255, 0.4);
 }
 
-/* Sort Select */
+/* Sort Select - Modern */
 .sort-wrapper {
     position: relative;
 }
@@ -758,21 +924,55 @@ require_once '../includes/header.php';
     background: var(--bg-secondary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    padding: 12px 45px 12px 18px;
+    padding: 14px 50px 14px 18px;
     border-radius: 12px;
     font-size: 0.9rem;
     font-weight: 500;
     cursor: pointer;
-    min-width: 180px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%237e7e7e' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+    min-width: 200px;
+    transition: all 0.2s;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%2300aeff' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
-    background-position: right 12px center;
+    background-position: right 14px center;
     background-size: 20px;
+}
+
+.sort-select:hover {
+    border-color: var(--accent);
 }
 
 .sort-select:focus {
     outline: none;
     border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(0, 174, 255, 0.1);
+}
+
+/* View Toggle (optional) */
+.view-toggle {
+    display: flex;
+    background: var(--bg-secondary);
+    border-radius: 10px;
+    padding: 4px;
+    border: 1px solid var(--border);
+}
+
+.view-btn {
+    padding: 10px 14px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.view-btn:hover {
+    color: var(--text-primary);
+}
+
+.view-btn.active {
+    background: var(--accent);
+    color: #fff;
 }
 
 /* ============================================
@@ -784,15 +984,48 @@ require_once '../includes/header.php';
     gap: 20px;
 }
 
+.results-grid.list-view {
+    grid-template-columns: 1fr;
+}
+
+/* Loading State */
+.results-loading {
+    display: none;
+    justify-content: center;
+    padding: 60px 0;
+}
+
+.results-loading.active {
+    display: flex;
+}
+
+.loading-spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 /* ============================================
-   PAGINATION
+   PAGINATION - MODERN
    ============================================ */
+.pagination-wrapper {
+    margin-top: 48px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+}
+
 .pagination {
     display: flex;
     justify-content: center;
     align-items: center;
     gap: 8px;
-    margin-top: 50px;
     flex-wrap: wrap;
 }
 
@@ -805,34 +1038,36 @@ require_once '../includes/header.php';
     background: var(--bg-secondary);
     color: var(--text-secondary);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
     text-decoration: none;
     font-weight: 500;
     transition: all 0.2s;
 }
 
 .page-num {
-    width: 44px;
-    height: 44px;
+    width: 46px;
+    height: 46px;
     padding: 0;
 }
 
 .page-btn:hover, .page-num:hover {
     background: var(--bg-primary);
-    color: var(--text-primary);
+    color: var(--accent);
     border-color: var(--accent);
 }
 
 .page-num.active {
-    background: var(--accent);
-    color: var(--bg-primary);
+    background: linear-gradient(135deg, var(--accent), #0095d9);
+    color: #fff;
     border-color: var(--accent);
     font-weight: 700;
+    box-shadow: 0 4px 15px rgba(0, 174, 255, 0.3);
 }
 
 .page-ellipsis {
     color: var(--text-secondary);
     padding: 0 8px;
+    font-weight: 600;
 }
 
 .page-numbers {
@@ -844,57 +1079,79 @@ require_once '../includes/header.php';
     text-align: center;
     color: var(--text-secondary);
     font-size: 0.85rem;
-    margin-top: 15px;
+    margin-top: 16px;
 }
 
 /* ============================================
-   EMPTY STATE
+   EMPTY STATE - IMPROVED
    ============================================ */
 .empty-results {
     text-align: center;
-    padding: 80px 20px;
+    padding: 80px 30px;
     background: var(--bg-secondary);
-    border-radius: 20px;
+    border-radius: 24px;
     border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+}
+
+.empty-results::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: 
+        radial-gradient(circle at 30% 20%, rgba(0, 174, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 70% 80%, rgba(145, 71, 255, 0.05) 0%, transparent 50%);
+    pointer-events: none;
 }
 
 .empty-icon {
+    position: relative;
     font-size: 80px;
-    margin-bottom: 25px;
-    color: var(--text-secondary);
-    opacity: 0.3;
+    margin-bottom: 24px;
+    background: linear-gradient(135deg, var(--text-secondary), var(--border));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    opacity: 0.5;
 }
 
 .empty-results h2 {
-    font-size: 1.8rem;
+    position: relative;
+    font-size: 1.6rem;
     color: var(--text-primary);
     margin-bottom: 12px;
 }
 
 .empty-results > p {
+    position: relative;
     color: var(--text-secondary);
-    margin-bottom: 30px;
-    max-width: 400px;
+    margin-bottom: 32px;
+    max-width: 420px;
     margin-left: auto;
     margin-right: auto;
+    line-height: 1.6;
 }
 
 .empty-actions {
+    position: relative;
     display: flex;
-    gap: 15px;
+    gap: 14px;
     justify-content: center;
     flex-wrap: wrap;
 }
 
 .empty-suggestions {
-    margin-top: 40px;
-    padding-top: 30px;
+    position: relative;
+    margin-top: 48px;
+    padding-top: 32px;
     border-top: 1px solid var(--border);
 }
 
 .empty-suggestions p {
     color: var(--text-secondary);
-    margin-bottom: 15px;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
 }
 
 .suggestion-tags {
@@ -916,37 +1173,40 @@ require_once '../includes/header.php';
     transition: all 0.3s;
     cursor: pointer;
     border: none;
+    font-size: 0.95rem;
 }
 
 .btn-primary {
-    background: var(--accent);
-    color: var(--bg-primary);
+    background: linear-gradient(135deg, var(--accent), #0095d9);
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(0, 174, 255, 0.3);
 }
 
 .btn-primary:hover {
-    opacity: 0.85;
     transform: translateY(-2px);
+    box-shadow: 0 6px 25px rgba(0, 174, 255, 0.4);
 }
 
-.btn-outline {
-    background: transparent;
+.btn-secondary {
+    background: var(--bg-primary);
     color: var(--text-primary);
-    border: 2px solid var(--border);
+    border: 1px solid var(--border);
 }
 
-.btn-outline:hover {
+.btn-secondary:hover {
     border-color: var(--accent);
     color: var(--accent);
 }
 
 /* ============================================
-   MOBILE FILTERS SHEET
+   MOBILE FILTERS SHEET - IMPROVED
    ============================================ */
 .filters-sheet-overlay {
     display: none;
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
     z-index: 1000;
     opacity: 0;
     transition: opacity 0.3s;
@@ -980,41 +1240,49 @@ require_once '../includes/header.php';
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 20px 25px;
+    padding: 20px 24px;
     border-bottom: 1px solid var(--border);
 }
 
 .filters-sheet-header h3 {
-    font-size: 1.2rem;
+    font-size: 1.15rem;
     color: var(--text-primary);
     display: flex;
     align-items: center;
     gap: 10px;
+    margin: 0;
 }
 
 .filters-sheet-header h3 i {
     color: var(--accent);
 }
 
-.filters-sheet-header button {
-    background: none;
+.filters-sheet-close {
+    background: var(--bg-primary);
     border: none;
     color: var(--text-secondary);
-    font-size: 20px;
+    font-size: 18px;
     cursor: pointer;
-    padding: 8px;
+    padding: 10px;
+    border-radius: 10px;
+    transition: all 0.2s;
+}
+
+.filters-sheet-close:hover {
+    color: var(--text-primary);
+    background: var(--border);
 }
 
 .filters-sheet-content {
     flex: 1;
     overflow-y: auto;
-    padding: 20px 25px;
+    padding: 0;
 }
 
 .filters-sheet-footer {
     display: flex;
     gap: 12px;
-    padding: 20px 25px;
+    padding: 20px 24px;
     border-top: 1px solid var(--border);
     background: var(--bg-primary);
 }
@@ -1030,12 +1298,16 @@ require_once '../includes/header.php';
 @media (max-width: 1024px) {
     .search-content {
         grid-template-columns: 240px 1fr;
-        gap: 25px;
+        gap: 24px;
     }
     
     .results-grid {
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
         gap: 16px;
+    }
+    
+    .sort-select {
+        min-width: 170px;
     }
 }
 
@@ -1044,36 +1316,47 @@ require_once '../includes/header.php';
    ============================================ */
 @media (max-width: 768px) {
     .search-hero {
-        padding: 25px 15px 20px;
+        padding: 32px 16px 28px;
     }
     
     .search-title {
-        font-size: 1.5rem;
-        margin-bottom: 20px;
+        font-size: 1.6rem;
+        margin-bottom: 24px;
     }
     
     .search-main-form {
         flex-direction: column;
-        gap: 10px;
+        gap: 12px;
     }
     
     .search-input-wrapper {
-        padding: 0 15px;
+        padding: 0 16px;
+        border-radius: 14px;
     }
     
     .search-input-wrapper input {
-        padding: 14px 10px;
+        padding: 16px 12px;
     }
     
     .search-submit-btn {
         width: 100%;
         justify-content: center;
-        padding: 14px;
+        padding: 16px;
+        border-radius: 14px;
+    }
+    
+    .quick-filters {
+        gap: 8px;
+    }
+    
+    .quick-filter-btn {
+        padding: 8px 14px;
+        font-size: 0.85rem;
     }
     
     .search-content {
         grid-template-columns: 1fr;
-        padding: 20px 15px;
+        padding: 20px 16px;
     }
     
     .search-sidebar {
@@ -1086,7 +1369,7 @@ require_once '../includes/header.php';
     
     .results-header {
         flex-direction: column;
-        gap: 15px;
+        gap: 16px;
     }
     
     .results-actions {
@@ -1096,17 +1379,20 @@ require_once '../includes/header.php';
     
     .sort-select {
         min-width: 150px;
-        padding: 10px 40px 10px 14px;
+        padding: 12px 40px 12px 14px;
         font-size: 0.85rem;
     }
     
-    /* GRID MOBILE: 2 COLUNAS */
     .results-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 12px;
     }
     
-    /* Pagination Mobile */
+    .pagination-wrapper {
+        margin-top: 32px;
+        padding-top: 24px;
+    }
+    
     .pagination {
         gap: 6px;
     }
@@ -1116,17 +1402,18 @@ require_once '../includes/header.php';
     }
     
     .page-btn {
-        padding: 10px 14px;
+        padding: 12px 14px;
     }
     
     .page-num {
-        width: 40px;
-        height: 40px;
+        width: 42px;
+        height: 42px;
         font-size: 0.9rem;
     }
     
     .empty-results {
         padding: 50px 20px;
+        border-radius: 16px;
     }
     
     .empty-icon {
@@ -1134,7 +1421,7 @@ require_once '../includes/header.php';
     }
     
     .empty-results h2 {
-        font-size: 1.4rem;
+        font-size: 1.3rem;
     }
 }
 
@@ -1142,6 +1429,10 @@ require_once '../includes/header.php';
    RESPONSIVE - SMALL MOBILE
    ============================================ */
 @media (max-width: 400px) {
+    .search-title {
+        font-size: 1.4rem;
+    }
+    
     .results-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 10px;
@@ -1153,12 +1444,16 @@ require_once '../includes/header.php';
     
     .filter-chip {
         font-size: 0.8rem;
-        padding: 5px 10px;
+        padding: 6px 12px;
     }
     
     .btn {
         padding: 12px 20px;
         font-size: 0.9rem;
+    }
+    
+    .quick-filter-btn span {
+        display: none;
     }
 }
 </style>
@@ -1171,9 +1466,9 @@ require_once '../includes/header.php';
                 <h1 class="search-title">
                     <?php if (!empty($q)): ?>
                         <span class="search-label">Resultados para</span>
-                        "<?= sanitize($q) ?>"
+                        "<span class="highlight"><?= htmlspecialchars($q) ?></span>"
                     <?php else: ?>
-                        Explorar Jogos
+                        <span class="highlight">Explorar</span> Jogos
                     <?php endif; ?>
                 </h1>
                 
@@ -1184,7 +1479,7 @@ require_once '../includes/header.php';
                                name="q" 
                                id="searchInput"
                                placeholder="Buscar por título, desenvolvedor ou tag..." 
-                               value="<?= sanitize($q) ?>"
+                               value="<?= htmlspecialchars($q) ?>"
                                autocomplete="off">
                         <?php if (!empty($q)): ?>
                             <button type="button" class="search-clear" onclick="clearSearch()">
@@ -1198,12 +1493,44 @@ require_once '../includes/header.php';
                     </button>
                 </form>
 
+                <!-- Quick Filters -->
+                <div class="quick-filters">
+                    <?php
+                    $base_url = SITE_URL . '/pages/busca.php';
+                    $current_params = $_GET;
+                    ?>
+                    
+                    <a href="<?= $base_url ?>?<?= http_build_query(array_merge($current_params, ['promocao' => $promocao ? null : 1])) ?>" 
+                       class="quick-filter-btn sale <?= $promocao ? 'active' : '' ?>">
+                        <i class="fas fa-bolt"></i>
+                        <span>Em Promoção</span>
+                    </a>
+                    
+                    <a href="<?= $base_url ?>?<?= http_build_query(array_merge($current_params, ['gratuito' => $gratuito ? null : 1])) ?>" 
+                       class="quick-filter-btn free <?= $gratuito ? 'active' : '' ?>">
+                        <i class="fas fa-gift"></i>
+                        <span>Gratuitos</span>
+                    </a>
+                    
+                    <a href="<?= $base_url ?>?<?= http_build_query(array_merge($current_params, ['ordem' => 'recente'])) ?>" 
+                       class="quick-filter-btn <?= $ordem === 'recente' ? 'active' : '' ?>">
+                        <i class="fas fa-sparkles"></i>
+                        <span>Lançamentos</span>
+                    </a>
+                    
+                    <a href="<?= $base_url ?>?<?= http_build_query(array_merge($current_params, ['ordem' => 'nota'])) ?>" 
+                       class="quick-filter-btn <?= $ordem === 'nota' ? 'active' : '' ?>">
+                        <i class="fas fa-star"></i>
+                        <span>Mais Avaliados</span>
+                    </a>
+                </div>
+
                 <?php if (empty($q) && !empty($tags_populares)): ?>
                 <div class="search-suggestions">
-                    <span class="suggestions-label">Popular:</span>
+                    <span class="suggestions-label">Populares:</span>
                     <?php foreach (array_slice($tags_populares, 0, 6) as $tag): ?>
                         <a href="?q=<?= urlencode($tag['nome']) ?>" class="suggestion-tag">
-                            <?= sanitize($tag['nome']) ?>
+                            <?= htmlspecialchars($tag['nome']) ?>
                         </a>
                     <?php endforeach; ?>
                 </div>
@@ -1221,14 +1548,14 @@ require_once '../includes/header.php';
                     <h2><i class="fas fa-sliders-h"></i> Filtros</h2>
                     <?php if (!empty($filtros_ativos)): ?>
                         <a href="<?= SITE_URL ?>/pages/busca.php<?= !empty($q) ? '?q=' . urlencode($q) : '' ?>" class="clear-filters">
-                            Limpar tudo
+                            <i class="fas fa-times"></i> Limpar
                         </a>
                     <?php endif; ?>
                 </div>
 
                 <form method="GET" action="" id="filtersForm">
                     <?php if (!empty($q)): ?>
-                        <input type="hidden" name="q" value="<?= sanitize($q) ?>">
+                        <input type="hidden" name="q" value="<?= htmlspecialchars($q) ?>">
                     <?php endif; ?>
 
                     <!-- Plataformas -->
@@ -1239,26 +1566,28 @@ require_once '../includes/header.php';
                             <i class="fas fa-chevron-down"></i>
                         </button>
                         <div class="filter-content">
-                            <?php foreach ($plataformas as $plat): ?>
-                            <label class="filter-checkbox">
+                            <?php foreach ($plataformas as $plat): 
+                                $isSelected = $plataforma === $plat['slug'];
+                            ?>
+                            <label class="filter-item <?= $isSelected ? 'selected' : '' ?>">
                                 <input type="radio" 
                                        name="plataforma" 
                                        value="<?= $plat['slug'] ?>"
-                                       <?= $plataforma === $plat['slug'] ? 'checked' : '' ?>
+                                       <?= $isSelected ? 'checked' : '' ?>
                                        onchange="this.form.submit()">
-                                <span class="checkbox-custom"></span>
+                                <span class="filter-check"></span>
                                 <span class="filter-label">
                                     <i class="<?= $plat['icone'] ?? 'fas fa-gamepad' ?>"></i>
-                                    <?= sanitize($plat['nome']) ?>
+                                    <?= htmlspecialchars($plat['nome']) ?>
                                 </span>
                                 <span class="filter-count"><?= $plat['total_jogos'] ?></span>
                             </label>
                             <?php endforeach; ?>
                             <?php if (!empty($plataforma)): ?>
-                            <label class="filter-checkbox">
+                            <label class="filter-item">
                                 <input type="radio" name="plataforma" value="" onchange="this.form.submit()">
-                                <span class="checkbox-custom"></span>
-                                <span class="filter-label">Todas</span>
+                                <span class="filter-check"></span>
+                                <span class="filter-label">Todas as plataformas</span>
                             </label>
                             <?php endif; ?>
                         </div>
@@ -1273,23 +1602,25 @@ require_once '../includes/header.php';
                             <i class="fas fa-chevron-down"></i>
                         </button>
                         <div class="filter-content">
-                            <?php foreach ($categorias as $cat): ?>
-                            <label class="filter-checkbox">
+                            <?php foreach ($categorias as $cat): 
+                                $isSelected = $categoria === $cat['slug'];
+                            ?>
+                            <label class="filter-item <?= $isSelected ? 'selected' : '' ?>">
                                 <input type="radio" 
                                        name="categoria" 
                                        value="<?= $cat['slug'] ?>"
-                                       <?= $categoria === $cat['slug'] ? 'checked' : '' ?>
+                                       <?= $isSelected ? 'checked' : '' ?>
                                        onchange="this.form.submit()">
-                                <span class="checkbox-custom"></span>
-                                <span class="filter-label"><?= sanitize($cat['nome']) ?></span>
+                                <span class="filter-check"></span>
+                                <span class="filter-label"><?= htmlspecialchars($cat['nome']) ?></span>
                                 <span class="filter-count"><?= $cat['total_jogos'] ?></span>
                             </label>
                             <?php endforeach; ?>
                             <?php if (!empty($categoria)): ?>
-                            <label class="filter-checkbox">
+                            <label class="filter-item">
                                 <input type="radio" name="categoria" value="" onchange="this.form.submit()">
-                                <span class="checkbox-custom"></span>
-                                <span class="filter-label">Todas</span>
+                                <span class="filter-check"></span>
+                                <span class="filter-label">Todas as categorias</span>
                             </label>
                             <?php endif; ?>
                         </div>
@@ -1303,26 +1634,27 @@ require_once '../includes/header.php';
                             <i class="fas fa-chevron-down"></i>
                         </button>
                         <div class="filter-content">
-                            <label class="filter-checkbox">
+                            <label class="filter-item free <?= $gratuito ? 'selected' : '' ?>">
                                 <input type="checkbox" 
                                        name="gratuito" 
                                        value="1"
                                        <?= $gratuito ? 'checked' : '' ?>
                                        onchange="this.form.submit()">
-                                <span class="checkbox-custom"></span>
-                                <span class="filter-label"><i class="fas fa-gift"></i> Gratuitos</span>
+                                <span class="filter-check"></span>
+                                <span class="filter-label">
+                                    <i class="fas fa-gift"></i> Gratuitos
+                                </span>
                             </label>
                             
-                            <label class="filter-checkbox">
+                            <label class="filter-item promo <?= $promocao ? 'selected' : '' ?>">
                                 <input type="checkbox" 
                                        name="promocao" 
                                        value="1"
                                        <?= $promocao ? 'checked' : '' ?>
                                        onchange="this.form.submit()">
-                                <span class="checkbox-custom"></span>
+                                <span class="filter-check"></span>
                                 <span class="filter-label">
-                                    <i class="fas fa-fire" style="color: var(--danger);"></i>
-                                    Em Promoção
+                                    <i class="fas fa-bolt"></i> Em Promoção
                                 </span>
                             </label>
 
@@ -1337,7 +1669,7 @@ require_once '../includes/header.php';
                                                min="0"
                                                step="0.01">
                                     </div>
-                                    <span class="price-separator">—</span>
+                                    <span class="price-separator">até</span>
                                     <div class="price-field">
                                         <span>R$</span>
                                         <input type="number" 
@@ -1348,7 +1680,9 @@ require_once '../includes/header.php';
                                                step="0.01">
                                     </div>
                                 </div>
-                                <button type="submit" class="price-apply">Aplicar</button>
+                                <button type="submit" class="price-apply">
+                                    <i class="fas fa-check"></i> Aplicar
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -1360,29 +1694,31 @@ require_once '../includes/header.php';
                             <i class="fas fa-chevron-down"></i>
                         </button>
                         <div class="filter-content">
-                            <?php foreach ([4, 3, 2, 1] as $nota): ?>
-                            <label class="filter-checkbox filter-rating">
+                            <?php foreach ([4, 3, 2, 1] as $nota): 
+                                $isSelected = $nota_min == $nota;
+                            ?>
+                            <label class="filter-item filter-rating <?= $isSelected ? 'selected' : '' ?>">
                                 <input type="radio" 
                                        name="nota_min" 
                                        value="<?= $nota ?>"
-                                       <?= $nota_min == $nota ? 'checked' : '' ?>
+                                       <?= $isSelected ? 'checked' : '' ?>
                                        onchange="this.form.submit()">
-                                <span class="checkbox-custom"></span>
+                                <span class="filter-check"></span>
                                 <span class="filter-label">
                                     <span class="stars">
                                         <?php for ($i = 1; $i <= 5; $i++): ?>
                                             <i class="fas fa-star <?= $i <= $nota ? 'filled' : '' ?>"></i>
                                         <?php endfor; ?>
                                     </span>
-                                    <span>ou mais</span>
+                                    ou mais
                                 </span>
                             </label>
                             <?php endforeach; ?>
                             <?php if ($nota_min > 0): ?>
-                            <label class="filter-checkbox">
+                            <label class="filter-item">
                                 <input type="radio" name="nota_min" value="0" onchange="this.form.submit()">
-                                <span class="checkbox-custom"></span>
-                                <span class="filter-label">Todas</span>
+                                <span class="filter-check"></span>
+                                <span class="filter-label">Qualquer avaliação</span>
                             </label>
                             <?php endif; ?>
                         </div>
@@ -1395,6 +1731,7 @@ require_once '../includes/header.php';
                 <div class="results-header">
                     <div class="results-info">
                         <span class="results-count">
+                            <i class="fas fa-gamepad"></i>
                             <strong><?= number_format($total_jogos, 0, ',', '.') ?></strong> 
                             jogo<?= $total_jogos != 1 ? 's' : '' ?> encontrado<?= $total_jogos != 1 ? 's' : '' ?>
                         </span>
@@ -1404,7 +1741,7 @@ require_once '../includes/header.php';
                             <?php foreach ($filtros_ativos as $filtro): ?>
                                 <span class="filter-chip">
                                     <i class="fas fa-<?= $filtro['icon'] ?>"></i>
-                                    <?= sanitize($filtro['label']) ?>
+                                    <?= htmlspecialchars($filtro['label']) ?>
                                     <a href="?<?php 
                                         $params_url = $_GET;
                                         unset($params_url[$filtro['tipo']]);
@@ -1431,6 +1768,7 @@ require_once '../includes/header.php';
                             <select class="sort-select" onchange="updateSort(this.value)">
                                 <option value="relevancia" <?= $ordem === 'relevancia' ? 'selected' : '' ?>>Mais Relevantes</option>
                                 <option value="recente" <?= $ordem === 'recente' ? 'selected' : '' ?>>Mais Recentes</option>
+                                <option value="antigo" <?= $ordem === 'antigo' ? 'selected' : '' ?>>Mais Antigos</option>
                                 <option value="vendas" <?= $ordem === 'vendas' ? 'selected' : '' ?>>Mais Vendidos</option>
                                 <option value="nota" <?= $ordem === 'nota' ? 'selected' : '' ?>>Melhor Avaliados</option>
                                 <option value="preco_asc" <?= $ordem === 'preco_asc' ? 'selected' : '' ?>>Menor Preço</option>
@@ -1439,6 +1777,7 @@ require_once '../includes/header.php';
                                 <option value="desconto" <?= $ordem === 'desconto' ? 'selected' : '' ?>>Maior Desconto</option>
                                 <?php endif; ?>
                                 <option value="titulo" <?= $ordem === 'titulo' ? 'selected' : '' ?>>A-Z</option>
+                                <option value="titulo_desc" <?= $ordem === 'titulo_desc' ? 'selected' : '' ?>>Z-A</option>
                             </select>
                         </div>
                     </div>
@@ -1458,60 +1797,62 @@ require_once '../includes/header.php';
                     </div>
 
                     <?php if ($total_paginas > 1): ?>
-                    <nav class="pagination">
-                        <?php
-                        $params_base = $_GET;
-                        unset($params_base['pagina']);
-                        $query_base = http_build_query($params_base);
-                        $query_prefix = !empty($query_base) ? $query_base . '&' : '';
-                        ?>
-                        
-                        <?php if ($pagina > 1): ?>
-                            <a href="?<?= $query_prefix ?>pagina=<?= $pagina - 1 ?>" class="page-btn page-prev">
-                                <i class="fas fa-chevron-left"></i>
-                                <span>Anterior</span>
-                            </a>
-                        <?php endif; ?>
-
-                        <div class="page-numbers">
+                    <div class="pagination-wrapper">
+                        <nav class="pagination">
                             <?php
-                            $range = 2;
-                            $start = max(1, $pagina - $range);
-                            $end = min($total_paginas, $pagina + $range);
-
-                            if ($start > 1): ?>
-                                <a href="?<?= $query_prefix ?>pagina=1" class="page-num">1</a>
-                                <?php if ($start > 2): ?>
-                                    <span class="page-ellipsis">...</span>
-                                <?php endif; ?>
-                            <?php endif;
-
-                            for ($i = $start; $i <= $end; $i++): ?>
-                                <?php if ($i == $pagina): ?>
-                                    <span class="page-num active"><?= $i ?></span>
-                                <?php else: ?>
-                                    <a href="?<?= $query_prefix ?>pagina=<?= $i ?>" class="page-num"><?= $i ?></a>
-                                <?php endif; ?>
-                            <?php endfor;
-
-                            if ($end < $total_paginas): ?>
-                                <?php if ($end < $total_paginas - 1): ?>
-                                    <span class="page-ellipsis">...</span>
-                                <?php endif; ?>
-                                <a href="?<?= $query_prefix ?>pagina=<?= $total_paginas ?>" class="page-num"><?= $total_paginas ?></a>
+                            $params_base = $_GET;
+                            unset($params_base['pagina']);
+                            $query_base = http_build_query($params_base);
+                            $query_prefix = !empty($query_base) ? $query_base . '&' : '';
+                            ?>
+                            
+                            <?php if ($pagina > 1): ?>
+                                <a href="?<?= $query_prefix ?>pagina=<?= $pagina - 1 ?>" class="page-btn page-prev">
+                                    <i class="fas fa-chevron-left"></i>
+                                    <span>Anterior</span>
+                                </a>
                             <?php endif; ?>
+
+                            <div class="page-numbers">
+                                <?php
+                                $range = 2;
+                                $start = max(1, $pagina - $range);
+                                $end = min($total_paginas, $pagina + $range);
+
+                                if ($start > 1): ?>
+                                    <a href="?<?= $query_prefix ?>pagina=1" class="page-num">1</a>
+                                    <?php if ($start > 2): ?>
+                                        <span class="page-ellipsis">...</span>
+                                    <?php endif; ?>
+                                <?php endif;
+
+                                for ($i = $start; $i <= $end; $i++): ?>
+                                    <?php if ($i == $pagina): ?>
+                                        <span class="page-num active"><?= $i ?></span>
+                                    <?php else: ?>
+                                        <a href="?<?= $query_prefix ?>pagina=<?= $i ?>" class="page-num"><?= $i ?></a>
+                                    <?php endif; ?>
+                                <?php endfor;
+
+                                if ($end < $total_paginas): ?>
+                                    <?php if ($end < $total_paginas - 1): ?>
+                                        <span class="page-ellipsis">...</span>
+                                    <?php endif; ?>
+                                    <a href="?<?= $query_prefix ?>pagina=<?= $total_paginas ?>" class="page-num"><?= $total_paginas ?></a>
+                                <?php endif; ?>
+                            </div>
+
+                            <?php if ($pagina < $total_paginas): ?>
+                                <a href="?<?= $query_prefix ?>pagina=<?= $pagina + 1 ?>" class="page-btn page-next">
+                                    <span>Próximo</span>
+                                    <i class="fas fa-chevron-right"></i>
+                                </a>
+                            <?php endif; ?>
+                        </nav>
+
+                        <div class="pagination-info">
+                            Mostrando <?= $offset + 1 ?>-<?= min($offset + $por_pagina, $total_jogos) ?> de <?= number_format($total_jogos, 0, ',', '.') ?> jogos
                         </div>
-
-                        <?php if ($pagina < $total_paginas): ?>
-                            <a href="?<?= $query_prefix ?>pagina=<?= $pagina + 1 ?>" class="page-btn page-next">
-                                <span>Próximo</span>
-                                <i class="fas fa-chevron-right"></i>
-                            </a>
-                        <?php endif; ?>
-                    </nav>
-
-                    <div class="pagination-info">
-                        Mostrando <?= $offset + 1 ?>-<?= min($offset + $por_pagina, $total_jogos) ?> de <?= $total_jogos ?> jogos
                     </div>
                     <?php endif; ?>
 
@@ -1523,9 +1864,9 @@ require_once '../includes/header.php';
                         <h2>Nenhum jogo encontrado</h2>
                         <p>
                             <?php if (!empty($q)): ?>
-                                Não encontramos jogos para "<?= sanitize($q) ?>" com os filtros selecionados.
+                                Não encontramos jogos para "<strong><?= htmlspecialchars($q) ?></strong>" com os filtros selecionados. Tente ajustar sua busca.
                             <?php else: ?>
-                                Não encontramos jogos com os filtros selecionados.
+                                Não encontramos jogos com os filtros selecionados. Tente remover alguns filtros.
                             <?php endif; ?>
                         </p>
                         <div class="empty-actions">
@@ -1534,8 +1875,8 @@ require_once '../includes/header.php';
                                     <i class="fas fa-filter"></i> Limpar Filtros
                                 </a>
                             <?php endif; ?>
-                            <a href="<?= SITE_URL ?>/pages/busca.php" class="btn btn-outline">
-                                <i class="fas fa-compass"></i> Explorar Tudo
+                            <a href="<?= SITE_URL ?>/pages/busca.php" class="btn btn-secondary">
+                                <i class="fas fa-compass"></i> Explorar Todos
                             </a>
                         </div>
 
@@ -1545,7 +1886,7 @@ require_once '../includes/header.php';
                             <div class="suggestion-tags">
                                 <?php foreach (array_slice($tags_populares, 0, 8) as $tag): ?>
                                     <a href="?q=<?= urlencode($tag['nome']) ?>" class="suggestion-tag">
-                                        <?= sanitize($tag['nome']) ?>
+                                        <?= htmlspecialchars($tag['nome']) ?>
                                     </a>
                                 <?php endforeach; ?>
                             </div>
@@ -1563,17 +1904,17 @@ require_once '../includes/header.php';
 <div class="filters-sheet" id="filtersSheet">
     <div class="filters-sheet-header">
         <h3><i class="fas fa-sliders-h"></i> Filtros</h3>
-        <button onclick="closeFiltersSheet()">
+        <button class="filters-sheet-close" onclick="closeFiltersSheet()">
             <i class="fas fa-times"></i>
         </button>
     </div>
     <div class="filters-sheet-content" id="filtersSheetContent"></div>
     <div class="filters-sheet-footer">
-        <a href="<?= SITE_URL ?>/pages/busca.php<?= !empty($q) ? '?q=' . urlencode($q) : '' ?>" class="btn btn-outline">
-            Limpar
+        <a href="<?= SITE_URL ?>/pages/busca.php<?= !empty($q) ? '?q=' . urlencode($q) : '' ?>" class="btn btn-secondary">
+            <i class="fas fa-times"></i> Limpar
         </a>
         <button class="btn btn-primary" onclick="closeFiltersSheet()">
-            Ver <?= $total_jogos ?> Resultados
+            <i class="fas fa-check"></i> Ver <?= number_format($total_jogos, 0, ',', '.') ?> Resultados
         </button>
     </div>
 </div>
@@ -1599,7 +1940,7 @@ function clearSearch() {
 function openFiltersSheet() {
     const sidebar = document.getElementById('filtersSidebar');
     const sheetContent = document.getElementById('filtersSheetContent');
-    sheetContent.innerHTML = sidebar.querySelector('form').outerHTML;
+    sheetContent.innerHTML = sidebar.innerHTML;
     
     document.getElementById('filtersSheetOverlay').classList.add('active');
     document.getElementById('filtersSheet').classList.add('active');
@@ -1611,6 +1952,20 @@ function closeFiltersSheet() {
     document.getElementById('filtersSheet').classList.remove('active');
     document.body.style.overflow = '';
 }
+
+// Close sheet on escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeFiltersSheet();
+});
+
+// Search input focus effect
+document.getElementById('searchInput')?.addEventListener('focus', function() {
+    this.closest('.search-input-wrapper').classList.add('focused');
+});
+
+document.getElementById('searchInput')?.addEventListener('blur', function() {
+    this.closest('.search-input-wrapper').classList.remove('focused');
+});
 </script>
 
 <?php require_once '../includes/footer.php'; ?>

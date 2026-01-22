@@ -1554,7 +1554,7 @@ require_once '../includes/header.php';
             <section class="free-games-section">
                 <div class="section-header">
                     <h2 class="section-title"><i class="fas fa-gift"></i> Jogos Gratuitos</h2>
-                    <a href="<?= SITE_URL ?>/pages/busca.php?preco=gratis" class="section-link">Ver Todos <i class="fas fa-arrow-right"></i></a>
+                    <a href="<?= SITE_URL ?>/pages/busca.php?gratuito=1" class="section-link">Ver Todos <i class="fas fa-arrow-right"></i></a>
                 </div>
                 <div class="free-games-grid">
                     <?php foreach (array_slice($gratuitos, 0, 4) as $jogo):
@@ -1574,7 +1574,7 @@ require_once '../includes/header.php';
                 <div class="section-header">
                     <h2 class="section-title"><i class="fas fa-fire" style="color: #ff6b6b"></i> Mais Populares</h2>
                     <div class="section-controls">
-                        <a href="<?= SITE_URL ?>/pages/busca.php?ordem=popular" class="section-link">Ver Todos <i class="fas fa-arrow-right"></i></a>
+                        <a href="<?= SITE_URL ?>/pages/busca.php?ordem=vendas" class="section-link">Ver Todos <i class="fas fa-arrow-right"></i></a>
                         <div class="section-nav">
                             <button class="section-nav-btn" onclick="scrollCarousel('popularCarousel', -1)"><i class="fas fa-chevron-left"></i></button>
                             <button class="section-nav-btn" onclick="scrollCarousel('popularCarousel', 1)"><i class="fas fa-chevron-right"></i></button>

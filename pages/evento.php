@@ -1,5 +1,5 @@
 <?php
-// pages/evento.php
+// pages/evento.php - Versão Clean
 require_once '../config/config.php';
 require_once '../config/database.php';
 
@@ -7,7 +7,6 @@ $database = new Database();
 $pdo = $database->getConnection();
 $user_id = isLoggedIn() ? $_SESSION['user_id'] : null;
 
-// Buscar evento pelo slug
 if (!isset($_GET['slug'])) {
     header('Location: ' . SITE_URL . '/pages/home.php');
     exit;
@@ -15,10 +14,7 @@ if (!isset($_GET['slug'])) {
 
 $slug = $_GET['slug'];
 
-$stmt = $pdo->prepare("
-    SELECT * FROM evento 
-    WHERE slug = ? AND ativo = 1
-");
+$stmt = $pdo->prepare("SELECT * FROM evento WHERE slug = ? AND ativo = 1");
 $stmt->execute([$slug]);
 $evento = $stmt->fetch();
 
@@ -27,14 +23,34 @@ if (!$evento) {
     exit;
 }
 
-// Verificar se evento está no período válido
+// Status do evento
 $agora = date('Y-m-d H:i:s');
 $evento_ativo = ($agora >= $evento['data_inicio'] && $agora <= $evento['data_fim']);
+$evento_futuro = ($agora < $evento['data_inicio']);
+$evento_encerrado = ($agora > $evento['data_fim']);
 
-// Buscar jogos em promoção durante o evento
+// Pre-load user data
+$meus_jogos = [];
+$minha_wishlist = [];
+$meu_carrinho = [];
+
+if ($user_id) {
+    $stmt = $pdo->prepare("SELECT jogo_id FROM biblioteca WHERE usuario_id = ?");
+    $stmt->execute([$user_id]);
+    $meus_jogos = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    $stmt = $pdo->prepare("SELECT jogo_id FROM lista_desejos WHERE usuario_id = ?");
+    $stmt->execute([$user_id]);
+    $minha_wishlist = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    $stmt = $pdo->prepare("SELECT jogo_id FROM carrinho WHERE usuario_id = ?");
+    $stmt->execute([$user_id]);
+    $meu_carrinho = $stmt->fetchAll(PDO::FETCH_COLUMN);
+}
+
+// Buscar jogos em promoção
 $stmt = $pdo->query("
     SELECT j.*, d.nome_estudio,
-           j.preco_promocional_centavos,
            CASE 
                WHEN j.preco_promocional_centavos IS NOT NULL 
                THEN ROUND(((j.preco_centavos - j.preco_promocional_centavos) / j.preco_centavos) * 100)
@@ -45,29 +61,31 @@ $stmt = $pdo->query("
     WHERE j.status = 'publicado' 
     AND j.em_promocao = 1
     AND j.preco_promocional_centavos IS NOT NULL
-    ORDER BY percentual_desconto DESC, j.criado_em DESC
-    LIMIT 50
+    ORDER BY percentual_desconto DESC, j.nota_media DESC
+    LIMIT 60
 ");
 $jogos_evento = $stmt->fetchAll();
 
-// Estatísticas do evento
+// Destaques (top 6)
+$jogos_destaque = array_slice($jogos_evento, 0, 6);
+
+// Estatísticas
 $total_jogos = count($jogos_evento);
 $desconto_medio = 0;
+$economia_total = 0;
+$maior_desconto = 0;
+
 if ($total_jogos > 0) {
     $soma_descontos = array_sum(array_column($jogos_evento, 'percentual_desconto'));
     $desconto_medio = round($soma_descontos / $total_jogos);
-}
-
-// Calcular economia total possível
-$economia_total = 0;
-foreach ($jogos_evento as $jogo) {
-    if ($jogo['preco_promocional_centavos']) {
-        $economia_total += ($jogo['preco_centavos'] - $jogo['preco_promocional_centavos']);
+    $maior_desconto = max(array_column($jogos_evento, 'percentual_desconto'));
+    
+    foreach ($jogos_evento as $jogo) {
+        if ($jogo['preco_promocional_centavos']) {
+            $economia_total += ($jogo['preco_centavos'] - $jogo['preco_promocional_centavos']);
+        }
     }
 }
-
-// Maior desconto
-$maior_desconto = !empty($jogos_evento) ? max(array_column($jogos_evento, 'percentual_desconto')) : 0;
 
 $page_title = htmlspecialchars($evento['nome']) . ' - ' . SITE_NAME;
 require_once '../includes/header.php';
@@ -75,707 +93,941 @@ require_once '../components/game-card.php';
 ?>
 
 <style>
-    /* Hero Section */
+/* ============================================
+   EVENTO PAGE - CLEAN VERSION
+   ============================================ */
+
+/* Hero Section */
+.evento-hero {
+    position: relative;
+    min-height: 70vh;
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+}
+
+.hero-bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+}
+
+.hero-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, 
+        rgba(10, 10, 15, 0.4) 0%, 
+        rgba(10, 10, 15, 0.7) 50%,
+        var(--bg-primary) 100%
+    );
+}
+
+.hero-content {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 60px 24px 80px;
+}
+
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: var(--accent);
+    color: white;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 20px;
+}
+
+.hero-badge.inactive {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.hero-badge i {
+    font-size: 10px;
+}
+
+.hero-title {
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    font-weight: 800;
+    color: white;
+    margin-bottom: 16px;
+    line-height: 1.1;
+    letter-spacing: -1px;
+}
+
+.hero-description {
+    font-size: 1.1rem;
+    color: rgba(255, 255, 255, 0.8);
+    max-width: 600px;
+    line-height: 1.7;
+    margin-bottom: 24px;
+}
+
+.hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.95rem;
+}
+
+.hero-meta span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hero-meta i {
+    color: var(--accent);
+}
+
+/* Countdown */
+.countdown-section {
+    padding: 0 24px;
+    margin-top: -30px;
+    position: relative;
+    z-index: 20;
+}
+
+.countdown-card {
+    max-width: 800px;
+    margin: 0 auto;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    text-align: center;
+}
+
+.countdown-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.countdown-label i {
+    color: var(--accent);
+}
+
+.countdown-timer {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+}
+
+.countdown-item {
+    text-align: center;
+}
+
+.countdown-number {
+    display: block;
+    font-size: 3rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1;
+    min-width: 80px;
+    padding: 16px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 8px;
+}
+
+.countdown-unit {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Stats */
+.stats-section {
+    padding: 60px 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+}
+
+.stat-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    transition: all 0.2s;
+}
+
+.stat-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-4px);
+}
+
+.stat-icon {
+    width: 48px;
+    height: 48px;
+    background: rgba(var(--accent-rgb), 0.1);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    color: var(--accent);
+    font-size: 20px;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1;
+    margin-bottom: 4px;
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+/* Section Header */
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.section-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.section-title i {
+    color: var(--accent);
+    font-size: 20px;
+}
+
+/* Featured Section */
+.featured-section {
+    padding: 0 24px 60px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.featured-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+
+.featured-main {
+    grid-row: span 2;
+}
+
+.featured-card {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    text-decoration: none;
+    display: block;
+    height: 100%;
+    min-height: 300px;
+    transition: all 0.3s;
+}
+
+.featured-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-4px);
+}
+
+.featured-card-bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    transition: transform 0.4s;
+}
+
+.featured-card:hover .featured-card-bg {
+    transform: scale(1.05);
+}
+
+.featured-card-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.9) 100%);
+}
+
+.featured-card-discount {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: var(--accent);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+.featured-card-content {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 24px;
+}
+
+.featured-card-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: white;
+    margin-bottom: 8px;
+}
+
+.featured-card-dev {
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 12px;
+}
+
+.featured-card-prices {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.price-original {
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.5);
+    text-decoration: line-through;
+}
+
+.price-current {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+/* Featured List Item */
+.featured-list-item {
+    display: flex;
+    gap: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.featured-list-item:hover {
+    border-color: var(--accent);
+    transform: translateX(4px);
+}
+
+.featured-list-image {
+    width: 120px;
+    height: 70px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.featured-list-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.featured-list-discount {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    background: var(--accent);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.featured-list-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
+
+.featured-list-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.featured-list-dev {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.featured-list-prices {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.featured-list-prices .price-original {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.featured-list-prices .price-current {
+    font-size: 1rem;
+    color: var(--accent);
+}
+
+/* Filters */
+.filters-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    padding: 16px 20px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+}
+
+.filters-left {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    padding: 10px 18px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.filter-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.filter-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
+.sort-select {
+    appearance: none;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 36px 10px 14px;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%23888' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 18px;
+}
+
+.sort-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* Games Section */
+.games-section {
+    padding: 0 24px 80px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.games-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 20px;
+}
+
+.games-count {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+}
+
+.games-count strong {
+    color: var(--text-primary);
+}
+
+/* Empty State */
+.empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 80px 20px;
+    background: var(--bg-secondary);
+    border: 1px dashed var(--border);
+    border-radius: 16px;
+}
+
+.empty-state i {
+    font-size: 48px;
+    color: var(--text-secondary);
+    opacity: 0.3;
+    margin-bottom: 16px;
+}
+
+.empty-state h3 {
+    font-size: 1.2rem;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    color: var(--text-secondary);
+}
+
+/* Event Ended */
+.event-ended {
+    max-width: 600px;
+    margin: 60px auto;
+    padding: 0 24px;
+}
+
+.ended-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 48px;
+    text-align: center;
+}
+
+.ended-icon {
+    width: 72px;
+    height: 72px;
+    background: rgba(var(--accent-rgb), 0.1);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    color: var(--accent);
+    font-size: 28px;
+}
+
+.ended-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.ended-text {
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+}
+
+.ended-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-primary);
+    padding: 10px 20px;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 24px;
+}
+
+.ended-date i {
+    color: var(--accent);
+}
+
+.ended-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    background: var(--accent);
+    color: white;
+    border-radius: 10px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.ended-btn:hover {
+    transform: translateY(-2px);
+    opacity: 0.9;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .featured-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .featured-main {
+        grid-row: auto;
+    }
+}
+
+@media (max-width: 768px) {
     .evento-hero {
-        position: relative;
-        height: 500px;
-        background-size: cover;
-        background-position: center;
-        border-radius: 20px;
-        overflow: hidden;
-        margin-bottom: 50px;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        min-height: 60vh;
     }
-
-    .evento-hero::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.7) 50%, rgba(0,0,0,0.95) 100%);
-        z-index: 1;
+    
+    .hero-content {
+        padding: 40px 20px 60px;
     }
-
-    .evento-hero::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: radial-gradient(circle at 30% 50%, rgba(76, 139, 245, 0.15), transparent 60%);
-        z-index: 1;
+    
+    .hero-title {
+        font-size: 2rem;
     }
-
-    .evento-hero-particles {
-        position: absolute;
-        inset: 0;
-        z-index: 1;
-        overflow: hidden;
-        pointer-events: none;
-    }
-
-    .particle {
-        position: absolute;
-        width: 4px;
-        height: 4px;
-        background: rgba(255, 255, 255, 0.3);
-        border-radius: 50%;
-        animation: float 6s infinite ease-in-out;
-    }
-
-    @keyframes float {
-        0%, 100% { transform: translateY(0) translateX(0); opacity: 0; }
-        10% { opacity: 1; }
-        90% { opacity: 1; }
-        100% { transform: translateY(-100vh) translateX(50px); opacity: 0; }
-    }
-
-    .evento-hero-content {
-        position: relative;
-        z-index: 2;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-end;
-        padding: 50px;
-        max-width: 900px;
-    }
-
-    .evento-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        background: linear-gradient(135deg, #ff6b6b, #ff8787);
-        color: white;
-        padding: 10px 20px;
-        border-radius: 25px;
-        font-size: 14px;
-        font-weight: 700;
-        letter-spacing: 0.5px;
-        margin-bottom: 20px;
-        width: fit-content;
-        box-shadow: 0 8px 24px rgba(255, 107, 107, 0.3);
-        animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.05); }
-    }
-
-    .evento-title {
-        font-size: 56px;
-        font-weight: 900;
-        color: white;
-        margin-bottom: 16px;
-        text-shadow: 0 4px 20px rgba(0,0,0,0.5);
-        line-height: 1.1;
-        letter-spacing: -1px;
-    }
-
-    .evento-description {
-        font-size: 20px;
-        color: rgba(255,255,255,0.95);
-        line-height: 1.7;
-        text-shadow: 0 2px 10px rgba(0,0,0,0.3);
-    }
-
-    /* Countdown */
-    .countdown {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 20px;
-        padding: 40px;
-        text-align: center;
-        color: white;
-        margin: 50px 0;
-        position: relative;
-        overflow: hidden;
-        box-shadow: 0 20px 60px rgba(102, 126, 234, 0.3);
-    }
-
-    .countdown::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: radial-gradient(circle at 20% 50%, rgba(255,255,255,0.1), transparent 50%);
-        pointer-events: none;
-    }
-
-    .countdown-title {
-        font-size: 22px;
-        font-weight: 700;
-        margin-bottom: 30px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        position: relative;
-    }
-
+    
     .countdown-timer {
-        display: flex;
-        justify-content: center;
-        gap: 30px;
-        position: relative;
+        gap: 8px;
     }
-
-    .countdown-item {
-        background: rgba(255, 255, 255, 0.15);
-        backdrop-filter: blur(10px);
-        border-radius: 16px;
-        padding: 24px 32px;
-        min-width: 120px;
-        border: 2px solid rgba(255, 255, 255, 0.2);
-        transition: transform 0.3s;
-    }
-
-    .countdown-item:hover {
-        transform: translateY(-5px);
-        background: rgba(255, 255, 255, 0.2);
-    }
-
+    
     .countdown-number {
-        font-size: 56px;
-        font-weight: 900;
-        display: block;
-        line-height: 1;
-        font-family: 'Segoe UI', system-ui, sans-serif;
+        font-size: 2rem;
+        min-width: 60px;
+        padding: 12px;
     }
-
-    .countdown-label {
-        font-size: 14px;
-        opacity: 0.95;
-        margin-top: 12px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 1px;
+    
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
     }
-
-    /* Stats Cards */
-    .evento-stats {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 24px;
-        margin: 50px 0;
-    }
-
+    
     .stat-card {
-        background: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 32px;
-        text-align: center;
-        transition: all 0.3s;
-        position: relative;
-        overflow: hidden;
+        padding: 20px 16px;
     }
-
-    .stat-card::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(135deg, transparent, rgba(76, 139, 245, 0.05));
-        opacity: 0;
-        transition: opacity 0.3s;
-    }
-
-    .stat-card:hover {
-        transform: translateY(-8px);
-        box-shadow: 0 20px 40px rgba(0,0,0,0.15);
-        border-color: var(--accent);
-    }
-
-    .stat-card:hover::before {
-        opacity: 1;
-    }
-
-    .stat-icon {
-        width: 70px;
-        height: 70px;
-        background: linear-gradient(135deg, var(--accent), #6366f1);
-        border-radius: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 28px;
-        color: white;
-        margin: 0 auto 20px;
-        box-shadow: 0 8px 24px rgba(76, 139, 245, 0.3);
-    }
-
+    
     .stat-value {
-        font-size: 40px;
-        font-weight: 900;
-        color: var(--text-primary);
-        margin-bottom: 8px;
-        line-height: 1;
+        font-size: 1.5rem;
     }
-
-    .stat-label {
-        font-size: 15px;
-        color: var(--text-secondary);
-        font-weight: 600;
+    
+    .filters-bar {
+        flex-direction: column;
+        align-items: stretch;
     }
-
-    /* Section Header */
-    .section-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin: 70px 0 35px;
-        flex-wrap: wrap;
-        gap: 20px;
+    
+    .filters-left {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: 8px;
     }
-
-    .section-title {
-        font-size: 32px;
-        font-weight: 800;
-        color: var(--text-primary);
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-
-    .section-title i {
-        color: var(--accent);
-    }
-
-    /* Filter Pills */
-    .filter-container {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-        align-items: center;
-    }
-
-    .filter-label {
-        font-size: 14px;
-        color: var(--text-secondary);
-        font-weight: 600;
-        margin-right: 8px;
-    }
-
-    .filter-pill {
-        padding: 10px 20px;
-        background: var(--bg-secondary);
-        border: 2px solid var(--border);
-        border-radius: 25px;
-        font-size: 14px;
-        font-weight: 700;
-        color: var(--text-secondary);
-        cursor: pointer;
-        transition: all 0.3s;
+    
+    .filter-btn {
         white-space: nowrap;
+        flex-shrink: 0;
     }
-
-    .filter-pill:hover {
-        background: rgba(76, 139, 245, 0.1);
-        border-color: var(--accent);
-        transform: translateY(-2px);
+    
+    .games-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
     }
-
-    .filter-pill.active {
-        background: linear-gradient(135deg, var(--accent), #6366f1);
-        color: white;
-        border-color: var(--accent);
-        box-shadow: 0 6px 20px rgba(76, 139, 245, 0.4);
+    
+    .featured-list-item {
+        flex-direction: column;
     }
-
-    /* Games Grid */
-    .cards-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-        gap: 24px;
-        margin-bottom: 70px;
+    
+    .featured-list-image {
+        width: 100%;
+        height: 100px;
     }
-
-    .grid-loading {
-        grid-column: 1/-1;
-        text-align: center;
-        padding: 80px 20px;
-        color: var(--text-secondary);
-    }
-
-    .loading-spinner {
-        width: 60px;
-        height: 60px;
-        border: 4px solid var(--border);
-        border-top-color: var(--accent);
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin: 0 auto 20px;
-    }
-
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-
-    .empty-state {
-        grid-column: 1/-1;
-        text-align: center;
-        padding: 80px 20px;
-        background: var(--bg-secondary);
-        border-radius: 20px;
-        border: 2px dashed var(--border);
-    }
-
-    .empty-state i {
-        font-size: 80px;
-        margin-bottom: 24px;
-        opacity: 0.3;
-        color: var(--text-secondary);
-    }
-
-    .empty-state h3 {
-        font-size: 24px;
-        margin-bottom: 12px;
-        color: var(--text-primary);
-    }
-
-    .empty-state p {
-        color: var(--text-secondary);
-        font-size: 16px;
-    }
-
-    /* Evento Encerrado */
-    .evento-ended {
-        background: linear-gradient(135deg, rgba(220, 53, 69, 0.1), rgba(220, 53, 69, 0.05));
-        border: 2px solid var(--danger);
-        border-radius: 20px;
-        padding: 50px;
-        text-align: center;
-        margin: 50px 0;
-    }
-
-    .evento-ended i {
-        font-size: 64px;
-        color: var(--danger);
-        margin-bottom: 20px;
-        opacity: 0.8;
-    }
-
-    .evento-ended h3 {
-        color: var(--danger);
-        font-size: 28px;
-        margin-bottom: 12px;
-        font-weight: 800;
-    }
-
-    .evento-ended p {
-        color: var(--text-secondary);
-        font-size: 16px;
-    }
-
-    /* Results Counter */
-    .results-info {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 16px 24px;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        margin-bottom: 24px;
-        font-size: 14px;
-    }
-
-    .results-count {
-        color: var(--text-primary);
-        font-weight: 700;
-    }
-
-    .results-filter {
-        color: var(--accent);
-        font-weight: 600;
-    }
-
-    .clear-filter {
-        color: var(--text-secondary);
-        cursor: pointer;
-        text-decoration: underline;
-        transition: color 0.2s;
-    }
-
-    .clear-filter:hover {
-        color: var(--accent);
-    }
-
-    /* Responsive */
-    @media (max-width: 768px) {
-        .evento-hero {
-            height: 350px;
-        }
-        
-        .evento-hero-content {
-            padding: 30px;
-        }
-        
-        .evento-title {
-            font-size: 36px;
-        }
-        
-        .evento-description {
-            font-size: 16px;
-        }
-
-        .countdown {
-            padding: 30px 20px;
-        }
-        
-        .countdown-timer {
-            gap: 12px;
-        }
-
-        .countdown-item {
-            padding: 16px 12px;
-            min-width: auto;
-            flex: 1;
-        }
-        
-        .countdown-number {
-            font-size: 36px;
-        }
-
-        .countdown-label {
-            font-size: 11px;
-        }
-
-        .section-header {
-            flex-direction: column;
-            align-items: flex-start;
-        }
-
-        .section-title {
-            font-size: 24px;
-        }
-
-        .filter-container {
-            width: 100%;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            padding-bottom: 8px;
-        }
-
-        .filter-container::-webkit-scrollbar {
-            height: 4px;
-        }
-
-        .filter-container::-webkit-scrollbar-thumb {
-            background: var(--border);
-            border-radius: 4px;
-        }
-
-        .cards-grid {
-            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-            gap: 16px;
-        }
-
-        .stat-value {
-            font-size: 32px;
-        }
-    }
-
-    /* Animações de entrada */
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(30px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    .animate-in {
-        animation: fadeInUp 0.6s ease-out;
-    }
-
-    .animate-in-delay-1 { animation-delay: 0.1s; }
-    .animate-in-delay-2 { animation-delay: 0.2s; }
-    .animate-in-delay-3 { animation-delay: 0.3s; }
-    .animate-in-delay-4 { animation-delay: 0.4s; }
+}
 </style>
 
-<div class="container" style="padding: 30px 20px;">
+<div class="evento-page">
     
     <!-- Hero -->
-    <div class="evento-hero animate-in" style="background-image: url('<?= SITE_URL . $evento['imagem_banner'] ?>');">
-        <div class="evento-hero-particles" id="particles"></div>
-        <div class="evento-hero-content">
-            <div class="evento-badge">
-                <i class="fas fa-fire"></i>
-                <span>Evento Especial</span>
+    <section class="evento-hero">
+        <div class="hero-bg" style="background-image: url('<?= SITE_URL . $evento['imagem_banner'] ?>');"></div>
+        <div class="hero-overlay"></div>
+        
+        <div class="hero-content">
+            <?php if ($evento_ativo): ?>
+                <span class="hero-badge">
+                    <i class="fas fa-circle"></i>
+                    Evento Ativo
+                </span>
+            <?php elseif ($evento_futuro): ?>
+                <span class="hero-badge inactive">
+                    <i class="fas fa-clock"></i>
+                    Em Breve
+                </span>
+            <?php else: ?>
+                <span class="hero-badge inactive">
+                    <i class="fas fa-calendar-times"></i>
+                    Encerrado
+                </span>
+            <?php endif; ?>
+            
+            <h1 class="hero-title"><?= htmlspecialchars($evento['nome']) ?></h1>
+            <p class="hero-description"><?= htmlspecialchars($evento['descricao']) ?></p>
+            
+            <div class="hero-meta">
+                <span>
+                    <i class="fas fa-calendar"></i>
+                    <?= date('d/m', strtotime($evento['data_inicio'])) ?> - <?= date('d/m/Y', strtotime($evento['data_fim'])) ?>
+                </span>
+                <span>
+                    <i class="fas fa-gamepad"></i>
+                    <?= $total_jogos ?> jogos
+                </span>
+                <span>
+                    <i class="fas fa-percent"></i>
+                    Até <?= $maior_desconto ?>% OFF
+                </span>
             </div>
-            <h1 class="evento-title"><?= htmlspecialchars($evento['nome']) ?></h1>
-            <p class="evento-description"><?= htmlspecialchars($evento['descricao']) ?></p>
         </div>
-    </div>
+    </section>
     
-    <!-- Countdown ou Evento Encerrado -->
-    <?php if ($evento_ativo): ?>
-        <div class="countdown animate-in animate-in-delay-1">
-            <div class="countdown-title">
-                <i class="fas fa-hourglass-half"></i> O evento termina em:
+    <!-- Countdown -->
+    <?php if ($evento_ativo || $evento_futuro): ?>
+    <section class="countdown-section">
+        <div class="countdown-card">
+            <div class="countdown-label">
+                <i class="fas fa-hourglass-half"></i>
+                <?= $evento_ativo ? 'Termina em' : 'Começa em' ?>
             </div>
+            
             <div class="countdown-timer" id="countdown">
                 <div class="countdown-item">
                     <span class="countdown-number" id="days">00</span>
-                    <span class="countdown-label">Dias</span>
+                    <span class="countdown-unit">Dias</span>
                 </div>
                 <div class="countdown-item">
                     <span class="countdown-number" id="hours">00</span>
-                    <span class="countdown-label">Horas</span>
+                    <span class="countdown-unit">Horas</span>
                 </div>
                 <div class="countdown-item">
                     <span class="countdown-number" id="minutes">00</span>
-                    <span class="countdown-label">Minutos</span>
+                    <span class="countdown-unit">Min</span>
                 </div>
                 <div class="countdown-item">
                     <span class="countdown-number" id="seconds">00</span>
-                    <span class="countdown-label">Segundos</span>
+                    <span class="countdown-unit">Seg</span>
                 </div>
             </div>
         </div>
-    <?php elseif ($agora < $evento['data_inicio']): ?>
-        <div class="countdown animate-in animate-in-delay-1">
-            <div class="countdown-title">
-                <i class="fas fa-hourglass-start"></i> O evento começa em:
-            </div>
-            <div class="countdown-timer" id="countdown">
-                <div class="countdown-item">
-                    <span class="countdown-number" id="days">00</span>
-                    <span class="countdown-label">Dias</span>
-                </div>
-                <div class="countdown-item">
-                    <span class="countdown-number" id="hours">00</span>
-                    <span class="countdown-label">Horas</span>
-                </div>
-                <div class="countdown-item">
-                    <span class="countdown-number" id="minutes">00</span>
-                    <span class="countdown-label">Minutos</span>
-                </div>
-            </div>
-        </div>
-    <?php else: ?>
-        <div class="evento-ended animate-in animate-in-delay-1">
-            <i class="fas fa-calendar-times"></i>
-            <h3>Evento Encerrado</h3>
-            <p>Este evento terminou em <?= date('d/m/Y \à\s H:i', strtotime($evento['data_fim'])) ?></p>
-        </div>
+    </section>
     <?php endif; ?>
     
-    <!-- Estatísticas -->
-    <div class="evento-stats">
-        <div class="stat-card animate-in animate-in-delay-1">
-            <div class="stat-icon">
-                <i class="fas fa-gamepad"></i>
+    <!-- Stats -->
+    <section class="stats-section">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-gamepad"></i></div>
+                <div class="stat-value"><?= $total_jogos ?></div>
+                <div class="stat-label">Jogos em Oferta</div>
             </div>
-            <div class="stat-value"><?= $total_jogos ?></div>
-            <div class="stat-label">Jogos em Oferta</div>
-        </div>
-        
-        <div class="stat-card animate-in animate-in-delay-2">
-            <div class="stat-icon">
-                <i class="fas fa-percent"></i>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-percent"></i></div>
+                <div class="stat-value"><?= $desconto_medio ?>%</div>
+                <div class="stat-label">Desconto Médio</div>
             </div>
-            <div class="stat-value"><?= $desconto_medio ?>%</div>
-            <div class="stat-label">Desconto Médio</div>
-        </div>
-        
-        <div class="stat-card animate-in animate-in-delay-3">
-            <div class="stat-icon">
-                <i class="fas fa-piggy-bank"></i>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-piggy-bank"></i></div>
+                <div class="stat-value"><?= formatPrice($economia_total) ?></div>
+                <div class="stat-label">Economia Possível</div>
             </div>
-            <div class="stat-value"><?= formatPrice($economia_total) ?></div>
-            <div class="stat-label">Economia Total Possível</div>
-        </div>
-        
-        <div class="stat-card animate-in animate-in-delay-4">
-            <div class="stat-icon">
-                <i class="fas fa-fire"></i>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-fire"></i></div>
+                <div class="stat-value"><?= $maior_desconto ?>%</div>
+                <div class="stat-label">Maior Desconto</div>
             </div>
-            <div class="stat-value"><?= $maior_desconto ?>%</div>
-            <div class="stat-label">Maior Desconto</div>
         </div>
-    </div>
+    </section>
     
-    <!-- Filtros e Jogos -->
-    <div class="section-header animate-in">
-        <h2 class="section-title">
-            <i class="fas fa-tags"></i> 
-            <span>Ofertas do Evento</span>
-        </h2>
-        <div class="filter-container">
-            <span class="filter-label">Filtrar:</span>
-            <button class="filter-pill active" data-filter="all">
-                <i class="fas fa-th"></i> Todos
-            </button>
-            <button class="filter-pill" data-filter="50">
-                <i class="fas fa-fire"></i> 50%+ OFF
-            </button>
-            <button class="filter-pill" data-filter="75">
-                <i class="fas fa-fire-alt"></i> 75%+ OFF
-            </button>
-            <button class="filter-pill" data-filter="price-low">
-                <i class="fas fa-arrow-down"></i> Menor Preço
-            </button>
-            <button class="filter-pill" data-filter="discount-high">
-                <i class="fas fa-arrow-up"></i> Maior Desconto
-            </button>
-        </div>
-    </div>
-
-    <!-- Results Info -->
-    <div class="results-info" id="resultsInfo" style="display: none;">
-        <div>
-            <span class="results-count" id="resultsCount">0 jogos</span>
-            <span class="results-filter" id="activeFilter"></span>
-        </div>
-        <span class="clear-filter" onclick="clearFilter()">
-            <i class="fas fa-times"></i> Limpar filtro
-        </span>
-    </div>
+    <?php if ($evento_encerrado): ?>
     
-    <div class="cards-grid" id="gamesGrid">
-        <?php if (!empty($jogos_evento)): ?>
-            <?php foreach ($jogos_evento as $jogo): ?>
-                <div class="game-card-wrapper" 
-                     data-discount="<?= $jogo['percentual_desconto'] ?>" 
-                     data-price="<?= $jogo['preco_promocional_centavos'] ?>">
-                    <?php renderGameCard($jogo, $pdo, $user_id); ?>
+    <!-- Event Ended -->
+    <section class="event-ended">
+        <div class="ended-card">
+            <div class="ended-icon">
+                <i class="fas fa-calendar-times"></i>
+            </div>
+            <h2 class="ended-title">Evento Encerrado</h2>
+            <p class="ended-text">Este evento já terminou, mas você pode conferir outras promoções disponíveis.</p>
+            <div class="ended-date">
+                <i class="fas fa-clock"></i>
+                Encerrado em <?= date('d/m/Y \à\s H:i', strtotime($evento['data_fim'])) ?>
+            </div>
+            <br>
+            <a href="<?= SITE_URL ?>/pages/busca.php?promocao=1" class="ended-btn">
+                <i class="fas fa-tags"></i>
+                Ver Promoções Atuais
+            </a>
+        </div>
+    </section>
+    
+    <?php else: ?>
+    
+    <!-- Featured -->
+    <?php if (!empty($jogos_destaque)): ?>
+    <section class="featured-section">
+        <div class="section-header">
+            <h2 class="section-title">
+                <i class="fas fa-star"></i>
+                Destaques
+            </h2>
+        </div>
+        
+        <div class="featured-grid">
+            <!-- Main Featured -->
+            <?php $main = $jogos_destaque[0]; ?>
+            <a href="<?= SITE_URL ?>/pages/jogo.php?slug=<?= $main['slug'] ?>" class="featured-card featured-main">
+                <div class="featured-card-bg" style="background-image: url('<?= SITE_URL . $main['imagem_banner'] ?>');"></div>
+                <div class="featured-card-overlay"></div>
+                <span class="featured-card-discount">-<?= $main['percentual_desconto'] ?>%</span>
+                <div class="featured-card-content">
+                    <h3 class="featured-card-title"><?= htmlspecialchars($main['titulo']) ?></h3>
+                    <p class="featured-card-dev"><?= htmlspecialchars($main['nome_estudio']) ?></p>
+                    <div class="featured-card-prices">
+                        <span class="price-original"><?= formatPrice($main['preco_centavos']) ?></span>
+                        <span class="price-current"><?= formatPrice($main['preco_promocional_centavos']) ?></span>
+                    </div>
                 </div>
+            </a>
+            
+            <!-- List Items -->
+            <?php foreach (array_slice($jogos_destaque, 1, 4) as $jogo): ?>
+            <a href="<?= SITE_URL ?>/pages/jogo.php?slug=<?= $jogo['slug'] ?>" class="featured-list-item">
+                <div class="featured-list-image">
+                    <img src="<?= SITE_URL . $jogo['imagem_capa'] ?>" alt="<?= htmlspecialchars($jogo['titulo']) ?>">
+                    <span class="featured-list-discount">-<?= $jogo['percentual_desconto'] ?>%</span>
+                </div>
+                <div class="featured-list-info">
+                    <h4 class="featured-list-title"><?= htmlspecialchars($jogo['titulo']) ?></h4>
+                    <span class="featured-list-dev"><?= htmlspecialchars($jogo['nome_estudio']) ?></span>
+                    <div class="featured-list-prices">
+                        <span class="price-original"><?= formatPrice($jogo['preco_centavos']) ?></span>
+                        <span class="price-current"><?= formatPrice($jogo['preco_promocional_centavos']) ?></span>
+                    </div>
+                </div>
+            </a>
             <?php endforeach; ?>
-        <?php else: ?>
-            <div class="empty-state">
-                <i class="fas fa-gamepad"></i>
-                <h3>Nenhuma Oferta Disponível</h3>
-                <p>Volte em breve para conferir as ofertas deste evento!</p>
+        </div>
+    </section>
+    <?php endif; ?>
+    
+    <!-- All Games -->
+    <section class="games-section" id="ofertas">
+        <div class="section-header">
+            <h2 class="section-title">
+                <i class="fas fa-tags"></i>
+                Todas as Ofertas
+            </h2>
+        </div>
+        
+        <div class="filters-bar">
+            <div class="filters-left">
+                <button class="filter-btn active" data-filter="all">Todos</button>
+                <button class="filter-btn" data-filter="50">50%+ OFF</button>
+                <button class="filter-btn" data-filter="75">75%+ OFF</button>
             </div>
-        <?php endif; ?>
-    </div>
+            <select class="sort-select" id="sortSelect">
+                <option value="discount">Maior Desconto</option>
+                <option value="price-low">Menor Preço</option>
+                <option value="price-high">Maior Preço</option>
+                <option value="name">Nome A-Z</option>
+            </select>
+        </div>
+        
+        <p class="games-count">
+            Mostrando <strong id="visibleCount"><?= $total_jogos ?></strong> jogos
+        </p>
+        
+        <div class="games-grid" id="gamesGrid">
+            <?php if (!empty($jogos_evento)): ?>
+                <?php foreach ($jogos_evento as $jogo): ?>
+                    <div class="game-card-wrapper" 
+                         data-discount="<?= $jogo['percentual_desconto'] ?>" 
+                         data-price="<?= $jogo['preco_promocional_centavos'] ?>"
+                         data-name="<?= htmlspecialchars($jogo['titulo']) ?>">
+                        <?php 
+                        renderGameCard($jogo, $pdo, $user_id, 'store', [
+                            'is_owned' => in_array($jogo['id'], $meus_jogos),
+                            'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
+                            'in_cart' => in_array($jogo['id'], $meu_carrinho)
+                        ]); 
+                        ?>
+                    </div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <div class="empty-state">
+                    <i class="fas fa-box-open"></i>
+                    <h3>Nenhuma oferta disponível</h3>
+                    <p>As ofertas serão adicionadas em breve.</p>
+                </div>
+            <?php endif; ?>
+        </div>
+    </section>
+    
+    <?php endif; ?>
     
 </div>
 
 <script>
-// Particles no Hero
-function createParticles() {
-    const container = document.getElementById('particles');
-    if (!container) return;
-    
-    for (let i = 0; i < 20; i++) {
-        const particle = document.createElement('div');
-        particle.className = 'particle';
-        particle.style.left = Math.random() * 100 + '%';
-        particle.style.animationDelay = Math.random() * 6 + 's';
-        particle.style.animationDuration = (Math.random() * 3 + 3) + 's';
-        container.appendChild(particle);
-    }
-}
-
-createParticles();
-
-// Countdown Timer
-<?php if ($evento_ativo || $agora < $evento['data_inicio']): ?>
+// Countdown
+<?php if ($evento_ativo || $evento_futuro): ?>
 const targetDate = new Date('<?= $evento_ativo ? $evento['data_fim'] : $evento['data_inicio'] ?>').getTime();
 
 function updateCountdown() {
-    const now = new Date().getTime();
+    const now = Date.now();
     const distance = targetDate - now;
     
     if (distance < 0) {
@@ -783,162 +1035,80 @@ function updateCountdown() {
         return;
     }
     
-    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+    const d = Math.floor(distance / (1000 * 60 * 60 * 24));
+    const h = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+    const s = Math.floor((distance % (1000 * 60)) / 1000);
     
-    const daysEl = document.getElementById('days');
-    const hoursEl = document.getElementById('hours');
-    const minutesEl = document.getElementById('minutes');
-    const secondsEl = document.getElementById('seconds');
-    
-    if (daysEl) daysEl.textContent = String(days).padStart(2, '0');
-    if (hoursEl) hoursEl.textContent = String(hours).padStart(2, '0');
-    if (minutesEl) minutesEl.textContent = String(minutes).padStart(2, '0');
-    if (secondsEl) secondsEl.textContent = String(seconds).padStart(2, '0');
+    document.getElementById('days').textContent = String(d).padStart(2, '0');
+    document.getElementById('hours').textContent = String(h).padStart(2, '0');
+    document.getElementById('minutes').textContent = String(m).padStart(2, '0');
+    document.getElementById('seconds').textContent = String(s).padStart(2, '0');
 }
 
 updateCountdown();
 setInterval(updateCountdown, 1000);
 <?php endif; ?>
 
-// Sistema de Filtros Corrigido
-let allGames = [];
-let currentFilter = 'all';
+// Filter & Sort
+const grid = document.getElementById('gamesGrid');
+const filterBtns = document.querySelectorAll('.filter-btn');
+const sortSelect = document.getElementById('sortSelect');
+let allCards = Array.from(document.querySelectorAll('.game-card-wrapper'));
 
-document.addEventListener('DOMContentLoaded', function() {
-    // Capturar todos os wrappers de jogos
-    allGames = Array.from(document.querySelectorAll('.game-card-wrapper'));
-    
-    // Event listeners para os filtros
-    document.querySelectorAll('.filter-pill').forEach(pill => {
-        pill.addEventListener('click', function() {
-            const filter = this.dataset.filter;
-            filterGames(filter);
-            
-            // Atualizar pills
-            document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
-            this.classList.add('active');
-        });
+filterBtns.forEach(btn => {
+    btn.addEventListener('click', function() {
+        filterBtns.forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        filterGames(this.dataset.filter);
     });
 });
 
+sortSelect?.addEventListener('change', function() {
+    sortGames(this.value);
+});
+
 function filterGames(filter) {
-    currentFilter = filter;
-    const grid = document.getElementById('gamesGrid');
-    const resultsInfo = document.getElementById('resultsInfo');
+    let visible = 0;
     
-    // Mostrar loading
-    grid.innerHTML = '<div class="grid-loading"><div class="loading-spinner"></div><p>Filtrando jogos...</p></div>';
-    
-    setTimeout(() => {
-        let filtered = [...allGames];
+    allCards.forEach(card => {
+        const discount = parseInt(card.dataset.discount) || 0;
+        let show = true;
         
-        // Aplicar filtros
-        if (filter === '50') {
-            filtered = allGames.filter(card => {
-                const discount = parseInt(card.dataset.discount || 0);
-                return discount >= 50;
-            });
-        } else if (filter === '75') {
-            filtered = allGames.filter(card => {
-                const discount = parseInt(card.dataset.discount || 0);
-                return discount >= 75;
-            });
-        } else if (filter === 'price-low') {
-            filtered = [...allGames].sort((a, b) => {
-                const priceA = parseInt(a.dataset.price || 0);
-                const priceB = parseInt(b.dataset.price || 0);
-                return priceA - priceB;
-            });
-        } else if (filter === 'discount-high') {
-            filtered = [...allGames].sort((a, b) => {
-                const discA = parseInt(a.dataset.discount || 0);
-                const discB = parseInt(b.dataset.discount || 0);
-                return discB - discA;
-            });
+        if (filter === '50') show = discount >= 50;
+        else if (filter === '75') show = discount >= 75;
+        
+        card.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+    
+    document.getElementById('visibleCount').textContent = visible;
+}
+
+function sortGames(sortBy) {
+    const cards = Array.from(grid.querySelectorAll('.game-card-wrapper'));
+    
+    cards.sort((a, b) => {
+        const dA = parseInt(a.dataset.discount) || 0;
+        const dB = parseInt(b.dataset.discount) || 0;
+        const pA = parseInt(a.dataset.price) || 0;
+        const pB = parseInt(b.dataset.price) || 0;
+        const nA = a.dataset.name || '';
+        const nB = b.dataset.name || '';
+        
+        switch (sortBy) {
+            case 'discount': return dB - dA;
+            case 'price-low': return pA - pB;
+            case 'price-high': return pB - pA;
+            case 'name': return nA.localeCompare(nB);
+            default: return 0;
         }
-        
-        // Limpar grid
-        grid.innerHTML = '';
-        
-        // Renderizar resultados
-        if (filtered.length === 0) {
-            grid.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-search"></i>
-                    <h3>Nenhum jogo encontrado</h3>
-                    <p>Nenhum jogo corresponde ao filtro "${getFilterName(filter)}"</p>
-                    <button class="filter-pill" onclick="clearFilter()" style="margin-top: 20px; display: inline-block;">
-                        <i class="fas fa-undo"></i> Ver todos os jogos
-                    </button>
-                </div>
-            `;
-            resultsInfo.style.display = 'none';
-        } else {
-            // Adicionar cards com animação
-            filtered.forEach((card, index) => {
-                const clone = card.cloneNode(true);
-                clone.style.opacity = '0';
-                clone.style.transform = 'translateY(20px)';
-                grid.appendChild(clone);
-                
-                setTimeout(() => {
-                    clone.style.transition = 'all 0.3s ease-out';
-                    clone.style.opacity = '1';
-                    clone.style.transform = 'translateY(0)';
-                }, index * 30);
-            });
-            
-            // Atualizar info de resultados
-            updateResultsInfo(filtered.length, filter);
-        }
-        
-        // Smooth scroll para o grid
-        grid.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 300);
-}
-
-function updateResultsInfo(count, filter) {
-    const resultsInfo = document.getElementById('resultsInfo');
-    const resultsCount = document.getElementById('resultsCount');
-    const activeFilter = document.getElementById('activeFilter');
+    });
     
-    resultsCount.textContent = `${count} jogo${count !== 1 ? 's' : ''}`;
-    
-    if (filter !== 'all') {
-        activeFilter.textContent = ` • ${getFilterName(filter)}`;
-        resultsInfo.style.display = 'flex';
-    } else {
-        resultsInfo.style.display = 'none';
-    }
+    cards.forEach(card => grid.appendChild(card));
 }
 
-function getFilterName(filter) {
-    const names = {
-        'all': 'Todos',
-        '50': 'Desconto 50%+',
-        '75': 'Desconto 75%+',
-        'price-low': 'Menor Preço',
-        'discount-high': 'Maior Desconto'
-    };
-    return names[filter] || filter;
-}
-
-function clearFilter() {
-    const allButton = document.querySelector('.filter-pill[data-filter="all"]');
-    if (allButton) {
-        allButton.click();
-    }
-}
-
-// Scroll reveal para animações
-const observerOptions = {
-    threshold: 0.1,
-    rootMargin: '0px 0px -100px 0px'
-};
-
+// Simple fade-in animation
 const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
         if (entry.isIntersecting) {
@@ -946,54 +1116,14 @@ const observer = new IntersectionObserver((entries) => {
             entry.target.style.transform = 'translateY(0)';
         }
     });
-}, observerOptions);
+}, { threshold: 0.1 });
 
-// Observar elementos para animação
-document.querySelectorAll('.game-card-wrapper').forEach(card => {
-    card.style.opacity = '0';
-    card.style.transform = 'translateY(20px)';
-    card.style.transition = 'all 0.5s ease-out';
-    observer.observe(card);
+document.querySelectorAll('.game-card-wrapper, .stat-card').forEach(el => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(20px)';
+    el.style.transition = 'opacity 0.4s, transform 0.4s';
+    observer.observe(el);
 });
-
-// Salvar filtro no localStorage
-window.addEventListener('beforeunload', function() {
-    localStorage.setItem('eventoFilter', currentFilter);
-});
-
-// Restaurar filtro salvo
-const savedFilter = localStorage.getItem('eventoFilter');
-if (savedFilter && savedFilter !== 'all') {
-    setTimeout(() => {
-        const filterButton = document.querySelector(`.filter-pill[data-filter="${savedFilter}"]`);
-        if (filterButton) {
-            filterButton.click();
-        }
-    }, 500);
-}
-
-// Atalhos de teclado
-document.addEventListener('keydown', function(e) {
-    if (e.ctrlKey || e.metaKey) {
-        switch(e.key) {
-            case '1':
-                e.preventDefault();
-                document.querySelector('.filter-pill[data-filter="all"]')?.click();
-                break;
-            case '2':
-                e.preventDefault();
-                document.querySelector('.filter-pill[data-filter="50"]')?.click();
-                break;
-            case '3':
-                e.preventDefault();
-                document.querySelector('.filter-pill[data-filter="75"]')?.click();
-                break;
-        }
-    }
-});
-
-console.log('%c🎮 Página de Evento Carregada! ', 'background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 10px 20px; border-radius: 8px; font-weight: bold; font-size: 14px;');
-console.log('%cAtalhos: Ctrl+1 (Todos) | Ctrl+2 (50%+) | Ctrl+3 (75%+)', 'color: #667eea; font-size: 12px;');
 </script>
 
 <?php require_once '../includes/footer.php'; ?>

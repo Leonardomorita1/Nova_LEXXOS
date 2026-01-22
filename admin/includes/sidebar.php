@@ -766,6 +766,14 @@ try {
                 Tags
             </a>
         </li>
+
+        <li>
+            <a href="<?= SITE_URL ?>/admin/banners.php"
+                class="<?= $current_page == 'banners.php' ? 'active' : '' ?>">
+                <i class="fas fa-images"></i>
+                Banners
+            </a>
+        </li>
         
         <div class="admin-sidebar-divider"></div>
         <span class="admin-sidebar-section-title">Usuários</span>
@@ -947,6 +955,13 @@ try {
     <!-- Menu Items -->
     <div class="admin-sheet-menu">
         <div class="admin-sheet-menu-title">Conteúdo</div>
+
+        <a href="<?= SITE_URL ?>/admin/banners.php" 
+           class="admin-sheet-menu-item <?= $current_page == 'banners.php' ? 'active' : '' ?>">
+            <i class="fas fa-images"></i>
+            <span>Banners</span>
+            <i class="fas fa-chevron-right chevron"></i>   
+        </a>
         
         <a href="<?= SITE_URL ?>/admin/categorias.php" 
            class="admin-sheet-menu-item <?= $current_page == 'categorias.php' ? 'active' : '' ?>">
