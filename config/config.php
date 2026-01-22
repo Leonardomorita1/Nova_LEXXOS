@@ -344,4 +344,3 @@ function formatFileSize($bytes) {
         return $bytes . ' bytes';
     }
 }
-
