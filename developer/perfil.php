@@ -920,46 +920,46 @@ require_once '../includes/header.php';
                     
                     <div class="form-grid">
                         <div class="form-group">
-                            <label><i class="fab fa-twitter" style="color: #1DA1F2;"></i> Twitter / X</label>
+                            <label><i class="fab fa-twixtter" style="color: #1DA1F2;"></i> Twitter / X</label>
                             <div class="social-input">
-                                <span class="prefix">twitter.com/</span>
+                                
                                 <input type="text" 
-                                       name="twitter" 
+                                       name="x" 
                                        value="<?php echo sanitize($dev['twitter'] ?? ''); ?>"
-                                       placeholder="seu_usuario">
+                                       placeholder="https://x.com/seu_usuario">
                             </div>
                         </div>
                         
                         <div class="form-group">
                             <label><i class="fab fa-instagram" style="color: #E4405F;"></i> Instagram</label>
                             <div class="social-input">
-                                <span class="prefix">instagram.com/</span>
+                                
                                 <input type="text" 
                                        name="instagram" 
                                        value="<?php echo sanitize($dev['instagram'] ?? ''); ?>"
-                                       placeholder="seu_usuario">
+                                       placeholder="https://www.instagram.com/seu_usuario">
                             </div>
                         </div>
                         
                         <div class="form-group">
                             <label><i class="fab fa-discord" style="color: #5865F2;"></i> Discord</label>
                             <div class="social-input">
-                                <span class="prefix">discord.gg/</span>
+                                
                                 <input type="text" 
                                        name="discord" 
                                        value="<?php echo sanitize($dev['discord'] ?? ''); ?>"
-                                       placeholder="seu_servidor">
+                                       placeholder="https://discord.gg/seu_servidor">
                             </div>
                         </div>
                         
                         <div class="form-group">
                             <label><i class="fab fa-youtube" style="color: #FF0000;"></i> YouTube</label>
                             <div class="social-input">
-                                <span class="prefix">youtube.com/</span>
+                                
                                 <input type="text" 
                                        name="youtube" 
                                        value="<?php echo sanitize($dev['youtube'] ?? ''); ?>"
-                                       placeholder="@seu_canal">
+                                       placeholder="https://www.youtube.com/@seu_canal">
                             </div>
                         </div>
                     </div>

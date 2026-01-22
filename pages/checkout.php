@@ -298,7 +298,7 @@ require_once '../includes/header.php';
 
 /* Test Mode Banner */
 .test-mode-banner {
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(251, 191, 36, 0.1));
+    background: rgba(245, 158, 11, 0.1);
     border: 1px solid #f59e0b;
     border-radius: 14px;
     padding: 20px;
@@ -330,7 +330,7 @@ require_once '../includes/header.php';
 .btn-proceed {
     width: 100%;
     padding: 18px 30px;
-    background: linear-gradient(135deg, var(--accent), #a3e635);
+    background: var(--accent);
     color: #000;
     border: none;
     border-radius: 14px;
@@ -343,12 +343,12 @@ require_once '../includes/header.php';
     gap: 12px;
     margin-top: 25px;
     transition: all 0.3s;
-    box-shadow: 0 8px 25px rgba(185, 255, 102, 0.25);
+    box-shadow: 0 8px 25px var(--accent-hover);
 }
 
 .btn-proceed:hover {
     transform: translateY(-3px);
-    box-shadow: 0 15px 40px rgba(185, 255, 102, 0.35);
+    box-shadow: 0 15px 40px var(--accent-hover);
 }
 
 /* ===========================================

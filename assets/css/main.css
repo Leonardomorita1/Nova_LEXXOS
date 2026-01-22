@@ -11,7 +11,7 @@
     --bg-primary: #131314;
     --bg-secondary: #1E1F20;
     --accent: #00aeff;
-    --accent-hover: var(--accent) opacity(0.8);
+    --accent-hover: var(--accent) opacity(0.5);
     --text-primary: #E3E3E3;
     --text-secondary: #7e7e7e;
     --border: #2A2B2C;

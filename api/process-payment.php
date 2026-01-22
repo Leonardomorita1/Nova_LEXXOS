@@ -18,6 +18,8 @@ $input = json_decode(file_get_contents('php://input'), true);
 $metodo_pagamento = $input['metodo_pagamento'] ?? 'pix';
 $simular = $input['simular'] ?? false;
 
+
+
 try {
     $pdo->beginTransaction();
     
