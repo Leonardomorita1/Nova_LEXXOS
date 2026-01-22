@@ -905,8 +905,8 @@ require_once '../includes/header.php';
                                     <?php if (!empty($jogo['imagem_capa'])): ?>
                                     <div>
                                         <div class="label" style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Capa</div>
-                                        <div class="cover-preview">
-                                            <img src="<?= SITE_URL . $jogo['imagem_capa']; ?>" alt="Capa">
+                                        <div class="cover-preview" style="aspect-ratio: 1/1;">
+                                            <img src="<?= SITE_URL . $jogo['imagem_capa']; ?>" alt="Capa" >
                                         </div>
                                     </div>
                                     <?php endif; ?>

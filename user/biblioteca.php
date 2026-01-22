@@ -70,7 +70,7 @@ require_once '../includes/header.php';
 }
 
 .biblioteca-hero {
-    background: linear-gradient(135deg, var(--bg-primary) 0%, #0d1f3c 50%, var(--bg-secondary) 100%);
+    background: linear-gradient(135deg, #000 0%, #0d1f3c 50%, #000 100%);
     padding: 60px 0 100px;
     position: relative;
     overflow: hidden;
