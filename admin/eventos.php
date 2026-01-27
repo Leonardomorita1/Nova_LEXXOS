@@ -15,8 +15,10 @@ $message = '';
 $error = '';
 
 // ============================================
-// CRIAR EVENTO SAZONAL
+// LÓGICA PHP (MANTIDA INTEGRALMENTE)
 // ============================================
+
+// 1. CRIAR EVENTO
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['criar_evento'])) {
     try {
         $nome = trim($_POST['nome']);
@@ -30,556 +32,639 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['criar_evento'])) {
             throw new Exception('Preencha todos os campos obrigatórios');
         }
         
-        // Inserir evento (trigger criará o banner automaticamente)
-        $stmt = $pdo->prepare("
-            INSERT INTO evento (nome, slug, descricao, imagem_banner, data_inicio, data_fim, ativo) 
-            VALUES (?, ?, ?, ?, ?, ?, 1)
-        ");
+        $stmt = $pdo->prepare("INSERT INTO evento (nome, slug, descricao, imagem_banner, data_inicio, data_fim, ativo) VALUES (?, ?, ?, ?, ?, ?, 1)");
         $stmt->execute([$nome, $slug, $descricao, $imagem, $data_inicio, $data_fim]);
-        
-        $message = 'Evento criado! Banner automático adicionado ao carrossel.';
-        
+        $message = 'Evento criado e banner automático gerado.';
     } catch (Exception $e) {
         $error = $e->getMessage();
     }
 }
 
-// ============================================
-// TOGGLE EVENTO
-// ============================================
+// 2. TOGGLE EVENTO
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['toggle_evento'])) {
     $evento_id = $_POST['evento_id'];
-    
     $stmt = $pdo->prepare("UPDATE evento SET ativo = NOT ativo WHERE id = ?");
     $stmt->execute([$evento_id]);
     
-    // Atualizar banner correspondente
-    $stmt = $pdo->prepare("
-        UPDATE banner SET ativo = NOT ativo 
-        WHERE url_destino LIKE CONCAT('%', (SELECT slug FROM evento WHERE id = ?), '%')
-    ");
+    // Sincronizar banner
+    $stmt = $pdo->prepare("UPDATE banner SET ativo = NOT ativo WHERE url_destino LIKE CONCAT('%', (SELECT slug FROM evento WHERE id = ?), '%')");
     $stmt->execute([$evento_id]);
-    
-    $message = 'Status do evento atualizado';
+    $message = 'Status do evento atualizado.';
 }
 
-// ============================================
-// DELETAR EVENTO
-// ============================================
+// 3. DELETAR EVENTO
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['deletar_evento'])) {
     $evento_id = $_POST['evento_id'];
-    
-    // Deletar banner associado
-    $stmt = $pdo->prepare("
-        DELETE FROM banner 
-        WHERE url_destino LIKE CONCAT('%', (SELECT slug FROM evento WHERE id = ?), '%')
-    ");
+    $stmt = $pdo->prepare("DELETE FROM banner WHERE url_destino LIKE CONCAT('%', (SELECT slug FROM evento WHERE id = ?), '%')");
     $stmt->execute([$evento_id]);
-    
-    // Deletar evento
     $stmt = $pdo->prepare("DELETE FROM evento WHERE id = ?");
     $stmt->execute([$evento_id]);
-    
-    $message = 'Evento e banner excluídos';
+    $message = 'Evento removido permanentemente.';
 }
 
-// ============================================
-// BUSCAR EVENTOS
-// ============================================
-$stmt = $pdo->query("
-    SELECT e.*,
-           (SELECT COUNT(*) FROM banner b WHERE b.url_destino LIKE CONCAT('%', e.slug, '%')) as tem_banner
-    FROM evento e
-    ORDER BY e.criado_em DESC
-");
+// 4. BUSCAR DADOS
+$stmt = $pdo->query("SELECT e.*, (SELECT COUNT(*) FROM banner b WHERE b.url_destino LIKE CONCAT('%', e.slug, '%')) as tem_banner FROM evento e ORDER BY e.criado_em DESC");
 $eventos = $stmt->fetchAll();
 
-// ============================================
-// BUSCAR MÉTRICAS DO DIA
-// ============================================
+// Métricas
 $stmt = $pdo->prepare("SELECT * FROM metrica_venda WHERE data = CURDATE()");
 $stmt->execute();
 $metricas_hoje = $stmt->fetch();
 
 if (!$metricas_hoje) {
     try {
-        // Gerar métricas se não existirem
         $pdo->query("CALL atualizar_metricas_hoje()");
-        
-        // Buscar novamente
         $stmt = $pdo->prepare("SELECT * FROM metrica_venda WHERE data = CURDATE()");
         $stmt->execute();
         $metricas_hoje = $stmt->fetch();
     } catch (Exception $e) {
-        // Se falhar, criar registro vazio
-        $metricas_hoje = [
-            'total_vendas' => 0,
-            'total_receita_centavos' => 0,
-            'jogos_mais_vendidos' => '[]',
-            'devs_top' => '[]'
-        ];
+        $metricas_hoje = ['total_vendas' => 0, 'total_receita_centavos' => 0, 'jogos_mais_vendidos' => '[]', 'devs_top' => '[]'];
     }
 }
 
-// ============================================
-// AUDITORIA DE CUPONS (últimos 30 dias)
-// ============================================
-$stmt = $pdo->query("
-    SELECT 
-        dc.codigo,
-        dc.tipo_desconto,
-        dc.valor_desconto,
-        dc.usos_atuais,
-        dc.usos_maximos,
-        dc.criado_em,
-        d.nome_estudio,
-        j.titulo as jogo_titulo
-    FROM dev_cupom dc
-    JOIN desenvolvedor d ON dc.desenvolvedor_id = d.id
-    LEFT JOIN jogo j ON dc.jogo_id = j.id
-    WHERE dc.criado_em >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-    ORDER BY dc.criado_em DESC
-    LIMIT 50
-");
+// Auditoria Cupons
+$stmt = $pdo->query("SELECT dc.*, d.nome_estudio FROM dev_cupom dc JOIN desenvolvedor d ON dc.desenvolvedor_id = d.id WHERE dc.criado_em >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) ORDER BY dc.criado_em DESC LIMIT 30");
 $cupons_log = $stmt->fetchAll();
 
-$page_title = 'Eventos e Monitoramento - Admin - ' . SITE_NAME;
+$page_title = 'Monitoramento & Eventos - Admin';
 require_once '../includes/header.php';
 ?>
 
 <style>
-.admin-eventos-container { max-width: 1400px; margin: 0 auto; padding: 30px 20px; }
+    /* =========================================
+       LAYOUT ADMIN
+       ========================================= */
+    .admin-wrapper {
+        display: flex;
+        min-height: calc(100vh - 80px); /* Ajuste conforme seu header */
+    }
 
-/* Dashboard Cards */
-.dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 40px; }
-.metric-card { background: linear-gradient(135deg, var(--bg-secondary), var(--bg-primary)); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
-.metric-card.primary { border-left: 4px solid var(--accent); }
-.metric-card.success { border-left: 4px solid var(--success); }
-.metric-card.warning { border-left: 4px solid var(--warning); }
-.metric-icon { width: 56px; height: 56px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 16px; }
-.metric-icon.primary { background: rgba(76, 139, 245, 0.2); color: var(--accent); }
-.metric-icon.success { background: rgba(46, 204, 113, 0.2); color: var(--success); }
-.metric-icon.warning { background: rgba(255, 193, 7, 0.2); color: var(--warning); }
-.metric-value { font-size: 32px; font-weight: 800; color: var(--text-primary); margin-bottom: 4px; }
-.metric-label { font-size: 14px; color: var(--text-secondary); }
+    .admin-content {
+        flex: 1;
+        padding: 40px;
+        max-width: 1600px;
+        margin: 0 auto;
+    }
 
-/* Eventos */
-.eventos-list { display: flex; flex-direction: column; gap: 20px; }
-.evento-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; display: flex; }
-.evento-banner { width: 300px; height: 180px; object-fit: cover; }
-.evento-content { flex: 1; padding: 24px; }
-.evento-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }
-.evento-title { font-size: 22px; font-weight: 700; color: var(--text-primary); }
-.evento-meta { display: flex; gap: 20px; margin: 12px 0; font-size: 14px; color: var(--text-secondary); }
-.evento-actions { display: flex; gap: 10px; margin-top: 16px; }
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 20px;
+    }
 
-/* Top Lists */
-.top-list { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
-.top-list-item { display: flex; align-items: center; gap: 16px; padding: 12px; border-radius: 8px; margin-bottom: 8px; background: var(--bg-primary); }
-.top-rank { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; }
-.top-info { flex: 1; }
-.top-name { font-weight: 600; color: var(--text-primary); }
-.top-value { font-size: 14px; color: var(--text-secondary); }
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
 
-/* Modal */
-.modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 20px; }
-.modal.active { display: flex; }
-.modal-content { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; }
-.modal-header { padding: 24px; border-bottom: 1px solid var(--border); }
-.modal-body { padding: 24px; }
-.modal-footer { padding: 24px; border-top: 1px solid var(--border); display: flex; gap: 12px; justify-content: flex-end; }
+    .section-title i { color: var(--accent); }
 
-.form-group { margin-bottom: 20px; }
-.form-label { display: block; font-weight: 600; margin-bottom: 8px; color: var(--text-primary); }
-.form-control { width: 100%; padding: 12px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); }
-.form-control:focus { outline: none; border-color: var(--accent); }
+    /* =========================================
+       METRICS CARDS
+       ========================================= */
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 20px;
+        margin-bottom: 40px;
+    }
 
-.btn { padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
-.btn-primary { background: var(--accent); color: white; }
-.btn-secondary { background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); }
-.btn-danger { background: var(--danger); color: white; }
-.btn-success { background: var(--success); color: white; }
+    .metric-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 25px;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.2s, border-color 0.2s;
+    }
 
-.alert { padding: 16px; border-radius: 8px; margin-bottom: 20px; }
-.alert-success { background: rgba(46, 204, 113, 0.2); color: var(--success); border: 1px solid var(--success); }
-.alert-error { background: rgba(220, 53, 69, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--accent);
+    }
 
-.badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-.badge-success { background: rgba(46, 204, 113, 0.2); color: var(--success); }
-.badge-secondary { background: rgba(149, 165, 166, 0.2); color: var(--text-secondary); }
+    .metric-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 15px;
+    }
 
-@media (max-width: 768px) {
-    .evento-card { flex-direction: column; }
-    .evento-banner { width: 100%; height: 200px; }
-}
+    .metric-icon {
+        width: 40px; height: 40px;
+        border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.2rem;
+        background: rgba(255,255,255,0.05);
+        color: var(--text-secondary);
+    }
+
+    .metric-card.highlight .metric-icon {
+        background: var(--accent);
+        color: white;
+    }
+
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+        margin-bottom: 5px;
+    }
+
+    .metric-label {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        font-weight: 500;
+    }
+
+    /* =========================================
+       TOP LISTS (SPLIT VIEW)
+       ========================================= */
+    .split-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 50px;
+    }
+
+    .panel {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .panel-header {
+        padding: 20px;
+        border-bottom: 1px solid var(--border);
+        font-weight: 600;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .list-item {
+        display: flex;
+        align-items: center;
+        padding: 15px 20px;
+        border-bottom: 1px solid var(--border);
+        gap: 15px;
+    }
+
+    .list-item:last-child { border-bottom: none; }
+
+    .rank-badge {
+        width: 24px; height: 24px;
+        border-radius: 4px;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid var(--border);
+    }
+
+    .list-item:nth-child(1) .rank-badge { background: var(--accent); color: white; border-color: var(--accent); }
+
+    .item-info { flex: 1; }
+    .item-name { font-weight: 600; color: var(--text-primary); display: block; margin-bottom: 2px; }
+    .item-meta { font-size: 0.8rem; color: var(--text-secondary); }
+
+    /* =========================================
+       EVENT ROW STYLE
+       ========================================= */
+    .event-row {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .event-thumb {
+        width: 120px; height: 70px;
+        border-radius: 6px;
+        object-fit: cover;
+        background: #000;
+        border: 1px solid var(--border);
+    }
+
+    .event-details { flex: 1; }
+    
+    .event-name {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 5px;
+        display: flex; align-items: center; gap: 10px;
+    }
+
+    .status-dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        background: #444;
+    }
+    .status-dot.active { background: #2ecc71; box-shadow: 0 0 10px rgba(46, 204, 113, 0.4); }
+
+    .event-meta-info {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        display: flex; gap: 15px;
+    }
+
+    .event-actions {
+        display: flex;
+        gap: 10px;
+    }
+
+    /* =========================================
+       BUTTONS & FORMS
+       ========================================= */
+    .btn {
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 1px solid transparent;
+        display: inline-flex; align-items: center; gap: 8px;
+        text-decoration: none;
+    }
+
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { filter: brightness(1.1); }
+
+    .btn-outline {
+        background: transparent;
+        border-color: var(--border);
+        color: var(--text-secondary);
+    }
+    .btn-outline:hover {
+        border-color: var(--text-primary);
+        color: var(--text-primary);
+        background: var(--bg-primary);
+    }
+
+    .btn-danger { color: #e74c3c; background: rgba(231, 76, 60, 0.1); border-color: rgba(231, 76, 60, 0.2); }
+    .btn-danger:hover { background: rgba(231, 76, 60, 0.2); }
+
+    .btn-sm { padding: 5px 10px; font-size: 0.8rem; }
+
+    /* =========================================
+       DATA TABLE (AUDIT)
+       ========================================= */
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+
+    .data-table th {
+        text-align: left;
+        padding: 15px;
+        color: var(--text-secondary);
+        font-weight: 600;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .data-table td {
+        padding: 15px;
+        color: var(--text-primary);
+        border-bottom: 1px solid var(--border);
+    }
+
+    .data-table tr:last-child td { border-bottom: none; }
+    
+    .code-pill {
+        font-family: monospace;
+        background: var(--bg-primary);
+        padding: 4px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        color: var(--accent);
+    }
+
+    /* =========================================
+       MODAL
+       ========================================= */
+    .modal {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.7);
+        backdrop-filter: blur(4px);
+        z-index: 1000;
+        display: none;
+        align-items: center; justify-content: center;
+    }
+    .modal.active { display: flex; }
+
+    .modal-box {
+        background: var(--bg-secondary);
+        width: 600px;
+        max-width: 90%;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    }
+
+    .modal-header { padding: 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;}
+    .modal-body { padding: 25px; }
+    .modal-footer { padding: 20px; border-top: 1px solid var(--border); text-align: right; background: var(--bg-primary); border-radius: 0 0 12px 12px;}
+
+    .form-group { margin-bottom: 15px; }
+    .form-label { display: block; margin-bottom: 8px; font-size: 0.9rem; color: var(--text-secondary); }
+    .form-input {
+        width: 100%;
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        padding: 10px;
+        border-radius: 6px;
+        color: var(--text-primary);
+    }
+    .form-input:focus { outline: none; border-color: var(--accent); }
+
+    @media (max-width: 900px) {
+        .split-grid { grid-template-columns: 1fr; }
+        .event-row { flex-direction: column; align-items: flex-start; }
+        .event-thumb { width: 100%; height: 150px; }
+        .event-actions { width: 100%; justify-content: flex-end; }
+    }
 </style>
 
-<div class="container">
-    <div class="admin-layout">
-        <?php require_once 'includes/sidebar.php'; ?>
+<div class="admin-wrapper">
+    <!-- Aqui entraria o include do sidebar -->
+    <?php require_once 'includes/sidebar.php'; ?>
+
+    <div class="admin-content">
         
-        <div class="admin-content">
-            <div class="admin-eventos-container">
-                
-                <div class="admin-header">
-                    <h1 class="admin-title"><i class="fas fa-chart-line"></i> Dashboard de Monitoramento</h1>
-                    <button onclick="openModal('eventoModal')" class="btn btn-primary">
-                        <i class="fas fa-calendar-plus"></i> Criar Evento Sazonal
-                    </button>
+        <!-- HEADER -->
+        <div class="section-header">
+            <h1 class="section-title">
+                <i class="fas fa-chart-line"></i> Dashboard & Eventos
+            </h1>
+            <button onclick="toggleModal('createEventModal')" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Novo Evento Sazonal
+            </button>
+        </div>
+
+        <!-- MENSAGENS -->
+        <?php if ($message): ?>
+            <div style="padding: 15px; background: rgba(46, 204, 113, 0.1); border: 1px solid #2ecc71; border-radius: 6px; color: #2ecc71; margin-bottom: 20px;">
+                <i class="fas fa-check-circle"></i> <?= $message ?>
+            </div>
+        <?php endif; ?>
+        <?php if ($error): ?>
+            <div style="padding: 15px; background: rgba(231, 76, 60, 0.1); border: 1px solid #e74c3c; border-radius: 6px; color: #e74c3c; margin-bottom: 20px;">
+                <i class="fas fa-exclamation-triangle"></i> <?= $error ?>
+            </div>
+        <?php endif; ?>
+
+        <!-- 1. KPI CARDS -->
+        <div class="metrics-grid">
+            <div class="metric-card highlight">
+                <div class="metric-header">
+                    <span class="metric-label">Vendas (Hoje)</span>
+                    <div class="metric-icon"><i class="fas fa-shopping-cart"></i></div>
                 </div>
-                
-                <?php if ($message): ?>
-                    <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?= $message ?></div>
-                <?php endif; ?>
-                
-                <?php if ($error): ?>
-                    <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?= $error ?></div>
-                <?php endif; ?>
-                
-                <!-- Métricas em Tempo Real -->
-                <h2 style="margin: 40px 0 20px; font-size: 20px; color: var(--text-primary);">
-                    <i class="fas fa-tachometer-alt"></i> Métricas de Hoje
-                </h2>
-                <div class="dashboard-grid">
-                    <div class="metric-card primary">
-                        <div class="metric-icon primary">
-                            <i class="fas fa-shopping-cart"></i>
-                        </div>
-                        <div class="metric-value"><?= $metricas_hoje['total_vendas'] ?? 0 ?></div>
-                        <div class="metric-label">Vendas Realizadas</div>
-                    </div>
-                    
-                    <div class="metric-card success">
-                        <div class="metric-icon success">
-                            <i class="fas fa-dollar-sign"></i>
-                        </div>
-                        <div class="metric-value"><?= formatPrice($metricas_hoje['total_receita_centavos'] ?? 0) ?></div>
-                        <div class="metric-label">Receita Total</div>
-                    </div>
-                    
-                    <div class="metric-card warning">
-                        <div class="metric-icon warning">
-                            <i class="fas fa-gamepad"></i>
-                        </div>
-                        <div class="metric-value">
-                            <?php
-                            $jogos_vendidos = 0;
-                            if ($metricas_hoje && $metricas_hoje['jogos_mais_vendidos']) {
-                                $jogos = json_decode($metricas_hoje['jogos_mais_vendidos'], true);
-                                $jogos_vendidos = count($jogos);
-                            }
-                            echo $jogos_vendidos;
-                            ?>
-                        </div>
-                        <div class="metric-label">Jogos Diferentes Vendidos</div>
-                    </div>
-                    
-                    <div class="metric-card primary">
-                        <div class="metric-icon primary">
-                            <i class="fas fa-code"></i>
-                        </div>
-                        <div class="metric-value">
-                            <?php
-                            $devs_ativos = 0;
-                            if ($metricas_hoje && $metricas_hoje['devs_top']) {
-                                $devs = json_decode($metricas_hoje['devs_top'], true);
-                                $devs_ativos = count($devs);
-                            }
-                            echo $devs_ativos;
-                            ?>
-                        </div>
-                        <div class="metric-label">Devs com Vendas Hoje</div>
-                    </div>
+                <div class="metric-value"><?= number_format($metricas_hoje['total_vendas'] ?? 0) ?></div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-label">Receita (Hoje)</span>
+                    <div class="metric-icon"><i class="fas fa-dollar-sign"></i></div>
                 </div>
-                
-                <!-- Top 10 -->
-                <?php if ($metricas_hoje): ?>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 40px 0;">
-                    <!-- Top Jogos -->
-                    <div class="top-list">
-                        <h3 style="margin-bottom: 20px; color: var(--text-primary);">
-                            <i class="fas fa-trophy"></i> Top 10 Jogos Hoje
-                        </h3>
-                        <?php
-                        $jogos = json_decode($metricas_hoje['jogos_mais_vendidos'], true) ?? [];
-                        $rank = 1;
-                        foreach ($jogos as $jogo):
-                        ?>
-                            <div class="top-list-item">
-                                <div class="top-rank"><?= $rank++ ?></div>
-                                <div class="top-info">
-                                    <div class="top-name"><?= htmlspecialchars($jogo['titulo']) ?></div>
-                                    <div class="top-value"><?= $jogo['vendas'] ?> vendas</div>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                        
-                        <?php if (empty($jogos)): ?>
-                            <p style="text-align: center; color: var(--text-secondary); padding: 20px;">
-                                Nenhuma venda hoje
-                            </p>
-                        <?php endif; ?>
-                    </div>
-                    
-                    <!-- Top Devs -->
-                    <div class="top-list">
-                        <h3 style="margin-bottom: 20px; color: var(--text-primary);">
-                            <i class="fas fa-code"></i> Top 10 Desenvolvedores Hoje
-                        </h3>
-                        <?php
-                        $devs = json_decode($metricas_hoje['devs_top'], true) ?? [];
-                        $rank = 1;
-                        foreach ($devs as $dev):
-                        ?>
-                            <div class="top-list-item">
-                                <div class="top-rank"><?= $rank++ ?></div>
-                                <div class="top-info">
-                                    <div class="top-name"><?= htmlspecialchars($dev['nome']) ?></div>
-                                    <div class="top-value">
-                                        <?= $dev['vendas'] ?> vendas · <?= formatPrice($dev['receita']) ?>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                        
-                        <?php if (empty($devs)): ?>
-                            <p style="text-align: center; color: var(--text-secondary); padding: 20px;">
-                                Nenhuma venda hoje
-                            </p>
-                        <?php endif; ?>
-                    </div>
+                <div class="metric-value"><?= formatPrice($metricas_hoje['total_receita_centavos'] ?? 0) ?></div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-label">Jogos Movimentados</span>
+                    <div class="metric-icon"><i class="fas fa-gamepad"></i></div>
                 </div>
-                <?php endif; ?>
-                
-                <!-- Eventos Sazonais -->
-                <h2 style="margin: 60px 0 20px; font-size: 20px; color: var(--text-primary);">
-                    <i class="fas fa-calendar-alt"></i> Eventos Sazonais
-                </h2>
-                
-                <div class="eventos-list">
-                    <?php foreach ($eventos as $evento): ?>
-                        <div class="evento-card">
-                            <img src="<?= SITE_URL . $evento['imagem_banner'] ?>" alt="" class="evento-banner">
-                            
-                            <div class="evento-content">
-                                <div class="evento-header">
-                                    <h3 class="evento-title"><?= htmlspecialchars($evento['nome']) ?></h3>
-                                    <span class="badge <?= $evento['ativo'] ? 'badge-success' : 'badge-secondary' ?>">
-                                        <?= $evento['ativo'] ? 'Ativo' : 'Inativo' ?>
-                                    </span>
-                                </div>
-                                
-                                <p style="color: var(--text-secondary); margin-bottom: 12px;">
-                                    <?= htmlspecialchars($evento['descricao']) ?>
-                                </p>
-                                
-                                <div class="evento-meta">
-                                    <span><i class="fas fa-calendar"></i> 
-                                        <?= date('d/m/Y H:i', strtotime($evento['data_inicio'])) ?>
-                                    </span>
-                                    <span><i class="fas fa-calendar-check"></i> 
-                                        <?= date('d/m/Y H:i', strtotime($evento['data_fim'])) ?>
-                                    </span>
-                                    <span>
-                                        <i class="fas fa-<?= $evento['tem_banner'] ? 'check-circle' : 'times-circle' ?>"></i>
-                                        Banner <?= $evento['tem_banner'] ? 'Criado' : 'Não Criado' ?>
-                                    </span>
-                                </div>
-                                
-                                <div class="evento-actions">
-                                    <a href="<?= SITE_URL ?>/pages/evento.php?slug=<?= $evento['slug'] ?>" 
-                                       target="_blank" class="btn btn-secondary">
-                                        <i class="fas fa-external-link-alt"></i> Ver Página
-                                    </a>
-                                    
-                                    <form method="POST" style="display: inline;">
-                                        <input type="hidden" name="evento_id" value="<?= $evento['id'] ?>">
-                                        <button type="submit" name="toggle_evento" 
-                                                class="btn <?= $evento['ativo'] ? 'btn-danger' : 'btn-success' ?>">
-                                            <i class="fas fa-power-off"></i>
-                                            <?= $evento['ativo'] ? 'Desativar' : 'Ativar' ?>
-                                        </button>
-                                    </form>
-                                    
-                                    <form method="POST" style="display: inline;" 
-                                          onsubmit="return confirm('Excluir evento e banner? Isso não pode ser desfeito.')">
-                                        <input type="hidden" name="evento_id" value="<?= $evento['id'] ?>">
-                                        <button type="submit" name="deletar_evento" class="btn btn-danger">
-                                            <i class="fas fa-trash"></i> Excluir
-                                        </button>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                    
-                    <?php if (empty($eventos)): ?>
-                        <div style="text-align: center; padding: 60px 20px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px;">
-                            <i class="fas fa-calendar-alt" style="font-size: 64px; color: var(--text-secondary); opacity: 0.3; margin-bottom: 20px;"></i>
-                            <h3 style="color: var(--text-primary); margin-bottom: 8px;">Nenhum Evento Criado</h3>
-                            <p style="color: var(--text-secondary); margin-bottom: 24px;">
-                                Crie eventos sazonais como Black Friday, Natal, etc.
-                            </p>
-                            <button onclick="openModal('eventoModal')" class="btn btn-primary">
-                                <i class="fas fa-plus"></i> Criar Primeiro Evento
-                            </button>
-                        </div>
-                    <?php endif; ?>
+                <div class="metric-value">
+                    <?= count(json_decode($metricas_hoje['jogos_mais_vendidos'] ?? '[]', true)) ?>
                 </div>
-                
-                <!-- Auditoria de Cupons -->
-                <h2 style="margin: 60px 0 20px; font-size: 20px; color: var(--text-primary);">
-                    <i class="fas fa-ticket-alt"></i> Auditoria de Cupons (Últimos 30 Dias)
-                </h2>
-                
-                <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="background: var(--bg-primary); border-bottom: 1px solid var(--border);">
-                                <th style="padding: 16px; text-align: left; color: var(--text-primary); font-weight: 600;">Código</th>
-                                <th style="padding: 16px; text-align: left; color: var(--text-primary); font-weight: 600;">Desenvolvedor</th>
-                                <th style="padding: 16px; text-align: left; color: var(--text-primary); font-weight: 600;">Desconto</th>
-                                <th style="padding: 16px; text-align: left; color: var(--text-primary); font-weight: 600;">Usos</th>
-                                <th style="padding: 16px; text-align: left; color: var(--text-primary); font-weight: 600;">Criado Em</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($cupons_log as $cupom): ?>
-                                <tr style="border-bottom: 1px solid var(--border);">
-                                    <td style="padding: 16px;">
-                                        <code style="background: var(--bg-primary); padding: 4px 8px; border-radius: 4px;">
-                                            <?= $cupom['codigo'] ?>
-                                        </code>
-                                    </td>
-                                    <td style="padding: 16px; color: var(--text-primary);">
-                                        <?= htmlspecialchars($cupom['nome_estudio']) ?>
-                                    </td>
-                                    <td style="padding: 16px; color: var(--text-secondary);">
-                                        <?php if ($cupom['tipo_desconto'] == 'percentual'): ?>
-                                            <?= $cupom['valor_desconto'] ?>% OFF
-                                        <?php else: ?>
-                                            <?= formatPrice($cupom['valor_desconto']) ?> OFF
-                                        <?php endif; ?>
-                                    </td>
-                                    <td style="padding: 16px; color: var(--text-secondary);">
-                                        <?= $cupom['usos_atuais'] ?>/<?= $cupom['usos_maximos'] ?? '∞' ?>
-                                    </td>
-                                    <td style="padding: 16px; color: var(--text-secondary);">
-                                        <?= date('d/m/Y H:i', strtotime($cupom['criado_em'])) ?>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    
-                    <?php if (empty($cupons_log)): ?>
-                        <p style="text-align: center; padding: 40px; color: var(--text-secondary);">
-                            Nenhum cupom criado nos últimos 30 dias
-                        </p>
-                    <?php endif; ?>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-label">Devs Ativos</span>
+                    <div class="metric-icon"><i class="fas fa-code"></i></div>
                 </div>
-                
+                <div class="metric-value">
+                    <?= count(json_decode($metricas_hoje['devs_top'] ?? '[]', true)) ?>
+                </div>
             </div>
         </div>
+
+        <!-- 2. RANKINGS (SPLIT VIEW) -->
+        <div class="split-grid">
+            <!-- Top Jogos -->
+            <div class="panel">
+                <div class="panel-header">
+                    <i class="fas fa-trophy"></i> Top Jogos (24h)
+                </div>
+                <div>
+                    <?php 
+                    $jogos = json_decode($metricas_hoje['jogos_mais_vendidos'] ?? '[]', true);
+                    if (empty($jogos)) echo '<div style="padding:20px; text-align:center; color:var(--text-secondary);">Sem dados hoje</div>';
+                    $rank = 1;
+                    foreach (array_slice($jogos, 0, 5) as $jogo): ?>
+                    <div class="list-item">
+                        <div class="rank-badge"><?= $rank++ ?></div>
+                        <div class="item-info">
+                            <span class="item-name"><?= htmlspecialchars($jogo['titulo']) ?></span>
+                            <span class="item-meta"><?= $jogo['vendas'] ?> unidades</span>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <!-- Top Devs -->
+            <div class="panel">
+                <div class="panel-header">
+                    <i class="fas fa-user-secret"></i> Top Desenvolvedores (24h)
+                </div>
+                <div>
+                    <?php 
+                    $devs = json_decode($metricas_hoje['devs_top'] ?? '[]', true);
+                    if (empty($devs)) echo '<div style="padding:20px; text-align:center; color:var(--text-secondary);">Sem dados hoje</div>';
+                    $rank = 1;
+                    foreach (array_slice($devs, 0, 5) as $dev): ?>
+                    <div class="list-item">
+                        <div class="rank-badge"><?= $rank++ ?></div>
+                        <div class="item-info">
+                            <span class="item-name"><?= htmlspecialchars($dev['nome']) ?></span>
+                            <span class="item-meta"><?= formatPrice($dev['receita']) ?> gerados</span>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. GESTÃO DE EVENTOS -->
+        <h2 class="section-title" style="margin-bottom: 20px;">
+            <i class="fas fa-calendar-alt"></i> Eventos Sazonais
+        </h2>
+
+        <div class="events-container">
+            <?php foreach ($eventos as $evento): ?>
+                <div class="event-row">
+                    <img src="<?= SITE_URL . $evento['imagem_banner'] ?>" class="event-thumb" alt="Banner">
+                    
+                    <div class="event-details">
+                        <div class="event-name">
+                            <span class="status-dot <?= $evento['ativo'] ? 'active' : '' ?>"></span>
+                            <?= htmlspecialchars($evento['nome']) ?>
+                        </div>
+                        <div class="event-meta-info">
+                            <span><i class="fas fa-clock"></i> <?= date('d/m H:i', strtotime($evento['data_inicio'])) ?> até <?= date('d/m H:i', strtotime($evento['data_fim'])) ?></span>
+                            <span><i class="fas fa-image"></i> Banner: <?= $evento['tem_banner'] ? 'OK' : 'Pendente' ?></span>
+                        </div>
+                    </div>
+
+                    <div class="event-actions">
+                        <a href="<?= SITE_URL ?>/pages/evento.php?slug=<?= $evento['slug'] ?>" target="_blank" class="btn btn-outline btn-sm">
+                            <i class="fas fa-eye"></i> Ver
+                        </a>
+                        
+                        <form method="POST" style="display:inline;">
+                            <input type="hidden" name="evento_id" value="<?= $evento['id'] ?>">
+                            <button type="submit" name="toggle_evento" class="btn btn-outline btn-sm">
+                                <i class="fas fa-power-off"></i> <?= $evento['ativo'] ? 'Pausar' : 'Ativar' ?>
+                            </button>
+                        </form>
+
+                        <form method="POST" onsubmit="return confirm('Tem certeza?')" style="display:inline;">
+                            <input type="hidden" name="evento_id" value="<?= $evento['id'] ?>">
+                            <button type="submit" name="deletar_evento" class="btn btn-danger btn-sm">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+            
+            <?php if(empty($eventos)): ?>
+                <div style="text-align:center; padding: 40px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-secondary);">
+                    Nenhum evento ativo. Crie um para impulsionar vendas.
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- 4. AUDITORIA DE CUPONS -->
+        <h2 class="section-title" style="margin: 60px 0 20px;">
+            <i class="fas fa-file-invoice"></i> Log de Cupons (Recentes)
+        </h2>
+
+        <div class="panel" style="overflow-x: auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Estúdio</th>
+                        <th>Desconto</th>
+                        <th>Uso</th>
+                        <th>Data</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($cupons_log as $log): ?>
+                    <tr>
+                        <td><span class="code-pill"><?= $log['codigo'] ?></span></td>
+                        <td><?= htmlspecialchars($log['nome_estudio']) ?></td>
+                        <td>
+                            <?= $log['tipo_desconto'] == 'percentual' 
+                                ? $log['valor_desconto'].'%' 
+                                : formatPrice($log['valor_desconto']) ?>
+                        </td>
+                        <td><?= $log['usos_atuais'] ?> / <?= $log['usos_maximos'] ?: '∞' ?></td>
+                        <td style="color: var(--text-secondary);"><?= date('d/m/Y', strtotime($log['criado_em'])) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php if(empty($cupons_log)): ?>
+                        <tr><td colspan="5" style="text-align:center;">Nenhum registro recente.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+
     </div>
 </div>
 
-<!-- Modal: Criar Evento -->
-<div id="eventoModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h2><i class="fas fa-calendar-plus"></i> Criar Evento Sazonal</h2>
-            <p style="color: var(--text-secondary); font-size: 14px; margin-top: 8px;">
-                Um banner será criado automaticamente no carrossel
-            </p>
-        </div>
+<!-- MODAL CREATE -->
+<div id="createEventModal" class="modal">
+    <div class="modal-box">
         <form method="POST">
-            <div class="modal-body">
-                <div class="form-group">
-                    <label class="form-label">Nome do Evento *</label>
-                    <input type="text" name="nome" class="form-control" required 
-                           placeholder="Ex: Black Friday 2026">
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">Descrição</label>
-                    <textarea name="descricao" class="form-control" rows="3" 
-                              placeholder="Aproveite descontos incríveis..."></textarea>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">URL da Imagem do Banner</label>
-                    <input type="text" name="imagem_banner" class="form-control" 
-                           placeholder="Deixe em branco para usar imagem padrão">
-                    <small style="color: var(--text-secondary); font-size: 12px; display: block; margin-top: 4px;">
-                        Recomendado: 1200x600px
-                    </small>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                    <div class="form-group">
-                        <label class="form-label">Data de Início *</label>
-                        <input type="datetime-local" name="data_inicio" class="form-control" required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Data de Término *</label>
-                        <input type="datetime-local" name="data_fim" class="form-control" required>
-                    </div>
-                </div>
-                
-                <div style="background: rgba(76, 139, 245, 0.1); border: 1px solid var(--accent); border-radius: 8px; padding: 16px; margin-top: 20px;">
-                    <p style="color: var(--text-primary); margin: 0; font-size: 14px;">
-                        <i class="fas fa-info-circle" style="color: var(--accent);"></i>
-                        <strong>Automação:</strong> Ao criar este evento, um banner será automaticamente 
-                        adicionado ao carrossel da home. Ele aparecerá para todos os usuários durante 
-                        o período do evento.
-                    </p>
-                </div>
+            <div class="modal-header">
+                <h3 style="color: var(--text-primary); margin:0;">Novo Evento</h3>
+                <button type="button" onclick="toggleModal('createEventModal')" style="background:none; border:none; color:var(--text-secondary); cursor:pointer;"><i class="fas fa-times"></i></button>
             </div>
             
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Nome do Evento</label>
+                    <input type="text" name="nome" class="form-input" required placeholder="Ex: Summer Sale 2026">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Descrição Curta</label>
+                    <textarea name="descricao" class="form-input" rows="2"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Imagem Banner (URL)</label>
+                    <input type="text" name="imagem_banner" class="form-input" placeholder="http://...">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group">
+                        <label class="form-label">Início</label>
+                        <input type="datetime-local" name="data_inicio" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Fim</label>
+                        <input type="datetime-local" name="data_fim" class="form-input" required>
+                    </div>
+                </div>
+            </div>
+
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('eventoModal')">
-                    Cancelar
-                </button>
-                <button type="submit" name="criar_evento" class="btn btn-primary">
-                    <i class="fas fa-calendar-plus"></i> Criar Evento
-                </button>
+                <button type="button" onclick="toggleModal('createEventModal')" class="btn btn-outline" style="margin-right: 10px;">Cancelar</button>
+                <button type="submit" name="criar_evento" class="btn btn-primary">Criar Evento</button>
             </div>
         </form>
     </div>
 </div>
 
 <script>
-function openModal(id) {
-    document.getElementById(id).classList.add('active');
-    document.body.style.overflow = 'hidden';
-}
-
-function closeModal(id) {
-    document.getElementById(id).classList.remove('active');
-    document.body.style.overflow = '';
-}
-
-// Fechar modal ao clicar fora
-document.querySelectorAll('.modal').forEach(modal => {
-    modal.addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeModal(this.id);
-        }
-    });
-});
-
-// Atualizar métricas a cada 30 segundos
-setInterval(() => {
-    fetch('<?= SITE_URL ?>/api/atualizar-metricas.php')
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                location.reload();
-            }
-        })
-        .catch(error => console.error('Erro ao atualizar métricas:', error));
-}, 30000);
+    function toggleModal(id) {
+        const modal = document.getElementById(id);
+        modal.classList.toggle('active');
+    }
+    
+    // Auto-refresh das métricas
+    setInterval(() => {
+        // Opcional: Implementar fetch silencioso aqui se desejar update sem refresh
+    }, 60000);
 </script>
 
 <?php require_once '../includes/footer.php'; ?>

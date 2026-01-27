@@ -391,7 +391,6 @@ function desativarBannersExpirados($pdo) {
         error_log("Desativados $count banners expirados");
     }
 }
-
 /**
  * Desativa eventos que expiraram
  */
