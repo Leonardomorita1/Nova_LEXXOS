@@ -1,313 +1,302 @@
 <?php
-// admin/includes/sidebar.php
+// Obtém o nome do arquivo da página atual
 $current_page = basename($_SERVER['PHP_SELF']);
 
-// Buscar dados do admin logado
-$admin_id = $_SESSION['usuario_id'] ?? null;
-$admin = null;
-
-if ($admin_id) {
-    try {
-        $stmt = $pdo->prepare("SELECT * FROM usuario WHERE id = ? AND tipo = 'admin'");
-        $stmt->execute([$admin_id]);
-        $admin = $stmt->fetch();
-    } catch (PDOException $e) {
-        $admin = null;
-    }
-}
-
-// Stats rápidos
-try {
-    $total_usuarios = $pdo->query("SELECT COUNT(*) FROM usuario WHERE tipo = 'cliente'")->fetchColumn();
-} catch (PDOException $e) { $total_usuarios = 0; }
+// Contadores para badges
+$pending_devs = 0;
+$pending_tickets = 0;
+$pending_saques = 0;
 
 try {
-    $total_jogos = $pdo->query("SELECT COUNT(*) FROM jogo")->fetchColumn();
-} catch (PDOException $e) { $total_jogos = 0; }
-
-try {
-    $tickets_pendentes = $pdo->query("SELECT COUNT(*) FROM ticket WHERE status = 'aberto'")->fetchColumn();
-} catch (PDOException $e) { $tickets_pendentes = 0; }
-
-try {
-    $pedidos_hoje = $pdo->query("SELECT COUNT(*) FROM pedido WHERE DATE(criado_em) = CURDATE()")->fetchColumn();
-} catch (PDOException $e) { $pedidos_hoje = 0; }
-
-try {
-    $receita_mes = $pdo->query("SELECT COALESCE(SUM(valor_total), 0) FROM pedido WHERE MONTH(criado_em) = MONTH(CURDATE()) AND status = 'pago'")->fetchColumn();
-} catch (PDOException $e) { $receita_mes = 0; }
+    $stmt = $pdo->query("SELECT COUNT(*) FROM desenvolvedor WHERE status = 'pendente'");
+    $pending_devs = $stmt->fetchColumn();
+    
+    $stmt = $pdo->query("SELECT COUNT(*) FROM tickets WHERE status = 'aberto'");
+    $pending_tickets = $stmt->fetchColumn();
+    
+    $stmt = $pdo->query("SELECT COUNT(*) FROM saques WHERE status = 'pendente'");
+    $pending_saques = $stmt->fetchColumn();
+} catch(Exception $e) {}
 ?>
 
 <style>
-/* ============================================
-   ADMIN LAYOUT - DESKTOP
-   ============================================ */
-.admin-layout {
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: 30px;
-    padding: 30px 0;
-    min-height: calc(100vh - 80px);
-}
-
-.admin-sidebar {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 16px;
+/* =============================================
+   ADMIN LAYOUT - FULL WIDTH + FIXED SIDEBAR
+   ============================================= */
+body.admin-body {
+    margin: 0;
     padding: 0;
-    height: fit-content;
-    position: sticky;
-    top: 90px;
-    overflow: hidden;
+    overflow-x: hidden;
 }
 
-/* Sidebar Header */
-.admin-sidebar-header {
-    padding: 24px;
-    background: linear-gradient(135deg, var(--accent), #164e81);
-    color: white;
+.admin-layout {
+    display: flex;
+    min-height: 100vh;
+    width: 100%;
 }
 
-.admin-sidebar-header .admin-info {
+/* =============================================
+   SIDEBAR - FIXED POSITION
+   ============================================= */
+.admin-sidebar {
+    width: 250px;
+    min-width: 250px;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    z-index: 100000;
+}
+
+.sidebar-spacer {
+    width: 250px;
+    min-width: 250px;
+    flex-shrink: 0;
+}
+
+/* ===== SIDEBAR HEADER ===== */
+.sidebar-header {
+    padding: 20px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.sidebar-brand {
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
-.admin-sidebar-header .admin-avatar {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    object-fit: cover;
-    background: rgba(255,255,255,0.2);
+.sidebar-logo {
+    width: 38px;
+    height: 38px;
+    background: linear-gradient(135deg, var(--accent), #667eea);
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 2px solid rgba(255,255,255,0.3);
+    font-size: 1.1rem;
+    color: white;
 }
 
-.admin-sidebar-header .admin-avatar i {
-    font-size: 20px;
+.sidebar-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
 }
 
-.admin-sidebar-header .admin-avatar img {
-    width: 100%;
-    height: 100%;
-    border-radius: 10px;
-    object-fit: cover;
+.sidebar-subtitle {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
 }
 
-.admin-sidebar-header h3 {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 2px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 160px;
+/* ===== SCROLLABLE NAV ===== */
+.sidebar-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px 0;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
 }
 
-.admin-sidebar-header p {
-    font-size: 12px;
-    opacity: 0.9;
+.sidebar-scroll::-webkit-scrollbar {
+    display: none;
 }
 
-.admin-sidebar-header .admin-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 10px;
-    background: rgba(255,255,255,0.2);
-    padding: 3px 8px;
-    border-radius: 20px;
-    margin-top: 4px;
+/* ===== NAVIGATION ===== */
+.nav-group {
+    margin-bottom: 6px;
 }
 
-/* Sidebar Menu */
-.admin-sidebar-menu {
-    list-style: none;
-    padding: 12px;
-    margin: 0;
+.nav-label {
+    padding: 10px 16px 6px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    opacity: 0.5;
 }
 
-.admin-sidebar-menu li {
-    margin-bottom: 4px;
-}
-
-.admin-sidebar-menu a {
+.nav-link {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 16px;
-    color: var(--text-primary);
-    border-radius: 10px;
-    transition: all 0.2s ease;
-    font-size: 14px;
-    font-weight: 500;
-    text-decoration: none;
-}
-
-.admin-sidebar-menu a:hover {
-    background: var(--bg-primary);
-    transform: translateX(4px);
-}
-
-.admin-sidebar-menu a.active {
-    background: var(--accent);
-    color: white;
-    box-shadow: 0 4px 12px rgba(17, 85, 117, 0.3);
-}
-
-.admin-sidebar-menu i {
-    width: 20px;
-    text-align: center;
-    font-size: 15px;
-}
-
-.admin-sidebar-menu .menu-badge {
-    margin-left: auto;
-    background: var(--danger);
-    color: white;
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-weight: 600;
-}
-
-.admin-sidebar-menu a.active .menu-badge {
-    background: rgba(255,255,255,0.3);
-}
-
-.admin-sidebar-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 12px 16px;
-}
-
-.admin-sidebar-section-title {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    padding: 11px 16px;
     color: var(--text-secondary);
-    padding: 8px 16px 4px;
-    font-weight: 600;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.15s ease;
+    border-left: 3px solid transparent;
 }
 
-/* Quick Stats in Sidebar */
-.admin-sidebar-stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    padding: 12px 16px;
-    background: var(--bg-primary);
-    margin: 0 12px 12px;
-    border-radius: 10px;
-}
-
-.admin-sidebar-stat {
+.nav-link i {
+    width: 18px;
     text-align: center;
-    padding: 8px;
+    font-size: 0.95rem;
+    opacity: 0.6;
 }
 
-.admin-sidebar-stat .stat-value {
-    font-size: 18px;
-    font-weight: 700;
+.nav-link:hover {
+    background: rgba(255,255,255,0.03);
+    color: var(--text-primary);
+}
+
+.nav-link:hover i {
+    opacity: 1;
+}
+
+.nav-link.active {
+    background: rgba(76, 139, 245, 0.08);
+    color: var(--accent);
+    border-left-color: var(--accent);
+}
+
+.nav-link.active i {
+    opacity: 1;
     color: var(--accent);
 }
 
-.admin-sidebar-stat .stat-value.success {
-    color: var(--success);
+.nav-badge {
+    margin-left: auto;
+    background: var(--accent);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 8px;
+    min-width: 16px;
+    text-align: center;
 }
 
-.admin-sidebar-stat .stat-value.warning {
-    color: var(--warning);
+.nav-badge.warning {
+    background: #e67e22;
 }
 
-.admin-sidebar-stat .stat-label {
-    font-size: 10px;
-    color: var(--text-secondary);
-    text-transform: uppercase;
+.nav-badge.danger {
+    background: #e74c3c;
 }
 
-/* ============================================
-   MOBILE STYLES
-   ============================================ */
-.admin-mobile-header {
-    display: none;
-    position: fixed;
-    top: 60px;
-    left: 0;
-    right: 0;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
-    padding: 12px 16px;
-    z-index: 99;
-    backdrop-filter: blur(10px);
+/* ===== SIDEBAR FOOTER ===== */
+.sidebar-footer {
+    padding: 12px;
+    border-top: 1px solid var(--border);
 }
 
-.admin-mobile-header-content {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    max-width: 100%;
-}
-
-.admin-mobile-header .admin-info {
+.sidebar-user {
     display: flex;
     align-items: center;
     gap: 10px;
+    padding: 10px;
+    background: var(--bg-primary);
+    border-radius: 8px;
 }
 
-.admin-mobile-header .admin-avatar {
-    width: 36px;
-    height: 36px;
+.user-avatar {
+    width: 34px;
+    height: 34px;
     border-radius: 8px;
-    background: var(--accent);
+    background: linear-gradient(135deg, var(--accent), #667eea);
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
+    font-weight: 700;
+    font-size: 0.85rem;
 }
 
-.admin-mobile-header .admin-avatar img {
-    width: 100%;
-    height: 100%;
-    border-radius: 8px;
-    object-fit: cover;
+.user-info {
+    flex: 1;
+    min-width: 0;
 }
 
-.admin-mobile-header h3 {
-    font-size: 14px;
+.user-name {
+    font-size: 0.8rem;
     font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.admin-mobile-header p {
-    font-size: 11px;
+.user-role {
+    font-size: 0.65rem;
     color: var(--text-secondary);
 }
 
-.admin-mobile-menu-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: var(--bg-primary);
+.btn-logout {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    background: transparent;
     border: 1px solid var(--border);
-    color: var(--text-primary);
+    color: var(--text-secondary);
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.15s;
+    text-decoration: none;
 }
 
-.admin-mobile-menu-btn:hover {
-    background: var(--accent);
-    color: white;
+.btn-logout:hover {
+    background: rgba(231, 76, 60, 0.1);
+    border-color: #e74c3c;
+    color: #e74c3c;
+}
+
+.btn-view-site {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px;
+    margin-top: 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.15s;
+}
+
+.btn-view-site:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
     border-color: var(--accent);
 }
 
-/* Mobile Bottom Navigation */
-.admin-bottom-nav {
+/* =============================================
+   ADMIN CONTENT AREA - APROVEITANDO ESPAÇO
+   ============================================= */
+.admin-content {
+    flex: 1;
+    min-width: 0;
+    padding: 24px 30px; /* Menos padding lateral */
+    background: var(--bg-primary);
+}
+
+/* Remove qualquer max-width ou container interno */
+.container {
+    max-width: none;
+    width: 100%;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* =============================================
+   MOBILE - BOTTOM NAVIGATION APP STYLE
+   ============================================= */
+.mobile-bottom-nav {
     display: none;
     position: fixed;
     bottom: 0;
@@ -315,86 +304,96 @@ try {
     right: 0;
     background: var(--bg-secondary);
     border-top: 1px solid var(--border);
-    padding: 8px 0;
-    padding-bottom: calc(8px + env(safe-area-inset-bottom));
     z-index: 1000;
+    padding-bottom: env(safe-area-inset-bottom);
 }
 
-.admin-bottom-nav-content {
+.bottom-nav-container {
     display: flex;
     justify-content: space-around;
     align-items: center;
+    height: 60px;
     max-width: 100%;
 }
 
-.admin-bottom-nav-item {
+.bottom-nav-item {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 4px;
-    padding: 8px 12px;
+    padding: 8px 4px;
     color: var(--text-secondary);
     text-decoration: none;
-    font-size: 10px;
+    font-size: 0.65rem;
     font-weight: 500;
-    border-radius: 10px;
-    transition: all 0.2s;
+    transition: color 0.15s;
     position: relative;
-    background: none;
-    border: none;
-    cursor: pointer;
 }
 
-.admin-bottom-nav-item i {
-    font-size: 20px;
+.bottom-nav-item i {
+    font-size: 1.2rem;
+    opacity: 0.7;
 }
 
-.admin-bottom-nav-item.active {
+.bottom-nav-item.active {
     color: var(--accent);
 }
 
-.admin-bottom-nav-item.active::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 24px;
-    height: 3px;
-    background: var(--accent);
-    border-radius: 0 0 3px 3px;
+.bottom-nav-item.active i {
+    opacity: 1;
 }
 
-.admin-bottom-nav-item .nav-badge {
+.bottom-nav-item .nav-badge {
     position: absolute;
-    top: 2px;
+    top: 4px;
     right: 50%;
-    transform: translateX(12px);
-    background: var(--danger);
-    color: white;
-    font-size: 9px;
-    padding: 1px 5px;
-    border-radius: 8px;
-    font-weight: 600;
+    transform: translateX(14px);
+    font-size: 0.55rem;
+    padding: 1px 4px;
+    min-width: 14px;
 }
 
-/* Admin Bottom Sheet */
-.admin-sheet-overlay {
+.bottom-nav-menu-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 4px;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    font-size: 0.65rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.bottom-nav-menu-btn i {
+    font-size: 1.2rem;
+    opacity: 0.7;
+}
+
+/* ===== MOBILE FULL MENU ===== */
+.mobile-menu-overlay {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
     z-index: 1001;
     opacity: 0;
-    transition: opacity 0.3s ease;
+    transition: opacity 0.3s;
 }
 
-.admin-sheet-overlay.active {
+.mobile-menu-overlay.open {
     display: block;
     opacity: 1;
 }
 
-.admin-sheet {
+.mobile-menu-panel {
     position: fixed;
     bottom: 0;
     left: 0;
@@ -403,694 +402,557 @@ try {
     border-radius: 20px 20px 0 0;
     z-index: 1002;
     transform: translateY(100%);
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform 0.3s ease;
     max-height: 85vh;
-    overflow-y: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
-.admin-sheet.active {
+.mobile-menu-panel.open {
     transform: translateY(0);
 }
 
-.admin-sheet-handle {
-    display: flex;
-    justify-content: center;
-    padding: 12px;
-    cursor: pointer;
-}
-
-.admin-sheet-handle span {
-    width: 40px;
-    height: 4px;
-    background: var(--border);
-    border-radius: 2px;
-}
-
-.admin-sheet-header {
+.mobile-menu-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 0 20px 20px;
+    justify-content: space-between;
+    padding: 16px 20px;
     border-bottom: 1px solid var(--border);
 }
 
-.admin-sheet-header .admin-avatar {
-    width: 50px;
-    height: 50px;
-    border-radius: 12px;
-    background: var(--accent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-size: 20px;
-}
-
-.admin-sheet-header .admin-avatar img {
-    width: 100%;
-    height: 100%;
-    border-radius: 12px;
-    object-fit: cover;
-}
-
-.admin-sheet-header h3 {
-    font-size: 16px;
-    font-weight: 600;
-}
-
-.admin-sheet-header p {
-    font-size: 12px;
-    color: var(--text-secondary);
-}
-
-.admin-sheet-header .badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 10px;
-    background: var(--accent);
-    color: white;
-    padding: 2px 8px;
-    border-radius: 10px;
-    margin-top: 4px;
-}
-
-/* Sheet Stats */
-.admin-sheet-stats {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    padding: 16px 20px;
-    background: var(--bg-primary);
-    margin: 16px;
-    border-radius: 12px;
-}
-
-.admin-sheet-stat {
-    text-align: center;
-}
-
-.admin-sheet-stat .stat-value {
-    font-size: 18px;
+.mobile-menu-title {
+    font-size: 1rem;
     font-weight: 700;
-    color: var(--accent);
-}
-
-.admin-sheet-stat .stat-value.success {
-    color: var(--success);
-}
-
-.admin-sheet-stat .stat-value.warning {
-    color: var(--warning);
-}
-
-.admin-sheet-stat .stat-label {
-    font-size: 10px;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-}
-
-/* Sheet Menu */
-.admin-sheet-menu {
-    padding: 0 12px 20px;
-}
-
-.admin-sheet-menu-title {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--text-secondary);
-    padding: 12px 12px 8px;
-    font-weight: 600;
-}
-
-.admin-sheet-menu-item {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 14px 16px;
     color: var(--text-primary);
-    text-decoration: none;
-    border-radius: 12px;
-    transition: all 0.2s;
-    margin-bottom: 4px;
 }
 
-.admin-sheet-menu-item:hover,
-.admin-sheet-menu-item:active {
+.mobile-menu-close {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
     background: var(--bg-primary);
-}
-
-.admin-sheet-menu-item.active {
-    background: var(--accent);
-    color: white;
-}
-
-.admin-sheet-menu-item i {
-    width: 20px;
-    text-align: center;
-    font-size: 16px;
-}
-
-.admin-sheet-menu-item span {
-    flex: 1;
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.admin-sheet-menu-item .chevron {
+    border: 1px solid var(--border);
     color: var(--text-secondary);
-    font-size: 12px;
-}
-
-.admin-sheet-menu-item.active .chevron {
-    color: rgba(255,255,255,0.7);
-}
-
-.admin-sheet-menu-item .item-badge {
-    background: var(--danger);
-    color: white;
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-weight: 600;
-}
-
-.admin-sheet-menu-item.active .item-badge {
-    background: rgba(255,255,255,0.3);
-}
-
-.admin-sheet-divider {
-    height: 1px;
-    background: var(--border);
-    margin: 8px 16px;
-}
-
-.admin-sheet-footer {
-    padding: 16px 20px;
-    padding-bottom: calc(16px + env(safe-area-inset-bottom));
-    border-top: 1px solid var(--border);
-}
-
-.admin-sheet-footer a {
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 1rem;
+}
+
+.mobile-menu-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 0;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+}
+
+.mobile-menu-group {
+    padding: 0 16px;
+    margin-bottom: 16px;
+}
+
+.mobile-menu-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    margin-bottom: 8px;
+    padding-left: 4px;
+}
+
+.mobile-menu-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: 8px;
-    padding: 14px;
+}
+
+.mobile-menu-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 16px 8px;
     background: var(--bg-primary);
     border: 1px solid var(--border);
     border-radius: 12px;
-    color: var(--text-primary);
-    font-weight: 500;
-    transition: all 0.2s;
+    color: var(--text-secondary);
     text-decoration: none;
+    font-size: 0.7rem;
+    font-weight: 500;
+    transition: all 0.15s;
+    position: relative;
 }
 
-.admin-sheet-footer a:hover {
-    background: var(--accent);
-    color: white;
+.mobile-menu-item i {
+    font-size: 1.3rem;
+    opacity: 0.7;
+}
+
+.mobile-menu-item.active {
+    background: rgba(76, 139, 245, 0.1);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.mobile-menu-item.active i {
+    opacity: 1;
+}
+
+.mobile-menu-item:hover {
     border-color: var(--accent);
 }
 
-/* ============================================
-   RESPONSIVE BREAKPOINTS
-   ============================================ */
+.mobile-menu-item .menu-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #e67e22;
+    color: white;
+    font-size: 0.55rem;
+    padding: 2px 5px;
+    border-radius: 6px;
+    font-weight: 700;
+}
+
+/* Mobile User Section */
+.mobile-user-section {
+    padding: 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-primary);
+}
+
+.mobile-user-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.mobile-user-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), #667eea);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+
+.mobile-user-info {
+    flex: 1;
+}
+
+.mobile-user-name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.mobile-user-role {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.mobile-user-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.mobile-action-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    transition: all 0.15s;
+}
+
+.mobile-action-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.mobile-action-btn.logout:hover {
+    border-color: #e74c3c;
+    color: #e74c3c;
+}
+
+/* =============================================
+   RESPONSIVE
+   ============================================= */
 @media (max-width: 1024px) {
+    .admin-sidebar,
+    .sidebar-spacer {
+        display: none;
+    }
+
+    .mobile-bottom-nav {
+        display: block;
+    }
+
+    .admin-content {
+        padding: 16px;
+        padding-bottom: 80px;
+    }
+
     .admin-layout {
-        grid-template-columns: 240px 1fr;
-        gap: 20px;
+        flex-direction: column;
     }
 }
 
-@media (max-width: 900px) {
-    .admin-layout {
-        grid-template-columns: 1fr;
-        padding: 0;
-        padding-top: 70px;
-        padding-bottom: 80px;
-    }
-    
-    .admin-sidebar {
-        display: none;
-    }
-    
-    .admin-mobile-header {
-        display: block;
-    }
-    
-    .admin-bottom-nav {
-        display: block;
-    }
-    
+@media (max-width: 768px) {
     .admin-content {
         padding: 16px;
+        padding-bottom: 80px;
     }
 }
 
 @media (max-width: 480px) {
-    .admin-sheet-stats {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 8px;
+    .admin-content {
         padding: 12px;
-        margin: 12px;
+        padding-bottom: 80px;
     }
-    
-    .admin-sheet-stat .stat-value {
-        font-size: 16px;
+
+    .mobile-menu-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+    }
+
+    .mobile-menu-item {
+        padding: 14px 6px;
+        font-size: 0.65rem;
+    }
+
+    .mobile-menu-item i {
+        font-size: 1.2rem;
     }
 }
 </style>
 
-<!-- ============================================
-     MOBILE HEADER
-     ============================================ -->
-<div class="admin-mobile-header">
-    <div class="admin-mobile-header-content">
-        <div class="admin-info">
-            <div class="admin-avatar">
-                <?php if (!empty($admin['avatar_url'])): ?>
-                    <img src="<?= htmlspecialchars($admin['avatar_url']) ?>" alt="Avatar">
-                <?php else: ?>
-                    <i class="fas fa-user-shield"></i>
-                <?php endif; ?>
-            </div>
-            <div>
-                <h3><?= htmlspecialchars($admin['nome_usuario'] ?? 'Admin') ?></h3>
-                <p>Painel Admin</p>
-            </div>
-        </div>
-        <button class="admin-mobile-menu-btn" onclick="openAdminSheet()">
-            <i class="fas fa-bars"></i>
-        </button>
-    </div>
-</div>
+<!-- ==================== DESKTOP SIDEBAR ==================== -->
+<div class="sidebar-spacer"></div>
 
-<!-- ============================================
-     DESKTOP SIDEBAR
-     ============================================ -->
-<div class="admin-sidebar">
-    <div class="admin-sidebar-header">
-        <div class="admin-info">
-            <div class="admin-avatar">
-                <?php if (!empty($admin['avatar_url'])): ?>
-                    <img src="<?= htmlspecialchars($admin['avatar_url']) ?>" alt="Avatar">
-                <?php else: ?>
-                    <i class="fas fa-user-shield"></i>
-                <?php endif; ?>
-            </div>
-            <div>
-                <h3><?= htmlspecialchars($admin['nome_usuario'] ?? 'Admin') ?></h3>
-                <p><?= htmlspecialchars($admin['email'] ?? '') ?></p>
-                <span class="admin-badge">
-                    <i class="fas fa-shield-alt"></i> Administrador
-                </span>
-            </div>
-        </div>
-    </div>
+<aside class="admin-sidebar">
     
-    <!-- Quick Stats -->
-    <div class="admin-sidebar-stats">
-        <div class="admin-sidebar-stat">
-            <span class="stat-value"><?= number_format($total_usuarios) ?></span>
-            <span class="stat-label">Usuários</span>
-        </div>
-        <div class="admin-sidebar-stat">
-            <span class="stat-value success"><?= number_format($total_jogos) ?></span>
-            <span class="stat-label">Jogos</span>
-        </div>
-        <div class="admin-sidebar-stat">
-            <span class="stat-value warning"><?= $tickets_pendentes ?></span>
-            <span class="stat-label">Tickets</span>
-        </div>
-        <div class="admin-sidebar-stat">
-            <span class="stat-value"><?= $pedidos_hoje ?></span>
-            <span class="stat-label">Pedidos</span>
-        </div>
-    </div>
-    
-    <ul class="admin-sidebar-menu">
-        <span class="admin-sidebar-section-title">Principal</span>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/admin/dashboard.php" 
-               class="<?= $current_page == 'dashboard.php' ? 'active' : '' ?>">
-                <i class="fas fa-tachometer-alt"></i>
-                Dashboard
-            </a>
-        </li>
-        
-        <div class="admin-sidebar-divider"></div>
-        <span class="admin-sidebar-section-title">Conteúdo</span>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/admin/jogos.php" 
-               class="<?= $current_page == 'jogos.php' ? 'active' : '' ?>">
-                <i class="fas fa-gamepad"></i>
-                Jogos
-            </a>
-        </li>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/admin/categorias.php" 
-               class="<?= $current_page == 'categorias.php' ? 'active' : '' ?>">
-                <i class="fas fa-folder"></i>
-                Categorias
-            </a>
-        </li>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/admin/tags.php" 
-               class="<?= $current_page == 'tags.php' ? 'active' : '' ?>">
-                <i class="fas fa-tags"></i>
-                Tags
-            </a>
-        </li>
 
-        <li>
-            <a href="<?= SITE_URL ?>/admin/banners.php"
-                class="<?= $current_page == 'banners.php' ? 'active' : '' ?>">
-                <i class="fas fa-images"></i>
-                Banners
+    <!-- Navigation Scroll -->
+    <div class="sidebar-scroll">
+        
+        <!-- Principal -->
+        <div class="nav-group">
+            <div class="nav-label">Principal</div>
+            <a href="<?= SITE_URL ?>/admin/dashboard.php" class="nav-link <?= $current_page == 'dashboard.php' ? 'active' : '' ?>">
+                <i class="fas fa-th-large"></i>
+                <span>Dashboard</span>
             </a>
-        </li>
-        
-        <div class="admin-sidebar-divider"></div>
-        <span class="admin-sidebar-section-title">Usuários</span>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/admin/usuarios.php" 
-               class="<?= $current_page == 'usuarios.php' ? 'active' : '' ?>">
+            <a href="<?= SITE_URL ?>/admin/eventos.php" class="nav-link <?= $current_page == 'eventos.php' ? 'active' : '' ?>">
+                <i class="fas fa-chart-line"></i>
+                <span>Monitoramento</span>
+            </a>
+        </div>
+
+        <!-- Gestão -->
+        <div class="nav-group">
+            <div class="nav-label">Gestão</div>
+            <a href="<?= SITE_URL ?>/admin/usuarios.php" class="nav-link <?= $current_page == 'usuarios.php' || $current_page == 'usuario-detalhes.php' ? 'active' : '' ?>">
                 <i class="fas fa-users"></i>
-                Usuários
+                <span>Usuários</span>
             </a>
-        </li>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/admin/desenvolvedores.php" 
-               class="<?= $current_page == 'desenvolvedores.php' ? 'active' : '' ?>">
+            <a href="<?= SITE_URL ?>/admin/desenvolvedores.php" class="nav-link <?= $current_page == 'desenvolvedores.php' ? 'active' : '' ?>">
                 <i class="fas fa-code"></i>
-                Desenvolvedores
+                <span>Desenvolvedores</span>
+                <?php if ($pending_devs > 0): ?>
+                    <span class="nav-badge warning"><?= $pending_devs ?></span>
+                <?php endif; ?>
             </a>
-        </li>
-        
-        <div class="admin-sidebar-divider"></div>
-        <span class="admin-sidebar-section-title">Vendas</span>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/admin/pedidos.php" 
-               class="<?= $current_page == 'pedidos.php' ? 'active' : '' ?>">
+            <a href="<?= SITE_URL ?>/admin/jogos.php" class="nav-link <?= $current_page == 'jogos.php' || $current_page == 'jogo-detalhes.php' ? 'active' : '' ?>">
+                <i class="fas fa-gamepad"></i>
+                <span>Jogos</span>
+            </a>
+            <a href="<?= SITE_URL ?>/admin/categorias.php" class="nav-link <?= $current_page == 'categorias.php' ? 'active' : '' ?>">
+                <i class="fas fa-folder"></i>
+                <span>Categorias</span>
+            </a>
+            <a href="<?= SITE_URL ?>/admin/tags.php" class="nav-link <?= $current_page == 'tags.php' ? 'active' : '' ?>">
+                <i class="fas fa-tags"></i>
+                <span>Tags</span>
+            </a>
+        </div>
+
+        <!-- Marketing -->
+        <div class="nav-group">
+            <div class="nav-label">Marketing</div>
+            <a href="<?= SITE_URL ?>/admin/banners.php" class="nav-link <?= $current_page == 'banners.php' ? 'active' : '' ?>">
+                <i class="fas fa-images"></i>
+                <span>Banners</span>
+            </a>
+        </div>
+
+        <!-- Financeiro -->
+        <div class="nav-group">
+            <div class="nav-label">Financeiro</div>
+            <a href="<?= SITE_URL ?>/admin/pedidos.php" class="nav-link <?= $current_page == 'pedidos.php' || $current_page == 'pedido-detalhes.php' ? 'active' : '' ?>">
                 <i class="fas fa-shopping-cart"></i>
-                Pedidos
-                <?php if ($pedidos_hoje > 0): ?>
-                    <span class="menu-badge"><?= $pedidos_hoje ?></span>
+                <span>Pedidos</span>
+            </a>
+            <a href="<?= SITE_URL ?>/admin/saques.php" class="nav-link <?= $current_page == 'saques.php' ? 'active' : '' ?>">
+                <i class="fas fa-money-bill-wave"></i>
+                <span>Saques</span>
+                <?php if ($pending_saques > 0): ?>
+                    <span class="nav-badge warning"><?= $pending_saques ?></span>
                 <?php endif; ?>
             </a>
-        </li>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/admin/eventos.php" 
-               class="<?= $current_page == 'eventos.php' ? 'active' : '' ?>">
-                <i class="fas fa-calendar-alt"></i>
-                Eventos
-            </a>
-        </li>
+        </div>
 
-        <li>
-            <a href="<?= SITE_URL ?>/admin/saques.php" 
-               class="<?= $current_page == 'saques.php' ? 'active' : '' ?>">
-                <i class="fas fa-wallet"></i>
-                Saques
-            </a>
-        </li>
-        
-        <div class="admin-sidebar-divider"></div>
-        <span class="admin-sidebar-section-title">Suporte</span>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/admin/tickets.php" 
-               class="<?= $current_page == 'tickets.php' ? 'active' : '' ?>">
-                <i class="fas fa-life-ring"></i>
-                Tickets
-                <?php if ($tickets_pendentes > 0): ?>
-                    <span class="menu-badge"><?= $tickets_pendentes ?></span>
+        <!-- Suporte -->
+        <div class="nav-group">
+            <div class="nav-label">Suporte</div>
+            <a href="<?= SITE_URL ?>/admin/tickets.php" class="nav-link <?= $current_page == 'tickets.php' || $current_page == 'ticket-detalhes.php' ? 'active' : '' ?>">
+                <i class="fas fa-headset"></i>
+                <span>Tickets</span>
+                <?php if ($pending_tickets > 0): ?>
+                    <span class="nav-badge danger"><?= $pending_tickets ?></span>
                 <?php endif; ?>
             </a>
-        </li>
-        
-        <div class="admin-sidebar-divider"></div>
-        <span class="admin-sidebar-section-title">Sistema</span>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/admin/configuracoes.php" 
-               class="<?= $current_page == 'configuracoes.php' ? 'active' : '' ?>">
+            <a href="<?= SITE_URL ?>/admin/faqs.php" class="nav-link <?= $current_page == 'faqs.php' ? 'active' : '' ?>">
+                <i class="fas fa-question-circle"></i>
+                <span>FAQs</span>
+            </a>
+        </div>
+
+        <!-- Sistema -->
+        <div class="nav-group">
+            <div class="nav-label">Sistema</div>
+            <a href="<?= SITE_URL ?>/admin/configuracoes.php" class="nav-link <?= $current_page == 'configuracoes.php' ? 'active' : '' ?>">
                 <i class="fas fa-cog"></i>
-                Configurações
+                <span>Configurações</span>
             </a>
-        </li>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/admin/logs.php" 
-               class="<?= $current_page == 'logs.php' ? 'active' : '' ?>">
+            <a href="<?= SITE_URL ?>/admin/logs.php" class="nav-link <?= $current_page == 'logs.php' ? 'active' : '' ?>">
                 <i class="fas fa-history"></i>
-                Logs
+                <span>Logs</span>
             </a>
-        </li>
-        
-        <div class="admin-sidebar-divider"></div>
-        
-        <li>
-            <a href="<?= SITE_URL ?>/pages/home.php">
-                <i class="fas fa-arrow-left"></i>
-                Voltar à Loja
-            </a>
-        </li>
-    </ul>
-</div>
+        </div>
 
-<!-- ============================================
-     MOBILE BOTTOM NAVIGATION
-     ============================================ -->
-<nav class="admin-bottom-nav">
-    <div class="admin-bottom-nav-content">
-        <a href="<?= SITE_URL ?>/admin/dashboard.php" 
-           class="admin-bottom-nav-item <?= $current_page == 'dashboard.php' ? 'active' : '' ?>">
-            <i class="fas fa-tachometer-alt"></i>
-            <span>Dashboard</span>
+    </div>
+
+    <!-- Footer -->
+    <div class="sidebar-footer">
+        <div class="sidebar-user">
+            <div class="user-avatar">
+                <img src="<?php echo $avatar_url; ?>" alt="Avatar" class="user-avatar"
+                                    onerror="this.src='<?php echo $default_avatar; ?>'">
+            </div>
+            <div class="user-info">
+                <strong><?php echo sanitize($user_name); ?></strong>
+                <div class="user-role">Administrador</div>
+            </div>
+            <a href="<?= SITE_URL ?>/pages/logout.php" class="btn-logout" title="Sair">
+                <i class="fas fa-sign-out-alt"></i>
+            </a>
+        </div>
+        <a href="<?= SITE_URL ?>/" class="btn-view-site" target="_blank">
+            <i class="fas fa-external-link-alt"></i>
+            Ver Loja
         </a>
-        
-        <a href="<?= SITE_URL ?>/admin/jogos.php" 
-           class="admin-bottom-nav-item <?= $current_page == 'jogos.php' ? 'active' : '' ?>">
+    </div>
+</aside>
+
+
+<!-- ==================== MOBILE BOTTOM NAV ==================== -->
+<nav class="mobile-bottom-nav">
+    <div class="bottom-nav-container">
+        <a href="<?= SITE_URL ?>/admin/dashboard.php" class="bottom-nav-item <?= $current_page == 'dashboard.php' ? 'active' : '' ?>">
+            <i class="fas fa-th-large"></i>
+            <span>Home</span>
+        </a>
+        <a href="<?= SITE_URL ?>/admin/jogos.php" class="bottom-nav-item <?= $current_page == 'jogos.php' ? 'active' : '' ?>">
             <i class="fas fa-gamepad"></i>
             <span>Jogos</span>
         </a>
-        
-        <a href="<?= SITE_URL ?>/admin/usuarios.php" 
-           class="admin-bottom-nav-item <?= $current_page == 'usuarios.php' ? 'active' : '' ?>">
-            <i class="fas fa-users"></i>
-            <span>Usuários</span>
-        </a>
-        
-        <a href="<?= SITE_URL ?>/admin/pedidos.php" 
-           class="admin-bottom-nav-item <?= $current_page == 'pedidos.php' ? 'active' : '' ?>">
+        <a href="<?= SITE_URL ?>/admin/pedidos.php" class="bottom-nav-item <?= $current_page == 'pedidos.php' ? 'active' : '' ?>">
             <i class="fas fa-shopping-cart"></i>
             <span>Pedidos</span>
-            <?php if ($pedidos_hoje > 0): ?>
-                <span class="nav-badge"><?= $pedidos_hoje ?></span>
+        </a>
+        <a href="<?= SITE_URL ?>/admin/tickets.php" class="bottom-nav-item <?= $current_page == 'tickets.php' ? 'active' : '' ?>">
+            <i class="fas fa-headset"></i>
+            <span>Tickets</span>
+            <?php if ($pending_tickets > 0): ?>
+                <span class="nav-badge danger"><?= $pending_tickets ?></span>
             <?php endif; ?>
         </a>
-        
-        <button class="admin-bottom-nav-item" onclick="openAdminSheet()">
-            <i class="fas fa-ellipsis-h"></i>
-            <span>Mais</span>
+        <button class="bottom-nav-menu-btn" onclick="openMobileMenu()">
+            <i class="fas fa-grip-horizontal"></i>
+            <span>Menu</span>
         </button>
     </div>
 </nav>
 
-<!-- ============================================
-     MOBILE BOTTOM SHEET
-     ============================================ -->
-<div class="admin-sheet-overlay" id="adminSheetOverlay" onclick="closeAdminSheet()"></div>
-<div class="admin-sheet" id="adminSheet">
-    <div class="admin-sheet-handle" onclick="closeAdminSheet()">
-        <span></span>
-    </div>
-    
-    <!-- Sheet Header -->
-    <div class="admin-sheet-header">
-        <div class="admin-avatar">
-            <?php if (!empty($admin['avatar_url'])): ?>
-                <img src="<?= htmlspecialchars($admin['avatar_url']) ?>" alt="Avatar">
-            <?php else: ?>
-                <i class="fas fa-user-shield"></i>
-            <?php endif; ?>
-        </div>
-        <div>
-            <h3><?= htmlspecialchars($admin['nome_usuario'] ?? 'Admin') ?></h3>
-            <p>Painel Administrativo</p>
-            <span class="badge"><i class="fas fa-shield-alt"></i> Admin</span>
-        </div>
-    </div>
-    
-    <!-- Quick Stats -->
-    <div class="admin-sheet-stats">
-        <div class="admin-sheet-stat">
-            <div class="stat-value"><?= number_format($total_usuarios) ?></div>
-            <div class="stat-label">Usuários</div>
-        </div>
-        <div class="admin-sheet-stat">
-            <div class="stat-value success"><?= number_format($total_jogos) ?></div>
-            <div class="stat-label">Jogos</div>
-        </div>
-        <div class="admin-sheet-stat">
-            <div class="stat-value warning"><?= $tickets_pendentes ?></div>
-            <div class="stat-label">Tickets</div>
-        </div>
-        <div class="admin-sheet-stat">
-            <div class="stat-value"><?= $pedidos_hoje ?></div>
-            <div class="stat-label">Pedidos</div>
-        </div>
-    </div>
-    
-    <!-- Menu Items -->
-    <div class="admin-sheet-menu">
-        <div class="admin-sheet-menu-title">Conteúdo</div>
 
-        <a href="<?= SITE_URL ?>/admin/banners.php" 
-           class="admin-sheet-menu-item <?= $current_page == 'banners.php' ? 'active' : '' ?>">
-            <i class="fas fa-images"></i>
-            <span>Banners</span>
-            <i class="fas fa-chevron-right chevron"></i>   
-        </a>
-        
-        <a href="<?= SITE_URL ?>/admin/categorias.php" 
-           class="admin-sheet-menu-item <?= $current_page == 'categorias.php' ? 'active' : '' ?>">
-            <i class="fas fa-folder"></i>
-            <span>Categorias</span>
-            <i class="fas fa-chevron-right chevron"></i>
-        </a>
-        
-        <a href="<?= SITE_URL ?>/admin/tags.php" 
-           class="admin-sheet-menu-item <?= $current_page == 'tags.php' ? 'active' : '' ?>">
-            <i class="fas fa-tags"></i>
-            <span>Tags</span>
-            <i class="fas fa-chevron-right chevron"></i>
-        </a>
-        
-        <div class="admin-sheet-divider"></div>
-        <div class="admin-sheet-menu-title">Usuários</div>
-        
-        <a href="<?= SITE_URL ?>/admin/desenvolvedores.php" 
-           class="admin-sheet-menu-item <?= $current_page == 'desenvolvedores.php' ? 'active' : '' ?>">
-            <i class="fas fa-code"></i>
-            <span>Desenvolvedores</span>
-            <i class="fas fa-chevron-right chevron"></i>
-        </a>
-        
-        <div class="admin-sheet-divider"></div>
-        <div class="admin-sheet-menu-title">Vendas</div>
-        
-        <a href="<?= SITE_URL ?>/admin/eventos.php" 
-           class="admin-sheet-menu-item <?= $current_page == 'eventos.php' ? 'active' : '' ?>">
-            <i class="fas fa-calendar-alt"></i>
-            <span>Eventos</span>
-            <i class="fas fa-chevron-right chevron"></i>
-        </a>
+<!-- ==================== MOBILE FULL MENU PANEL ==================== -->
+<div class="mobile-menu-overlay" id="mobileMenuOverlay" onclick="closeMobileMenu()"></div>
 
-        <a href="<?= SITE_URL ?>/admin/saques.php"
-              class="admin-sheet-menu-item <?= $current_page == 'saques.php' ? 'active' : '' ?>">
-                <i class="fas fa-wallet"></i>
-                <span>Saques</span>
-                <i class="fas fa-chevron-right chevron"></i>
-        </a>
-        
-        <div class="admin-sheet-divider"></div>
-        <div class="admin-sheet-menu-title">Suporte</div>
-        
-        <a href="<?= SITE_URL ?>/admin/tickets.php" 
-           class="admin-sheet-menu-item <?= $current_page == 'tickets.php' ? 'active' : '' ?>">
-            <i class="fas fa-life-ring"></i>
-            <span>Tickets de Suporte</span>
-            <?php if ($tickets_pendentes > 0): ?>
-                <span class="item-badge"><?= $tickets_pendentes ?></span>
-            <?php endif; ?>
-            <i class="fas fa-chevron-right chevron"></i>
-        </a>
-        
-        <div class="admin-sheet-divider"></div>
-        <div class="admin-sheet-menu-title">Sistema</div>
-        
-        <a href="<?= SITE_URL ?>/admin/configuracoes.php" 
-           class="admin-sheet-menu-item <?= $current_page == 'configuracoes.php' ? 'active' : '' ?>">
-            <i class="fas fa-cog"></i>
-            <span>Configurações</span>
-            <i class="fas fa-chevron-right chevron"></i>
-        </a>
-        
-        <a href="<?= SITE_URL ?>/admin/logs.php" 
-           class="admin-sheet-menu-item <?= $current_page == 'logs.php' ? 'active' : '' ?>">
-            <i class="fas fa-history"></i>
-            <span>Logs do Sistema</span>
-            <i class="fas fa-chevron-right chevron"></i>
-        </a>
+<div class="mobile-menu-panel" id="mobileMenuPanel">
+    <div class="mobile-menu-header">
+        <span class="mobile-menu-title">Menu Completo</span>
+        <button class="mobile-menu-close" onclick="closeMobileMenu()">
+            <i class="fas fa-times"></i>
+        </button>
     </div>
-    
-    <!-- Footer -->
-    <div class="admin-sheet-footer">
-        <a href="<?= SITE_URL ?>/pages/home.php">
-            <i class="fas fa-arrow-left"></i>
-            Voltar à Loja
-        </a>
+
+    <div class="mobile-menu-scroll">
+        
+        <!-- Principal -->
+        <div class="mobile-menu-group">
+            <div class="mobile-menu-label">Principal</div>
+            <div class="mobile-menu-grid">
+                <a href="<?= SITE_URL ?>/admin/dashboard.php" class="mobile-menu-item <?= $current_page == 'dashboard.php' ? 'active' : '' ?>">
+                    <i class="fas fa-th-large"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="<?= SITE_URL ?>/admin/eventos.php" class="mobile-menu-item <?= $current_page == 'eventos.php' ? 'active' : '' ?>">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Monitor</span>
+                </a>
+                <a href="<?= SITE_URL ?>/admin/pedidos.php" class="mobile-menu-item <?= $current_page == 'pedidos.php' ? 'active' : '' ?>">
+                    <i class="fas fa-shopping-cart"></i>
+                    <span>Pedidos</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Gestão -->
+        <div class="mobile-menu-group">
+            <div class="mobile-menu-label">Gestão</div>
+            <div class="mobile-menu-grid">
+                <a href="<?= SITE_URL ?>/admin/usuarios.php" class="mobile-menu-item <?= $current_page == 'usuarios.php' ? 'active' : '' ?>">
+                    <i class="fas fa-users"></i>
+                    <span>Usuários</span>
+                </a>
+                <a href="<?= SITE_URL ?>/admin/desenvolvedores.php" class="mobile-menu-item <?= $current_page == 'desenvolvedores.php' ? 'active' : '' ?>">
+                    <i class="fas fa-code"></i>
+                    <span>Devs</span>
+                    <?php if ($pending_devs > 0): ?>
+                        <span class="menu-badge"><?= $pending_devs ?></span>
+                    <?php endif; ?>
+                </a>
+                <a href="<?= SITE_URL ?>/admin/jogos.php" class="mobile-menu-item <?= $current_page == 'jogos.php' ? 'active' : '' ?>">
+                    <i class="fas fa-gamepad"></i>
+                    <span>Jogos</span>
+                </a>
+                <a href="<?= SITE_URL ?>/admin/categorias.php" class="mobile-menu-item <?= $current_page == 'categorias.php' ? 'active' : '' ?>">
+                    <i class="fas fa-folder"></i>
+                    <span>Categorias</span>
+                </a>
+                <a href="<?= SITE_URL ?>/admin/tags.php" class="mobile-menu-item <?= $current_page == 'tags.php' ? 'active' : '' ?>">
+                    <i class="fas fa-tags"></i>
+                    <span>Tags</span>
+                </a>
+                <a href="<?= SITE_URL ?>/admin/banners.php" class="mobile-menu-item <?= $current_page == 'banners.php' ? 'active' : '' ?>">
+                    <i class="fas fa-images"></i>
+                    <span>Banners</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Financeiro & Suporte -->
+        <div class="mobile-menu-group">
+            <div class="mobile-menu-label">Financeiro & Suporte</div>
+            <div class="mobile-menu-grid">
+                <a href="<?= SITE_URL ?>/admin/saques.php" class="mobile-menu-item <?= $current_page == 'saques.php' ? 'active' : '' ?>">
+                    <i class="fas fa-money-bill-wave"></i>
+                    <span>Saques</span>
+                    <?php if ($pending_saques > 0): ?>
+                        <span class="menu-badge"><?= $pending_saques ?></span>
+                    <?php endif; ?>
+                </a>
+                <a href="<?= SITE_URL ?>/admin/tickets.php" class="mobile-menu-item <?= $current_page == 'tickets.php' ? 'active' : '' ?>">
+                    <i class="fas fa-headset"></i>
+                    <span>Tickets</span>
+                    <?php if ($pending_tickets > 0): ?>
+                        <span class="menu-badge"><?= $pending_tickets ?></span>
+                    <?php endif; ?>
+                </a>
+                <a href="<?= SITE_URL ?>/admin/faqs.php" class="mobile-menu-item <?= $current_page == 'faqs.php' ? 'active' : '' ?>">
+                    <i class="fas fa-question-circle"></i>
+                    <span>FAQs</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Sistema -->
+        <div class="mobile-menu-group">
+            <div class="mobile-menu-label">Sistema</div>
+            <div class="mobile-menu-grid">
+                <a href="<?= SITE_URL ?>/admin/configuracoes.php" class="mobile-menu-item <?= $current_page == 'configuracoes.php' ? 'active' : '' ?>">
+                    <i class="fas fa-cog"></i>
+                    <span>Config</span>
+                </a>
+                <a href="<?= SITE_URL ?>/admin/logs.php" class="mobile-menu-item <?= $current_page == 'logs.php' ? 'active' : '' ?>">
+                    <i class="fas fa-history"></i>
+                    <span>Logs</span>
+                </a>
+                <a href="<?= SITE_URL ?>/" class="mobile-menu-item" target="_blank">
+                    <i class="fas fa-external-link-alt"></i>
+                    <span>Ver Loja</span>
+                </a>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- User Section -->
+    <div class="mobile-user-section">
+        <div class="mobile-user-card">
+            <div class="mobile-user-avatar">
+                <?= strtoupper(substr($_SESSION['usuario_nome'] ?? 'A', 0, 1)) ?>
+            </div>
+            <div class="mobile-user-info">
+                <div class="mobile-user-name"><?= htmlspecialchars($_SESSION['usuario_nome'] ?? 'Admin') ?></div>
+                <div class="mobile-user-role">Administrador</div>
+            </div>
+            <div class="mobile-user-actions">
+                <a href="<?= SITE_URL ?>/admin/configuracoes.php" class="mobile-action-btn">
+                    <i class="fas fa-cog"></i>
+                </a>
+                <a href="<?= SITE_URL ?>/pages/logout.php" class="mobile-action-btn logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                </a>
+            </div>
+        </div>
     </div>
 </div>
 
+
 <script>
-// Admin Bottom Sheet Functions
-function openAdminSheet() {
-    document.getElementById('adminSheetOverlay').classList.add('active');
-    document.getElementById('adminSheet').classList.add('active');
+function openMobileMenu() {
+    document.getElementById('mobileMenuOverlay').classList.add('open');
+    document.getElementById('mobileMenuPanel').classList.add('open');
     document.body.style.overflow = 'hidden';
 }
 
-function closeAdminSheet() {
-    document.getElementById('adminSheetOverlay').classList.remove('active');
-    document.getElementById('adminSheet').classList.remove('active');
+function closeMobileMenu() {
+    document.getElementById('mobileMenuOverlay').classList.remove('open');
+    document.getElementById('mobileMenuPanel').classList.remove('open');
     document.body.style.overflow = '';
 }
 
-// Swipe to close
-let adminSheetStartY = 0;
-const adminSheet = document.getElementById('adminSheet');
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeMobileMenu();
+});
 
-if (adminSheet) {
-    adminSheet.addEventListener('touchstart', (e) => {
-        adminSheetStartY = e.touches[0].clientY;
-    });
-
-    adminSheet.addEventListener('touchmove', (e) => {
-        const currentY = e.touches[0].clientY;
-        const diff = currentY - adminSheetStartY;
-        
-        if (diff > 0 && adminSheet.scrollTop === 0) {
-            adminSheet.style.transform = `translateY(${diff}px)`;
-        }
-    });
-
-    adminSheet.addEventListener('touchend', (e) => {
-        const currentY = e.changedTouches[0].clientY;
-        const diff = currentY - adminSheetStartY;
-        
-        if (diff > 100) {
-            closeAdminSheet();
-        }
-        adminSheet.style.transform = '';
-    });
-}
-
-// Close on escape key
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        closeAdminSheet();
-    }
+document.querySelectorAll('.mobile-menu-item').forEach(item => {
+    item.addEventListener('click', () => closeMobileMenu());
 });
 </script>

@@ -36,7 +36,7 @@ if ($user_id) {
 }
 
 // --- QUERIES ---
-// Banners Promocionais
+// Banners
 $banners = $pdo->query("SELECT * FROM banner WHERE ativo = 1 ORDER BY ordem LIMIT 5")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 // Jogos Destaque (Hero)
@@ -133,171 +133,410 @@ require_once '../includes/header.php';
     }
 
     /* ============================================
-   PROMO BANNER - PLAYSTATION STYLE (10:3)
+   BANNERS PROMOCIONAIS - ESTILO PLAYSTATION
    ============================================ */
-    .promo-banner-section {
-        width: 100%;
-        margin-bottom: 32px;
+
+.promo-banner-section {
+    position: relative;
+    width: 100%;
+    margin-bottom: 40px;
+}
+
+.promo-banner-slider {
+    position: relative;
+    width: 100%;
+    height: 500px;
+    overflow: hidden;
+    border-radius: 12px;
+}
+
+.promo-banner-track {
+    display: flex;
+    transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    height: 100%;
+}
+
+.promo-banner-slide {
+    min-width: 100%;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Imagem de Fundo */
+.promo-banner-image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.promo-banner-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.promo-banner-overlay-gradient {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        to right,
+        rgba(19, 19, 20, 0.95) 0%,
+        rgba(19, 19, 20, 0.7) 40%,
+        rgba(19, 19, 20, 0.3) 70%,
+        transparent 100%
+    );
+}
+
+.promo-banner-image.no-image {
+    background: var(--banner-bg, #131314);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.promo-fallback-icon {
+    font-size: 80px;
+    color: rgba(227, 227, 227, 0.1);
+}
+
+/* ============================================
+   LAYOUT PROMOCIONAL
+   ============================================ */
+
+.promo-banner-content-promocional {
+    position: relative;
+    z-index: 10;
+    height: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    padding: 60px;
+    max-width: 1400px;
+    margin: 0 auto;
+    gap: 40px;
+}
+
+.promo-content-left {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    max-width: 600px;
+}
+
+/* Título Principal */
+.promo-title-main {
+    font-size: 56px;
+    font-weight: 900;
+    line-height: 1;
+    color: var(--banner-text, #E3E3E3);
+    text-transform: uppercase;
+    letter-spacing: -1px;
+    margin: 0;
+    text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* Subtítulo (ex: "TERMINA EM 4/2") */
+.promo-subtitle {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--banner-text, #E3E3E3);
+    text-transform: uppercase;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.promo-date {
+    background: var(--banner-accent, #4C8BF5);
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-weight: 700;
+    color: white;
+}
+
+/* Box de Desconto */
+.promo-discount-box {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    padding: 24px 32px;
+    border-radius: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    width: fit-content;
+}
+
+.promo-discount-label {
+    font-size: 16px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--banner-text, #E3E3E3);
+    letter-spacing: 1px;
+}
+
+.promo-discount-value {
+    font-size: 72px;
+    font-weight: 900;
+    color: var(--banner-accent, #4C8BF5);
+    line-height: 1;
+    text-shadow: 0 0 20px var(--banner-accent);
+}
+
+/* Botão CTA Promocional */
+.promo-banner-btn.promocional {
+    background: var(--banner-accent, #4C8BF5);
+    color: white;
+    padding: 16px 32px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 16px;
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    transition: all 0.3s;
+    width: fit-content;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    box-shadow: 0 8px 24px rgba(76, 139, 245, 0.3);
+}
+
+.promo-banner-btn.promocional:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(76, 139, 245, 0.5);
+}
+
+.promo-banner-btn.promocional i {
+    transition: transform 0.3s;
+}
+
+.promo-banner-btn.promocional:hover i {
+    transform: translateX(4px);
+}
+
+/* Imagem Overlay (Flutuante) */
+.promo-content-right {
+    position: relative;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.promo-overlay-image {
+    max-width: 100%;
+    max-height: 90%;
+    object-fit: contain;
+    position: absolute;
+    filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.5));
+    animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% {
+        transform: translateY(0) rotate(-2deg);
+    }
+    50% {
+        transform: translateY(-20px) rotate(2deg);
+    }
+}
+
+/* ============================================
+   LAYOUT SIMPLES (Original)
+   ============================================ */
+
+.promo-banner-info {
+    position: relative;
+    z-index: 10;
+    max-width: 600px;
+    padding: 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.promo-banner-title {
+    font-size: 48px;
+    font-weight: 800;
+    color: #E3E3E3;
+    margin: 0;
+    line-height: 1.1;
+}
+
+.promo-banner-desc {
+    font-size: 18px;
+    color: #95a5a6;
+    margin: 0;
+    line-height: 1.5;
+}
+
+.promo-banner-btn {
+    background: #4C8BF5;
+    color: white;
+    padding: 14px 28px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.3s;
+    width: fit-content;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+}
+
+.promo-banner-btn:hover {
+    background: #3a73d1;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(76, 139, 245, 0.3);
+}
+
+/* ============================================
+   NAVEGAÇÃO
+   ============================================ */
+
+.promo-banner-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    z-index: 20;
+}
+
+.promo-banner-nav:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-50%) scale(1.1);
+}
+
+.promo-banner-nav.prev {
+    left: 20px;
+}
+
+.promo-banner-nav.next {
+    right: 20px;
+}
+
+/* Dots de Navegação */
+.promo-banner-dots {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.promo-banner-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(227, 227, 227, 0.3);
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.promo-banner-dot.active {
+    background: #4C8BF5;
+    width: 32px;
+    border-radius: 6px;
+}
+
+.promo-banner-dot:hover {
+    background: rgba(227, 227, 227, 0.5);
+}
+
+/* ============================================
+   RESPONSIVIDADE
+   ============================================ */
+
+@media (max-width: 1200px) {
+    .promo-banner-content-promocional {
+        padding: 40px;
     }
 
+    .promo-title-main {
+        font-size: 42px;
+    }
+
+    .promo-discount-value {
+        font-size: 56px;
+    }
+}
+
+@media (max-width: 768px) {
     .promo-banner-slider {
-        position: relative;
-        overflow: hidden;
+        height: 600px;
     }
 
-    .promo-banner-track {
-        display: flex;
-        transition: transform 0.5s ease;
+    .promo-banner-content-promocional {
+        grid-template-columns: 1fr;
+        padding: 30px 20px;
+        gap: 30px;
     }
 
-    .promo-banner-slide {
-        min-width: 100%;
-        flex-shrink: 0;
+    .promo-content-right {
+        order: -1;
+        height: 250px;
     }
 
-    .promo-banner-image {
-        position: relative;
-        width: 100%;
-        aspect-ratio: 10 / 3;
-        overflow: hidden;
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    .promo-overlay-image {
+        max-height: 100%;
     }
 
-    .promo-banner-image img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
+    .promo-title-main {
+        font-size: 32px;
     }
 
-    
-
-    /* Fallback background patterns */
-    .promo-banner-image.no-image {
-        display: flex;
-        align-items: center;
-        justify-content: center;
+    .promo-subtitle {
+        font-size: 14px;
     }
 
-    .promo-banner-image.no-image::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background:
-            radial-gradient(circle at 20% 50%, rgba(0, 174, 255, 0.15) 0%, transparent 50%),
-            radial-gradient(circle at 80% 50%, rgba(255, 107, 107, 0.15) 0%, transparent 50%),
-            radial-gradient(circle at 50% 80%, rgba(145, 71, 255, 0.1) 0%, transparent 50%);
+    .promo-discount-box {
+        padding: 16px 24px;
     }
 
-    .promo-banner-image.no-image .promo-fallback-icon {
-        font-size: 80px;
-        color: rgba(255, 255, 255, 0.1);
-        z-index: 1;
+    .promo-discount-label {
+        font-size: 14px;
+    }
+
+    .promo-discount-value {
+        font-size: 48px;
+    }
+
+    .promo-banner-nav {
+        width: 40px;
+        height: 40px;
     }
 
     .promo-banner-info {
-        padding: 20px 32px 32px;
-        background: var(--bg-primary);
-    }
-
-    .promo-banner-tag {
-        display: inline-block;
-        background: var(--accent);
-        color: #000;
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        padding: 4px 10px;
-        border-radius: 4px;
-        margin-bottom: 12px;
+        padding: 30px 20px;
     }
 
     .promo-banner-title {
-        font-size: 28px;
-        font-weight: 700;
-        color: var(--text-primary);
-        margin: 0 0 8px;
+        font-size: 32px;
     }
 
     .promo-banner-desc {
-        font-size: 14px;
-        color: var(--text-secondary);
-        margin: 0 0 20px;
-        max-width: 600px;
+        font-size: 16px;
     }
-
-    .promo-banner-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: var(--accent);
-        color: #000;
-        padding: 12px 24px;
-        border-radius: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        text-decoration: none;
-        transition: all 0.2s;
-    }
-
-    .promo-banner-btn:hover {
-        filter: brightness(1.1);
-        transform: translateY(-2px);
-    }
-
-    /* Banner Navigation */
-    .promo-banner-nav {
-        position: absolute;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 48px;
-        height: 48px;
-        background: rgba(0, 0, 0, 0.6);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 50%;
-        color: #fff;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        z-index: 10;
-        transition: all 0.2s;
-    }
-
-    .promo-banner-nav:hover {
-        background: rgba(0, 0, 0, 0.8);
-        border-color: var(--accent);
-    }
-
-    .promo-banner-nav.prev {
-        left: 24px;
-    }
-
-    .promo-banner-nav.next {
-        right: 24px;
-    }
-
-    .promo-banner-dots {
-        display: flex;
-        justify-content: center;
-        gap: 8px;
-        padding: 16px 0;
-    }
-
-    .promo-banner-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--border);
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-
-    .promo-banner-dot.active {
-        background: var(--accent);
-        width: 24px;
-        border-radius: 4px;
-    }
+}
 
     /* ============================================
    HERO - EPIC GAMES STYLE
@@ -1252,25 +1491,99 @@ require_once '../includes/header.php';
                     <div class="promo-banner-track" id="promoBannerTrack">
                         <?php foreach ($banners as $i => $banner):
                             $hasImage = !empty($banner['imagem_desktop']);
+                            $hasOverlay = !empty($banner['imagem_overlay']);
+                            $isPromocional = ($banner['estilo_banner'] ?? 'simples') === 'promocional';
+
+                            // Cores personalizadas
+                            $corFundo = $banner['cor_fundo'] ?? '#131314';
+                            $corTexto = $banner['cor_texto'] ?? '#E3E3E3';
+                            $corDestaque = $banner['cor_destaque'] ?? '#4C8BF5';
                         ?>
-                            <div class="promo-banner-slide">
+                            <div class="promo-banner-slide <?= $isPromocional ? 'promocional' : 'simples' ?>"
+                                style="--banner-bg: <?= $corFundo ?>; --banner-text: <?= $corTexto ?>; --banner-accent: <?= $corDestaque ?>;">
+
+                                <!-- Imagem de Fundo -->
                                 <div class="promo-banner-image <?= !$hasImage ? 'no-image' : '' ?>">
                                     <?php if ($hasImage): ?>
                                         <img src="<?= htmlspecialchars($banner['imagem_desktop']) ?>"
                                             alt="<?= htmlspecialchars($banner['titulo'] ?? '') ?>"
-                                            loading="<?= $i === 0 ? 'eager' : 'lazy' ?>" object-fit="cover">
+                                            loading="<?= $i === 0 ? 'eager' : 'lazy' ?>">
+                                        <div class="promo-banner-overlay-gradient"></div>
                                     <?php else: ?>
                                         <i class="fas fa-tags promo-fallback-icon"></i>
                                     <?php endif; ?>
                                 </div>
-                                <div class="promo-banner-info">
-                                    
-                                    <h2 class="promo-banner-title"><?= htmlspecialchars($banner['titulo'] ?? 'Oferta Especial') ?></h2>
-                                    <p class="promo-banner-desc"><?= htmlspecialchars($banner['subtitulo'] ?? 'Confira as melhores ofertas') ?></p>
-                                    <a href="<?= htmlspecialchars($banner['url_destino'] ?? '#') ?>" class="promo-banner-btn">
-                                        Ver mais <i class="fas fa-arrow-right"></i>
-                                    </a>
-                                </div>
+
+                                <?php if ($isPromocional): ?>
+                                    <!-- Layout Promocional (Estilo PlayStation) -->
+                                    <div class="promo-banner-content-promocional">
+                                        <div class="promo-content-left">
+                                            <!-- Título Principal -->
+                                            <h2 class="promo-title-main">
+                                                <?= htmlspecialchars($banner['titulo'] ?? 'OFERTA ESPECIAL') ?>
+                                            </h2>
+
+                                            <!-- Texto Secundário (ex: "TERMINA EM 4/2") -->
+                                            <?php if (!empty($banner['texto_principal'])): ?>
+                                                <p class="promo-subtitle">
+                                                    <?= htmlspecialchars($banner['texto_principal']) ?>
+                                                    <?php if (!empty($banner['data_fim'])): ?>
+                                                        <span class="promo-date">
+                                                            <?= date('d/m', strtotime($banner['data_fim'])) ?>
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </p>
+                                            <?php endif; ?>
+
+                                            <!-- Desconto/Destaque -->
+                                            <?php if (!empty($banner['texto_destaque']) || !empty($banner['texto_secundario'])): ?>
+                                                <div class="promo-discount-box">
+                                                    <?php if (!empty($banner['texto_secundario'])): ?>
+                                                        <span class="promo-discount-label">
+                                                            <?= htmlspecialchars($banner['texto_secundario']) ?>
+                                                        </span>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($banner['texto_destaque'])): ?>
+                                                        <span class="promo-discount-value">
+                                                            <?= htmlspecialchars($banner['texto_destaque']) ?>
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </div>
+                                            <?php endif; ?>
+
+                                            <!-- Botão CTA -->
+                                            <a href="<?= htmlspecialchars($banner['url_destino'] ?? '#') ?>"
+                                                class="promo-banner-btn promocional">
+                                                Ver ofertas <i class="fas fa-arrow-right"></i>
+                                            </a>
+                                        </div>
+
+                                        <!-- Imagem Overlay (Flutuante) -->
+                                        <?php if ($hasOverlay): ?>
+                                            <div class="promo-content-right">
+                                                <img src="<?= htmlspecialchars($banner['imagem_overlay']) ?>"
+                                                    alt="Destaque"
+                                                    class="promo-overlay-image"
+                                                    loading="<?= $i === 0 ? 'eager' : 'lazy' ?>">
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+
+                                <?php else: ?>
+                                    <!-- Layout Simples (Original) -->
+                                    <div class="promo-banner-info">
+                                        <h2 class="promo-banner-title">
+                                            <?= htmlspecialchars($banner['titulo'] ?? 'Oferta Especial') ?>
+                                        </h2>
+                                        <p class="promo-banner-desc">
+                                            <?= htmlspecialchars($banner['subtitulo'] ?? 'Confira as melhores ofertas') ?>
+                                        </p>
+                                        <a href="<?= htmlspecialchars($banner['url_destino'] ?? '#') ?>"
+                                            class="promo-banner-btn">
+                                            Ver mais <i class="fas fa-arrow-right"></i>
+                                        </a>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         <?php endforeach; ?>
                     </div>
@@ -1288,7 +1601,8 @@ require_once '../includes/header.php';
                 <?php if (count($banners) > 1): ?>
                     <div class="promo-banner-dots">
                         <?php for ($i = 0; $i < count($banners); $i++): ?>
-                            <div class="promo-banner-dot <?= $i === 0 ? 'active' : '' ?>" onclick="promoBanner.goTo(<?= $i ?>)"></div>
+                            <div class="promo-banner-dot <?= $i === 0 ? 'active' : '' ?>"
+                                onclick="promoBanner.goTo(<?= $i ?>)"></div>
                         <?php endfor; ?>
                     </div>
                 <?php endif; ?>
@@ -1656,40 +1970,66 @@ require_once '../includes/header.php';
 </div>
 
 <script>
-    // Promo Banner Slider
-    const promoBanner = {
-        track: document.getElementById('promoBannerTrack'),
-        dots: document.querySelectorAll('.promo-banner-dot'),
-        current: 0,
-        total: <?= count($banners) ?>,
-        interval: null,
+    // Banner Carousel
+const promoBanner = {
+    track: null,
+    slides: [],
+    dots: [],
+    currentIndex: 0,
+    interval: null,
 
-        goTo(index) {
-            if (index >= this.total) index = 0;
-            if (index < 0) index = this.total - 1;
-            this.current = index;
-            if (this.track) this.track.style.transform = `translateX(-${index * 100}%)`;
-            this.dots.forEach((d, i) => d.classList.toggle('active', i === index));
-            this.resetAuto();
-        },
-        next() {
-            this.goTo(this.current + 1);
-        },
-        prev() {
-            this.goTo(this.current - 1);
-        },
-        startAuto() {
-            this.interval = setInterval(() => this.next(), 5000);
-        },
-        resetAuto() {
-            clearInterval(this.interval);
-            this.startAuto();
-        },
-        init() {
-            if (this.total > 1) this.startAuto();
+    init() {
+        this.track = document.getElementById('promoBannerTrack');
+        if (!this.track) return;
+
+        this.slides = this.track.querySelectorAll('.promo-banner-slide');
+        this.dots = document.querySelectorAll('.promo-banner-dot');
+
+        if (this.slides.length > 1) {
+            this.startAutoSlide();
         }
-    };
+    },
+
+    goTo(index) {
+        this.currentIndex = index;
+        this.updateSlide();
+    },
+
+    next() {
+        this.currentIndex = (this.currentIndex + 1) % this.slides.length;
+        this.updateSlide();
+        this.resetAutoSlide();
+    },
+
+    prev() {
+        this.currentIndex = (this.currentIndex - 1 + this.slides.length) % this.slides.length;
+        this.updateSlide();
+        this.resetAutoSlide();
+    },
+
+    updateSlide() {
+        const offset = -this.currentIndex * 100;
+        this.track.style.transform = `translateX(${offset}%)`;
+
+        this.dots.forEach((dot, i) => {
+            dot.classList.toggle('active', i === this.currentIndex);
+        });
+    },
+
+    startAutoSlide() {
+        this.interval = setInterval(() => this.next(), 5000);
+    },
+
+    resetAutoSlide() {
+        clearInterval(this.interval);
+        this.startAutoSlide();
+    }
+};
+
+// Inicializar quando o DOM estiver pronto
+document.addEventListener('DOMContentLoaded', () => {
     promoBanner.init();
+});
 
     // Hero Slider
     const heroSlider = {
