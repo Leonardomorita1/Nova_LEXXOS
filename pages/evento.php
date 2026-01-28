@@ -1126,4 +1126,14 @@ document.querySelectorAll('.game-card-wrapper, .stat-card').forEach(el => {
 });
 </script>
 
-<?php require_once '../includes/footer.php'; ?>
+<?php
+// Helper para remover filtro
+function removeFilterParam($tipo) {
+    $params = $_GET;
+    unset($params[$tipo]);
+    unset($params['pagina']);
+    return '?' . http_build_query($params);
+}
+
+require_once '../includes/footer.php';
+?>
