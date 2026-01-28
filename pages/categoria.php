@@ -1,7 +1,6 @@
 <?php
 // ===========================================
-// pages/categoria.php
-// Página de listagem de jogos por categoria
+// pages/categoria.php - FILTROS CORRIGIDOS
 // ===========================================
 
 require_once '../config/config.php';
@@ -9,20 +8,16 @@ require_once '../config/database.php';
 
 $database = new Database();
 $pdo = $database->getConnection();
+$user_id = isLoggedIn() ? $_SESSION['user_id'] : null;
 
-$user_id = $_SESSION['user_id'] ?? null;
 $slug = $_GET['slug'] ?? '';
-$ordem = $_GET['ordem'] ?? 'popular';
 
-// Redireciona se não houver slug
 if (empty($slug)) {
     header('Location: ' . SITE_URL . '/pages/busca.php');
     exit;
 }
 
-// ===========================================
-// 1. BUSCAR CATEGORIA
-// ===========================================
+// Buscar categoria
 $stmt = $pdo->prepare("SELECT * FROM categoria WHERE slug = ? AND ativa = 1");
 $stmt->execute([$slug]);
 $categoria = $stmt->fetch();
@@ -32,1359 +27,1140 @@ if (!$categoria) {
     exit;
 }
 
-// ===========================================
-// 2. DEFINIR ORDENAÇÃO
-// ===========================================
-$ordenacoes = [
-    'popular' => 'j.total_vendas DESC',
-    'nota' => 'j.nota_media DESC',
-    'novos' => 'j.publicado_em DESC',
-    'preco_menor' => 'j.preco_centavos ASC',
-    'preco_maior' => 'j.preco_centavos DESC'
-];
-$orderBy = $ordenacoes[$ordem] ?? $ordenacoes['popular'];
+// User data
+$meus_jogos = $minha_wishlist = $meu_carrinho = [];
+if ($user_id) {
+    $stmt = $pdo->prepare("SELECT jogo_id FROM biblioteca WHERE usuario_id = ?");
+    $stmt->execute([$user_id]);
+    $meus_jogos = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-// ===========================================
-// 3. BUSCAR JOGOS DA CATEGORIA
-// ===========================================
-$stmt = $pdo->prepare("
-    SELECT j.*, 
-           d.nome_estudio,
-           GROUP_CONCAT(DISTINCT t.nome SEPARATOR ', ') as todas_tags
+    $stmt = $pdo->prepare("SELECT jogo_id FROM lista_desejos WHERE usuario_id = ?");
+    $stmt->execute([$user_id]);
+    $minha_wishlist = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    $stmt = $pdo->prepare("SELECT jogo_id FROM carrinho WHERE usuario_id = ?");
+    $stmt->execute([$user_id]);
+    $meu_carrinho = $stmt->fetchAll(PDO::FETCH_COLUMN);
+}
+
+// Filtros
+$plataforma = $_GET['plataforma'] ?? '';
+$preco_min = isset($_GET['preco_min']) && $_GET['preco_min'] !== '' ? (float)$_GET['preco_min'] : null;
+$preco_max = isset($_GET['preco_max']) && $_GET['preco_max'] !== '' ? (float)$_GET['preco_max'] : null;
+$nota_min = isset($_GET['nota_min']) ? (float)$_GET['nota_min'] : 0;
+$promocao = isset($_GET['promocao']) ? (int)$_GET['promocao'] : 0;
+$ordem = $_GET['ordem'] ?? 'popular';
+$pagina = max(1, (int)($_GET['pagina'] ?? 1));
+$por_pagina = 24;
+$offset = ($pagina - 1) * $por_pagina;
+
+// ============================================
+// CONSTRUÇÃO DA QUERY CORRIGIDA
+// ============================================
+
+// Arrays para construir a query
+$joins = ["INNER JOIN jogo_categoria jc ON j.id = jc.jogo_id"];
+$where = ["j.status = 'publicado'", "jc.categoria_id = :categoria_id"];
+$params = [':categoria_id' => $categoria['id']];
+
+// Filtro de plataforma
+if (!empty($plataforma)) {
+    $joins[] = "INNER JOIN jogo_plataforma jp ON j.id = jp.jogo_id";
+    $joins[] = "INNER JOIN plataforma plat ON jp.plataforma_id = plat.id";
+    $where[] = "plat.slug = :plataforma";
+    $params[':plataforma'] = $plataforma;
+}
+
+// Filtro de preço mínimo
+if ($preco_min !== null) {
+    $where[] = "COALESCE(CASE WHEN j.em_promocao = 1 THEN j.preco_promocional_centavos END, j.preco_centavos) >= :preco_min";
+    $params[':preco_min'] = $preco_min * 100;
+}
+
+// Filtro de preço máximo
+if ($preco_max !== null) {
+    $where[] = "COALESCE(CASE WHEN j.em_promocao = 1 THEN j.preco_promocional_centavos END, j.preco_centavos) <= :preco_max";
+    $params[':preco_max'] = $preco_max * 100;
+}
+
+// Filtro de nota mínima
+if ($nota_min > 0) {
+    $where[] = "j.nota_media >= :nota_min";
+    $params[':nota_min'] = $nota_min;
+}
+
+// Filtro de promoção
+if ($promocao === 1) {
+    $where[] = "j.em_promocao = 1 AND j.preco_promocional_centavos IS NOT NULL";
+}
+
+// Montar cláusulas
+$joins_clause = implode(' ', $joins);
+$where_clause = implode(' AND ', $where);
+
+// Ordenação
+$order_by = match($ordem) {
+    'preco_asc' => 'preco_efetivo ASC',
+    'preco_desc' => 'preco_efetivo DESC',
+    'nota' => 'j.nota_media DESC, j.titulo ASC',
+    'novos' => 'j.publicado_em DESC',
+    'titulo' => 'j.titulo ASC',
+    default => 'j.total_vendas DESC, j.nota_media DESC'
+};
+
+// Query principal
+$sql = "
+    SELECT DISTINCT j.*, d.nome_estudio,
+           COALESCE(CASE WHEN j.em_promocao = 1 THEN j.preco_promocional_centavos END, j.preco_centavos) as preco_efetivo
     FROM jogo j
     LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id
-    INNER JOIN jogo_categoria jc ON j.id = jc.jogo_id
-    LEFT JOIN jogo_tag jt ON j.id = jt.jogo_id
-    LEFT JOIN tag t ON jt.tag_id = t.id
-    WHERE jc.categoria_id = ? AND j.status = 'publicado'
-    GROUP BY j.id
-    ORDER BY {$orderBy}
-    LIMIT 50
+    $joins_clause
+    WHERE $where_clause
+    ORDER BY $order_by
+    LIMIT $por_pagina OFFSET $offset
+";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$jogos = $stmt->fetchAll();
+
+// Query de contagem
+$count_sql = "
+    SELECT COUNT(DISTINCT j.id) as total
+    FROM jogo j
+    $joins_clause
+    WHERE $where_clause
+";
+$stmt = $pdo->prepare($count_sql);
+$stmt->execute($params);
+$total_jogos = $stmt->fetch()['total'];
+$total_paginas = ceil($total_jogos / $por_pagina);
+
+// ============================================
+// DADOS PARA OS FILTROS (sidebar)
+// ============================================
+
+// Plataformas disponíveis na categoria
+$stmt = $pdo->prepare("
+    SELECT p.*, COUNT(DISTINCT j.id) as total_jogos
+    FROM plataforma p
+    INNER JOIN jogo_plataforma jp ON p.id = jp.plataforma_id
+    INNER JOIN jogo j ON jp.jogo_id = j.id AND j.status = 'publicado'
+    INNER JOIN jogo_categoria jc ON j.id = jc.jogo_id AND jc.categoria_id = ?
+    WHERE p.ativa = 1 
+    GROUP BY p.id 
+    HAVING total_jogos > 0 
+    ORDER BY p.ordem
 ");
 $stmt->execute([$categoria['id']]);
-$todosJogos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$plataformas = $stmt->fetchAll();
 
-// ===========================================
-// 4. SEPARAR DESTAQUE E GRID
-// ===========================================
-$jogoDestaque = null;
-$jogosGrid = [];
-$tagsPopulares = [];
+// Contagem de promoções na categoria
+$stmt = $pdo->prepare("
+    SELECT COUNT(DISTINCT j.id) as total
+    FROM jogo j
+    INNER JOIN jogo_categoria jc ON j.id = jc.jogo_id AND jc.categoria_id = ?
+    WHERE j.status = 'publicado' AND j.em_promocao = 1 AND j.preco_promocional_centavos IS NOT NULL
+");
+$stmt->execute([$categoria['id']]);
+$total_promocoes = $stmt->fetchColumn();
 
-// Status do usuário para o destaque
-$destaque_possui = false;
-$destaque_in_cart = false;
-$destaque_in_wishlist = false;
+// ============================================
+// FILTROS ATIVOS (tags na toolbar)
+// ============================================
+$filtros_ativos = [];
 
-if (!empty($todosJogos)) {
-    $jogoDestaque = $todosJogos[0];
-    $jogosGrid = array_slice($todosJogos, 1);
-
-    // Verificar status do usuário para o jogo destaque
-    if ($user_id && $jogoDestaque) {
-        // Verifica se possui na biblioteca
-        $stmt = $pdo->prepare("SELECT id FROM biblioteca WHERE usuario_id = ? AND jogo_id = ?");
-        $stmt->execute([$user_id, $jogoDestaque['id']]);
-        $destaque_possui = $stmt->fetch() ? true : false;
-        
-        // Verifica se está no carrinho
-        $stmt = $pdo->prepare("SELECT id FROM carrinho WHERE usuario_id = ? AND jogo_id = ?");
-        $stmt->execute([$user_id, $jogoDestaque['id']]);
-        $destaque_in_cart = $stmt->fetch() ? true : false;
-        
-        // Verifica se está na lista de desejos
-        $stmt = $pdo->prepare("SELECT id FROM lista_desejos WHERE usuario_id = ? AND jogo_id = ?");
-        $stmt->execute([$user_id, $jogoDestaque['id']]);
-        $destaque_in_wishlist = $stmt->fetch() ? true : false;
-    }
-
-    // Extrair tags únicas para nuvem de tags
-    $tagsEncontradas = [];
-    foreach ($todosJogos as $j) {
-        if (!empty($j['todas_tags'])) {
-            $tagsArray = explode(', ', $j['todas_tags']);
-            foreach ($tagsArray as $tag) {
-                $tag = trim($tag);
-                if (!empty($tag)) {
-                    $tagsEncontradas[$tag] = ($tagsEncontradas[$tag] ?? 0) + 1;
-                }
-            }
-        }
-    }
-    arsort($tagsEncontradas);
-    $tagsPopulares = array_slice(array_keys($tagsEncontradas), 0, 8);
+if (!empty($plataforma)) {
+    $plat_nome = array_filter($plataformas, fn($p) => $p['slug'] === $plataforma);
+    $plat_nome = reset($plat_nome);
+    $filtros_ativos[] = ['tipo' => 'plataforma', 'label' => $plat_nome['nome'] ?? $plataforma];
+}
+if ($preco_min !== null) {
+    $filtros_ativos[] = ['tipo' => 'preco_min', 'label' => 'Min R$' . number_format($preco_min, 0, ',', '.')];
+}
+if ($preco_max !== null) {
+    $filtros_ativos[] = ['tipo' => 'preco_max', 'label' => 'Max R$' . number_format($preco_max, 0, ',', '.')];
+}
+if ($nota_min > 0) {
+    $filtros_ativos[] = ['tipo' => 'nota_min', 'label' => $nota_min . '+ ★'];
+}
+if ($promocao === 1) {
+    $filtros_ativos[] = ['tipo' => 'promocao', 'label' => 'Em promoção'];
 }
 
-// ===========================================
-// 5. CALCULAR PREÇOS DO DESTAQUE
-// ===========================================
-$destaque_preco_original = $jogoDestaque['preco_centavos'] ?? 0;
-$destaque_preco_promo = $jogoDestaque['preco_promocional_centavos'] ?? 0;
-$destaque_em_promocao = ($jogoDestaque['em_promocao'] ?? false) && $destaque_preco_promo > 0 && $destaque_preco_promo < $destaque_preco_original;
-$destaque_preco_final = $destaque_em_promocao ? $destaque_preco_promo : $destaque_preco_original;
-$destaque_desconto = $destaque_em_promocao ? round((1 - $destaque_preco_promo / $destaque_preco_original) * 100) : 0;
-
-// ===========================================
-// 6. IMAGEM HERO
-// ===========================================
-$heroImage = '';
-if ($jogoDestaque) {
-    $heroImage = !empty($jogoDestaque['imagem_banner']) ? $jogoDestaque['imagem_banner'] : $jogoDestaque['imagem_capa'];
-    if (strpos($heroImage, 'http') !== 0) {
-        $heroImage = SITE_URL . $heroImage;
-    }
-} else {
-    $heroImage = 'https://via.placeholder.com/1920x600/111827/ffffff?text=' . urlencode($categoria['nome']);
+// Helper para remover filtro da URL
+function removeFilterParam($tipo) {
+    $params = $_GET;
+    unset($params[$tipo]);
+    unset($params['pagina']);
+    return '?' . http_build_query($params);
 }
 
-// ===========================================
-// 7. PÁGINA E INCLUDES
-// ===========================================
-$page_title = $categoria['nome'] . ' - Jogos e Destaques';
+$page_title = htmlspecialchars($categoria['nome']) . ' - ' . SITE_NAME;
 require_once '../includes/header.php';
 require_once '../components/game-card.php';
-
-// Função auxiliar para formatar preço
-if (!function_exists('formatarPreco')) {
-    function formatarPreco($centavos) {
-        if ($centavos == 0) return 'Grátis';
-        return 'R$ ' . number_format($centavos / 100, 2, ',', '.');
-    }
-}
-
-// Função auxiliar para sanitização (caso não exista)
-if (!function_exists('sanitize')) {
-    function sanitize($string) {
-        return htmlspecialchars($string ?? '', ENT_QUOTES, 'UTF-8');
-    }
-}
 ?>
 
 <style>
-/* ===========================================
-   VARIÁVEIS CSS
-   =========================================== */
 :root {
-    --promo-color: #4ade80;
-    --promo-bg: rgba(74, 222, 128, 0.1);
-    --danger-color: #ef4444;
-    --info-color: #3b82f6;
-    --warning-color: #f59e0b;
+    --sidebar-width: 280px;
 }
 
-/* ===========================================
-   HERO SECTION
-   =========================================== */
-.cat-hero {
-    position: relative;
-    height: 350px;
+.categoria-page {
+    min-height: 100vh;
+    background: var(--bg-primary);
+}
+
+/* ============================================
+   HERO COMPACTO
+   ============================================ */
+.categoria-hero {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+    border-bottom: 1px solid var(--border);
+}
+
+.hero-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 32px 24px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    margin-top: -20px;
-    margin-bottom: 0;
-    background-color: var(--bg-secondary);
-    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+    gap: 24px;
 }
 
-.cat-hero-bg {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: url('<?php echo $heroImage; ?>');
-    background-size: cover;
-    background-position: center top;
-    filter: blur(12px) brightness(0.3) saturate(1.2);
-    transform: scale(1.1);
-    z-index: 0;
-}
-
-.cat-title-big {
-    position: relative;
-    z-index: 2;
-    font-size: 5rem;
-    font-weight: 900;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.1);
-    -webkit-text-stroke: 2px rgba(255, 255, 255, 0.5);
-    letter-spacing: 10px;
-    text-align: center;
-    margin-top: -50px;
-    text-shadow: 0 0 60px rgba(0,0,0,0.5);
-}
-
-.cat-breadcrumb {
-    position: absolute;
-    bottom: 40px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 3;
-    color: #fff;
-    background: rgba(0, 0, 0, 0.6);
-    padding: 10px 24px;
-    border-radius: 25px;
-    font-size: 0.9rem;
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255,255,255,0.1);
-}
-
-.cat-breadcrumb a {
-    color: #ccc;
-    text-decoration: none;
-    transition: color 0.2s;
-}
-
-.cat-breadcrumb a:hover {
-    color: #fff;
-}
-
-.cat-breadcrumb .separator {
-    opacity: 0.5;
-    margin: 0 8px;
-}
-
-/* ===========================================
-   SPOTLIGHT CARD (JOGO DESTAQUE)
-   =========================================== */
-.spotlight-container {
-    margin-top: -80px;
-    position: relative;
-    z-index: 10;
-    margin-bottom: 50px;
-}
-
-.spotlight-card {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
+.hero-icon {
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, var(--accent), #22c55e);
     border-radius: 20px;
-    overflow: hidden;
-    display: flex;
-    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
-    min-height: 420px;
-    position: relative;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.spotlight-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 35px 80px rgba(0, 0, 0, 0.7);
-}
-
-.spotlight-image {
-    flex: 1.6;
-    background-size: cover;
-    background-position: center;
-    position: relative;
-    min-height: 320px;
-}
-
-.spotlight-image::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to right, rgba(0, 0, 0, 0) 40%, var(--bg-secondary) 100%);
-}
-
-/* Ações rápidas na imagem */
-.spotlight-quick-actions {
-    position: absolute;
-    top: 20px;
-    left: 20px;
-    display: flex;
-    gap: 10px;
-    z-index: 5;
-}
-
-.spotlight-action-btn {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(0, 0, 0, 0.8);
-    color: #fff;
-    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.3s ease;
-    backdrop-filter: blur(10px);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-    font-size: 18px;
-}
-
-.spotlight-action-btn:hover {
-    transform: scale(1.1);
-    background: var(--accent);
+    font-size: 2rem;
     color: #000;
+    flex-shrink: 0;
 }
 
-.spotlight-action-btn.active {
-    background: var(--danger-color);
-    color: #fff;
-}
-
-.spotlight-action-btn.active:hover {
-    background: #dc2626;
-}
-
-/* Conteúdo do Spotlight */
-.spotlight-content {
+.hero-content {
     flex: 1;
-    padding: 40px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: relative;
 }
 
-/* Badges */
-.spotlight-badges {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 18px;
-}
-
-.badge-spotlight {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--accent);
-    color: #000;
-    padding: 6px 14px;
-    border-radius: 6px;
-    font-weight: 800;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    box-shadow: 0 0 20px rgba(185, 255, 102, 0.4);
-}
-
-.badge-promo {
-    background: var(--promo-color);
-    color: #000;
-    box-shadow: 0 0 20px rgba(74, 222, 128, 0.4);
-    animation: pulse-promo 2s ease-in-out infinite;
-}
-
-@keyframes pulse-promo {
-    0%, 100% { box-shadow: 0 0 20px rgba(74, 222, 128, 0.4); }
-    50% { box-shadow: 0 0 30px rgba(74, 222, 128, 0.6), 0 0 50px rgba(74, 222, 128, 0.3); }
-}
-
-.badge-owned {
-    background: var(--info-color);
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
-}
-
-/* Título e descrição */
-.spotlight-title {
-    font-size: 2.5rem;
-    margin-bottom: 15px;
-    line-height: 1.15;
-    color: #fff;
-    font-weight: 800;
-}
-
-.spotlight-title a {
+.hero-title {
+    font-size: 1.75rem;
+    font-weight: 700;
     color: var(--text-primary);
-    text-decoration: none;
-    transition: color 0.2s;
+    margin: 0 0 6px;
 }
 
-.spotlight-title a:hover {
+.hero-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin: 0;
+    max-width: 600px;
+}
+
+.hero-stats {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+}
+
+.hero-stat {
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
     color: var(--accent);
 }
 
-.spotlight-desc {
+.stat-label {
+    font-size: 11px;
     color: var(--text-secondary);
-    font-size: 1rem;
-    line-height: 1.7;
-    margin-bottom: 25px;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    text-transform: uppercase;
 }
 
-/* Meta info */
-.spotlight-meta {
+/* ============================================
+   TOOLBAR
+   ============================================ */
+.categoria-toolbar {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 60px;
+    z-index: 90;
+}
+
+.toolbar-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 12px 24px;
     display: flex;
-    gap: 20px;
-    margin-bottom: 25px;
-    font-size: 0.9rem;
-    color: #aaa;
-    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
 }
 
-.spotlight-meta span {
+.btn-filter-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-filter-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.btn-filter-toggle.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #000;
+}
+
+.btn-filter-toggle .filter-count-badge {
+    background: var(--accent);
+    color: #000;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.btn-filter-toggle.active .filter-count-badge {
+    background: #000;
+    color: var(--accent);
+}
+
+/* Tags de filtros ativos */
+.active-filters {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    overflow-x: auto;
+}
+
+.filter-tag {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(185, 255, 102, 0.1);
+    border: 1px solid rgba(185, 255, 102, 0.3);
+    border-radius: 20px;
+    font-size: 12px;
+    color: var(--accent);
+    white-space: nowrap;
+}
+
+.filter-tag-remove {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(185, 255, 102, 0.2);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s;
+    text-decoration: none;
+    color: inherit;
+}
+
+.filter-tag-remove:hover {
+    background: var(--accent);
+    color: #000;
+}
+
+.toolbar-results {
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.toolbar-sort {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.spotlight-meta i {
-    font-size: 14px;
+.toolbar-sort label {
+    font-size: 12px;
+    color: var(--text-secondary);
 }
 
-/* ===========================================
-   PREÇOS DO SPOTLIGHT
-   =========================================== */
-.spotlight-price-wrapper {
-    margin-bottom: 25px;
+.toolbar-sort select {
+    padding: 8px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
 }
 
-.spotlight-price-row {
+/* ============================================
+   MAIN LAYOUT
+   ============================================ */
+.categoria-main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
     display: flex;
-    align-items: center;
-    gap: 15px;
-    flex-wrap: wrap;
+    gap: 24px;
+    position: relative;
 }
 
-.spotlight-discount-badge {
-    background: var(--promo-color);
-    color: #000;
-    padding: 10px 18px;
-    border-radius: 8px;
-    font-weight: 900;
-    font-size: 1.5rem;
-}
-
-.spotlight-prices {
-    display: flex;
-    flex-direction: column;
-}
-
-.spotlight-old-price {
-    font-size: 1rem;
-    color: #888;
-    text-decoration: line-through;
-}
-
-.spotlight-current-price {
-    font-size: 2.2rem;
-    font-weight: 700;
-    color: #fff;
-}
-
-.spotlight-current-price.promo {
-    color: var(--promo-color);
-}
-
-.spotlight-current-price.free {
-    color: var(--promo-color);
-    font-size: 1.8rem;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-/* ===========================================
-   BOTÕES DE AÇÃO DO SPOTLIGHT
-   =========================================== */
-.spotlight-actions {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-
-.spotlight-btn {
-    padding: 14px 28px;
+/* ============================================
+   SIDEBAR DE FILTROS
+   ============================================ */
+.filters-sidebar {
+    width: var(--sidebar-width);
+    flex-shrink: 0;
+    position: sticky;
+    top: 130px;
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
     border-radius: 12px;
-    font-weight: 700;
-    font-size: 1rem;
-    cursor: pointer;
+    padding: 20px;
+    transform: translateX(calc(-1 * var(--sidebar-width) - 24px));
+    opacity: 0;
+    visibility: hidden;
     transition: all 0.3s ease;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    text-decoration: none;
-    border: none;
 }
 
-.spotlight-btn-primary {
-    background: var(--accent);
-    color: #000;
-    flex: 1;
-    min-width: 160px;
+.filters-sidebar.open {
+    transform: translateX(0);
+    opacity: 1;
+    visibility: visible;
 }
 
-.spotlight-btn-primary:hover {
-    background: #fff;
-    transform: translateY(-2px);
-    box-shadow: 0 10px 30px rgba(185, 255, 102, 0.3);
+.filters-sidebar::-webkit-scrollbar {
+    width: 4px;
 }
 
-.spotlight-btn-cart {
-    background: var(--promo-color);
-    color: #000;
-    flex: 1;
-    min-width: 200px;
+.filters-sidebar::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
 }
 
-.spotlight-btn-cart:hover {
-    filter: brightness(1.1);
-    transform: translateY(-2px);
-    box-shadow: 0 10px 30px rgba(74, 222, 128, 0.3);
-}
-
-.spotlight-btn-cart.in-cart {
-    background: var(--danger-color);
-    color: #fff;
-}
-
-.spotlight-btn-cart.in-cart:hover {
-    background: #dc2626;
-}
-
-.spotlight-btn-download {
-    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    color: #fff;
-    flex: 1;
-    min-width: 200px;
-}
-
-.spotlight-btn-download:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 30px rgba(59, 130, 246, 0.4);
-}
-
-.spotlight-btn-outline {
-    background: transparent;
-    border: 2px solid var(--border);
-    color: #fff;
-    padding: 14px 20px;
-}
-
-.spotlight-btn-outline:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: rgba(185, 255, 102, 0.05);
-}
-
-.spotlight-btn-outline.active {
-    border-color: var(--danger-color);
-    color: var(--danger-color);
-    background: rgba(239, 68, 68, 0.1);
-}
-
-.spotlight-btn-outline.active:hover {
-    background: rgba(239, 68, 68, 0.2);
-}
-
-/* ===========================================
-   TAGS CLOUD
-   =========================================== */
-.tags-cloud {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 30px;
-    padding-bottom: 25px;
-    border-bottom: 1px solid var(--border);
-    align-items: center;
-}
-
-.tags-label {
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-    margin-right: 10px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.tag-pill {
-    background: rgba(255, 255, 255, 0.05);
-    padding: 8px 16px;
-    border-radius: 20px;
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    border: 1px solid transparent;
-    transition: all 0.2s ease;
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.tag-pill:hover {
-    border-color: var(--accent);
-    color: #fff;
-    background: rgba(255, 255, 255, 0.1);
-    transform: translateY(-2px);
-}
-
-.tag-pill i {
-    font-size: 10px;
-    opacity: 0.7;
-}
-
-/* ===========================================
-   HEADER DA SEÇÃO
-   =========================================== */
-.section-header {
+.filters-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 25px;
-    flex-wrap: wrap;
-    gap: 15px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
 }
 
-.section-header h3 {
-    margin: 0;
+.filters-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
     display: flex;
     align-items: center;
-    gap: 12px;
-    color: #fff;
-    font-size: 1.3rem;
+    gap: 8px;
 }
 
-.section-header h3 i {
+.filters-title i {
     color: var(--accent);
 }
 
-.results-count {
-    font-weight: 400;
-    font-size: 0.9rem;
+.btn-clear-all {
+    font-size: 12px;
+    color: var(--danger);
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: opacity 0.2s;
+}
+
+.btn-clear-all:hover {
+    opacity: 0.7;
+}
+
+/* Filter Groups */
+.filter-group {
+    margin-bottom: 24px;
+}
+
+.filter-group:last-child {
+    margin-bottom: 0;
+}
+
+.filter-group-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+}
+
+.filter-options {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.filter-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.filter-option:hover {
+    background: rgba(255,255,255,0.03);
+}
+
+.filter-option.active {
+    background: rgba(185, 255, 102, 0.1);
+}
+
+.filter-option input {
+    display: none;
+}
+
+.filter-radio {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s;
+}
+
+.filter-option.active .filter-radio {
+    border-color: var(--accent);
+    background: var(--accent);
+}
+
+.filter-option.active .filter-radio::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: #000;
+    border-radius: 50%;
+}
+
+.filter-name {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.filter-option.active .filter-name {
+    color: var(--accent);
+    font-weight: 500;
+}
+
+.filter-count {
+    font-size: 11px;
     color: var(--text-secondary);
 }
 
-.order-select {
-    padding: 12px 18px;
-    border-radius: 10px;
-    background: var(--bg-secondary);
-    color: #fff;
-    border: 1px solid var(--border);
+/* Checkbox style */
+.filter-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 0.9rem;
-    transition: border-color 0.2s;
+    transition: all 0.15s;
 }
 
-.order-select:hover {
+.filter-checkbox:hover {
+    background: rgba(255,255,255,0.03);
+}
+
+.filter-checkbox input {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s ease;
+    margin: 0;
+}
+
+.filter-checkbox:hover input {
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+.filter-checkbox input:checked {
+    background-color: var(--accent);
     border-color: var(--accent);
 }
 
-.order-select:focus {
+.filter-checkbox input:checked::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 5px;
+    width: 4px;
+    height: 9px;
+    border: solid #000;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.filter-checkbox input:checked + span {
+    color: var(--accent);
+    font-weight: 500;
+}
+
+/* Price Range */
+.price-range {
+    display: flex;
+    gap: 12px;
+}
+
+.price-input-group {
+    flex: 1;
+}
+
+.price-input-group label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.price-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.price-input:focus {
     outline: none;
     border-color: var(--accent);
 }
 
-/* ===========================================
-   GRID DE JOGOS
-   =========================================== */
-.games-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 30px;
+/* Rating Slider */
+.rating-slider-container {
+    padding: 8px 0;
 }
 
-/* ===========================================
-   RESULTADOS INFO
-   =========================================== */
-.results-info {
+.rating-slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.rating-value {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.rating-value i {
+    color: #fbbf24;
+}
+
+.rating-slider {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    outline: none;
+}
+
+.rating-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.15s;
+}
+
+.rating-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+}
+
+.rating-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+}
+
+.rating-labels span {
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+/* Apply Button */
+.btn-apply-filters {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: #000;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 20px;
+    transition: opacity 0.2s;
+}
+
+.btn-apply-filters:hover {
+    opacity: 0.9;
+}
+
+/* ============================================
+   CONTEÚDO PRINCIPAL
+   ============================================ */
+.content-area {
+    flex: 1;
+    min-width: 0;
+    transition: margin-left 0.3s ease;
+}
+
+/* Games Grid */
+.games-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+/* Empty State */
+.empty-state {
+    grid-column: 1 / -1;
     text-align: center;
-    margin-top: 50px;
-    padding: 30px;
+    padding: 80px 20px;
+}
+
+.empty-icon {
+    font-size: 48px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+.empty-title {
+    font-size: 1.1rem;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.empty-text {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+/* Pagination */
+.pagination {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 40px;
+    padding-top: 24px;
     border-top: 1px solid var(--border);
 }
 
-.results-info p {
-    color: var(--text-secondary);
-    margin: 0;
-}
-
-.results-divider {
-    width: 60px;
-    height: 3px;
-    background: linear-gradient(to right, transparent, var(--border), transparent);
-    margin: 20px auto 0;
-    border-radius: 2px;
-}
-
-/* ===========================================
-   EMPTY STATE
-   =========================================== */
-.empty-state {
-    text-align: center;
-    padding: 100px 20px;
-}
-
-.empty-state-icon {
-    font-size: 80px;
-    color: var(--text-secondary);
-    margin-bottom: 25px;
-    opacity: 0.2;
-}
-
-.empty-state h2 {
-    color: #fff;
-    margin-bottom: 12px;
-    font-size: 1.8rem;
-}
-
-.empty-state p {
-    color: var(--text-secondary);
-    font-size: 1.1rem;
-}
-
-.empty-state .btn {
-    margin-top: 25px;
-    padding: 14px 35px;
-    background: var(--accent);
-    color: #000;
-    border-radius: 10px;
-    text-decoration: none;
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    transition: all 0.3s ease;
-}
-
-.empty-state .btn:hover {
-    background: #fff;
-    transform: translateY(-2px);
-}
-
-/* ===========================================
-   TOAST NOTIFICATION
-   =========================================== */
-.toast-notification {
-    position: fixed;
-    bottom: 30px;
-    right: 30px;
+.pagination a,
+.pagination span {
+    padding: 10px 16px;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    padding: 16px 24px;
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    z-index: 9999;
-    transform: translateY(120px);
-    opacity: 0;
-    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    box-shadow: 0 15px 50px rgba(0, 0, 0, 0.5);
-    color: #fff;
-    max-width: 400px;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-decoration: none;
+    transition: all 0.2s;
 }
 
-.toast-notification.show {
-    transform: translateY(0);
+.pagination a:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.pagination .current {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #000;
+}
+
+/* ============================================
+   OVERLAY MOBILE
+   ============================================ */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.sidebar-overlay.active {
     opacity: 1;
 }
 
-.toast-notification.success {
-    border-color: var(--promo-color);
-}
-
-.toast-notification.success i {
-    color: var(--promo-color);
-    font-size: 20px;
-}
-
-.toast-notification.error {
-    border-color: var(--danger-color);
-}
-
-.toast-notification.error i {
-    color: var(--danger-color);
-    font-size: 20px;
-}
-
-.toast-notification.info {
-    border-color: var(--info-color);
-}
-
-.toast-notification.info i {
-    color: var(--info-color);
-    font-size: 20px;
-}
-
-/* ===========================================
-   ONLY SPOTLIGHT MESSAGE
-   =========================================== */
-.only-spotlight-msg {
-    padding: 40px;
-    text-align: center;
-    background: var(--bg-secondary);
-    border-radius: 14px;
-    margin-top: 20px;
-    border: 1px solid var(--border);
-}
-
-.only-spotlight-msg p {
-    color: var(--text-secondary);
-    margin: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-}
-
-/* ===========================================
-   RESPONSIVO
-   =========================================== */
+/* ============================================
+   RESPONSIVE
+   ============================================ */
 @media (max-width: 1024px) {
-    .spotlight-card {
-        flex-direction: column;
+    .hero-container {
+        flex-wrap: wrap;
     }
     
-    .spotlight-image {
-        height: 300px;
-        flex: none;
-    }
-    
-    .spotlight-image::after {
-        background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 40%, var(--bg-secondary) 100%);
-    }
-    
-    .cat-title-big {
-        font-size: 3.5rem;
-        letter-spacing: 6px;
-    }
-    
-    .spotlight-title {
-        font-size: 2.2rem;
+    .hero-stats {
+        width: 100%;
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
     }
 }
 
 @media (max-width: 768px) {
-    .cat-hero {
-        height: 280px;
+    .filters-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        max-height: 100vh;
+        border-radius: 0;
+        z-index: 100;
+        transform: translateX(-100%);
     }
     
-    .cat-title-big {
-        font-size: 2.2rem;
-        letter-spacing: 4px;
-        -webkit-text-stroke: 1px rgba(255, 255, 255, 0.5);
+    .filters-sidebar.open {
+        transform: translateX(0);
     }
     
-    .spotlight-container {
-        margin-top: -60px;
+    .sidebar-overlay {
+        display: block;
     }
     
-    .spotlight-image {
-        height: 220px;
+    .hero-icon {
+        width: 60px;
+        height: 60px;
+        font-size: 1.5rem;
     }
     
-    .spotlight-quick-actions {
-        top: 15px;
-        left: 15px;
-    }
-    
-    .spotlight-action-btn {
-        width: 42px;
-        height: 42px;
-        font-size: 16px;
-    }
-    
-    .spotlight-content {
-        padding: 25px;
-    }
-    
-    .spotlight-title {
-        font-size: 1.7rem;
-    }
-    
-    .spotlight-current-price {
-        font-size: 1.8rem;
-    }
-    
-    .spotlight-discount-badge {
-        font-size: 1.2rem;
-        padding: 8px 14px;
-    }
-    
-    .spotlight-actions {
-        flex-direction: column;
-    }
-    
-    .spotlight-btn {
-        width: 100%;
-        min-width: auto;
-    }
-    
-    .spotlight-meta {
-        gap: 12px;
-    }
-    
-    .section-header {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-    
-    .games-grid {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-        gap: 15px;
-    }
-    
-    .tags-cloud {
-        justify-content: center;
-    }
-    
-    .tags-label {
-        width: 100%;
-        justify-content: center;
-        margin-bottom: 5px;
-    }
-    
-    .toast-notification {
-        left: 15px;
-        right: 15px;
-        bottom: 15px;
-    }
-}
-
-@media (max-width: 480px) {
-    .cat-title-big {
-        font-size: 1.6rem;
-        letter-spacing: 2px;
-    }
-    
-    .spotlight-title {
+    .hero-title {
         font-size: 1.4rem;
-    }
-    
-    .spotlight-desc {
-        -webkit-line-clamp: 2;
     }
     
     .games-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 12px;
     }
+    
+    .toolbar-sort label {
+        display: none;
+    }
 }
 </style>
 
-<!-- ===========================================
-     HERO SECTION
-     =========================================== -->
-<div class="cat-hero">
-    <div class="cat-hero-bg"></div>
-    <div class="cat-title-big"><?php echo sanitize($categoria['nome']); ?></div>
-</div>
-
-<div class="container">
-    
-    <?php if ($jogoDestaque): ?>
-    
-    <!-- ===========================================
-         SPOTLIGHT (JOGO DESTAQUE)
-         =========================================== -->
-    <div class="spotlight-container">
-        <div class="spotlight-card">
-            <?php 
-                $imgDestaque = !empty($jogoDestaque['imagem_banner']) ? $jogoDestaque['imagem_banner'] : $jogoDestaque['imagem_capa'];
-                if (strpos($imgDestaque, 'http') !== 0) {
-                    $imgDestaque = SITE_URL . $imgDestaque;
-                }
-            ?>
-            <div class="spotlight-image" style="background-image: url('<?php echo $imgDestaque; ?>');">
-                
-                <?php if ($user_id && !$destaque_possui): ?>
-                <div class="spotlight-quick-actions">
-                    <button onclick="toggleWishlist(<?php echo $jogoDestaque['id']; ?>, this)" 
-                            class="spotlight-action-btn <?php echo $destaque_in_wishlist ? 'active' : ''; ?>"
-                            title="<?php echo $destaque_in_wishlist ? 'Remover da Lista de Desejos' : 'Adicionar à Lista de Desejos'; ?>">
-                        <i class="fas fa-heart"></i>
-                    </button>
-                </div>
-                <?php endif; ?>
+<div class="categoria-page">
+    <!-- HERO -->
+    <section class="categoria-hero">
+        <div class="hero-container">
+            <div class="hero-icon">
+                <i class="fas fa-<?= htmlspecialchars($categoria['icone'] ?? 'gamepad') ?>"></i>
             </div>
             
-            <div class="spotlight-content">
-                
-                <!-- Badges -->
-                <div class="spotlight-badges">
-                    <?php if ($destaque_possui): ?>
-                        <span class="badge-spotlight badge-owned">
-                            <i class="fas fa-check-circle"></i> Na Sua Biblioteca
-                        </span>
-                    <?php else: ?>
-                        <span class="badge-spotlight">
-                            <i class="fas fa-crown"></i> Mais Popular
-                        </span>
-                    <?php endif; ?>
-                    
-                    <?php if ($destaque_em_promocao && !$destaque_possui): ?>
-                        <span class="badge-spotlight badge-promo">
-                            <i class="fas fa-fire"></i> Em Promoção
-                        </span>
-                    <?php endif; ?>
-                </div>
-                
-                <!-- Título -->
-                <h2 class="spotlight-title">
-                    <a href="<?php echo SITE_URL; ?>/pages/jogo.php?slug=<?php echo $jogoDestaque['slug']; ?>">
-                        <?php echo sanitize($jogoDestaque['titulo']); ?>
-                    </a>
-                </h2>
-                
-                <!-- Meta informações -->
-                <div class="spotlight-meta">
-                    <span>
-                        <i class="fas fa-star" style="color: gold;"></i>
-                        <?php echo number_format($jogoDestaque['nota_media'] ?? 0, 1); ?>/5.0
-                    </span>
-                    
-                    <?php if (!empty($jogoDestaque['nome_estudio'])): ?>
-                    <span>
-                        <i class="fas fa-building"></i>
-                        <?php echo sanitize($jogoDestaque['nome_estudio']); ?>
-                    </span>
-                    <?php endif; ?>
-                    
-                    <?php if (($jogoDestaque['total_vendas'] ?? 0) > 0): ?>
-                    <span>
-                        <i class="fas fa-download"></i>
-                        <?php echo number_format($jogoDestaque['total_vendas']); ?> downloads
-                    </span>
-                    <?php endif; ?>
-                </div>
-                
-                <!-- Descrição -->
-                <p class="spotlight-desc">
-                    <?php echo sanitize($jogoDestaque['descricao'] ?? 'Descubra este incrível jogo e mergulhe em uma experiência única de jogabilidade!'); ?>
+            <div class="hero-content">
+                <h1 class="hero-title"><?= htmlspecialchars($categoria['nome']) ?></h1>
+                <p class="hero-subtitle">
+                    Explore os melhores jogos <?= htmlspecialchars(strtolower($categoria['nome'])) ?> indies do Brasil. 
+                    Descubra títulos únicos e apoie desenvolvedores brasileiros.
                 </p>
-                
-                <!-- Preço (apenas se não possui) -->
-                <?php if (!$destaque_possui): ?>
-                <div class="spotlight-price-wrapper">
-                    <?php if ($destaque_preco_final == 0): ?>
-                        <span class="spotlight-current-price free">
-                            <i class="fas fa-gift" style="margin-right: 8px;"></i> Grátis para Jogar
-                        </span>
-                    <?php elseif ($destaque_em_promocao): ?>
-                        <div class="spotlight-price-row">
-                            <span class="spotlight-discount-badge">-<?php echo $destaque_desconto; ?>%</span>
-                            <div class="spotlight-prices">
-                                <span class="spotlight-old-price"><?php echo formatarPreco($destaque_preco_original); ?></span>
-                                <span class="spotlight-current-price promo"><?php echo formatarPreco($destaque_preco_final); ?></span>
-                            </div>
-                        </div>
-                    <?php else: ?>
-                        <span class="spotlight-current-price"><?php echo formatarPreco($destaque_preco_final); ?></span>
-                    <?php endif; ?>
+            </div>
+            
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <div class="stat-value"><?= $total_jogos ?></div>
+                    <div class="stat-label">Jogos</div>
+                </div>
+                <?php if ($total_promocoes > 0): ?>
+                <div class="hero-stat">
+                    <div class="stat-value"><?= $total_promocoes ?></div>
+                    <div class="stat-label">Em promoção</div>
                 </div>
                 <?php endif; ?>
-                
-                <!-- Botões de Ação -->
-                <div class="spotlight-actions">
-                    <?php if ($destaque_possui): ?>
-                        <!-- Usuário já possui o jogo -->
-                        <a href="<?php echo SITE_URL; ?>/user/biblioteca.php" 
-                           class="spotlight-btn spotlight-btn-download">
-                            <i class="fas fa-download"></i> Ir para Biblioteca
+            </div>
+        </div>
+    </section>
+    
+    <!-- TOOLBAR -->
+    <div class="categoria-toolbar">
+        <div class="toolbar-container">
+            <button class="btn-filter-toggle" id="btnFilterToggle">
+                <i class="fas fa-sliders-h"></i>
+                <span>Filtros</span>
+                <?php if (count($filtros_ativos) > 0): ?>
+                    <span class="filter-count-badge"><?= count($filtros_ativos) ?></span>
+                <?php endif; ?>
+            </button>
+            
+            <div class="active-filters">
+                <?php foreach ($filtros_ativos as $filtro): ?>
+                    <div class="filter-tag">
+                        <span><?= htmlspecialchars($filtro['label']) ?></span>
+                        <a href="<?= removeFilterParam($filtro['tipo']) ?>" class="filter-tag-remove">
+                            <i class="fas fa-times" style="font-size: 10px;"></i>
                         </a>
-                        <a href="<?php echo SITE_URL; ?>/pages/jogo.php?slug=<?php echo $jogoDestaque['slug']; ?>" 
-                           class="spotlight-btn spotlight-btn-outline">
-                            <i class="fas fa-info-circle"></i> Ver Detalhes
-                        </a>
-                        
-                    <?php elseif ($user_id): ?>
-                        <!-- Usuário logado mas não possui -->
-                        <button onclick="toggleCart(<?php echo $jogoDestaque['id']; ?>, this)" 
-                                class="spotlight-btn spotlight-btn-cart <?php echo $destaque_in_cart ? 'in-cart' : ''; ?>">
-                            <i class="fas <?php echo $destaque_in_cart ? 'fa-times' : 'fa-cart-plus'; ?>"></i>
-                            <span><?php echo $destaque_in_cart ? 'Remover do Carrinho' : 'Adicionar ao Carrinho'; ?></span>
-                        </button>
-                        <a href="<?php echo SITE_URL; ?>/pages/jogo.php?slug=<?php echo $jogoDestaque['slug']; ?>" 
-                           class="spotlight-btn spotlight-btn-primary">
-                            <i class="fas fa-eye"></i> Ver Detalhes
-                        </a>
-                        <button onclick="toggleWishlist(<?php echo $jogoDestaque['id']; ?>, this)" 
-                                class="spotlight-btn spotlight-btn-outline <?php echo $destaque_in_wishlist ? 'active' : ''; ?>"
-                                title="Lista de Desejos">
-                            <i class="fas fa-heart"></i>
-                        </button>
-                        
-                    <?php else: ?>
-                        <!-- Usuário não logado -->
-                        <a href="<?php echo SITE_URL; ?>/pages/jogo.php?slug=<?php echo $jogoDestaque['slug']; ?>" 
-                           class="spotlight-btn spotlight-btn-primary">
-                            <i class="fas fa-eye"></i> Ver Detalhes
-                        </a>
-                        <a href="<?php echo SITE_URL; ?>/auth/login.php" 
-                           class="spotlight-btn spotlight-btn-outline">
-                            <i class="fas fa-sign-in-alt"></i> Entrar para Comprar
-                        </a>
-                    <?php endif; ?>
-                </div>
-                
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            
+            <div class="toolbar-results">
+                <strong><?= $total_jogos ?></strong> jogos
+            </div>
+            
+            <div class="toolbar-sort">
+                <label>Ordenar:</label>
+                <select id="sortSelect" onchange="applySort(this.value)">
+                    <option value="popular" <?= $ordem === 'popular' ? 'selected' : '' ?>>Mais populares</option>
+                    <option value="novos" <?= $ordem === 'novos' ? 'selected' : '' ?>>Lançamentos</option>
+                    <option value="nota" <?= $ordem === 'nota' ? 'selected' : '' ?>>Melhor avaliados</option>
+                    <option value="preco_asc" <?= $ordem === 'preco_asc' ? 'selected' : '' ?>>Menor preço</option>
+                    <option value="preco_desc" <?= $ordem === 'preco_desc' ? 'selected' : '' ?>>Maior preço</option>
+                    <option value="titulo" <?= $ordem === 'titulo' ? 'selected' : '' ?>>A-Z</option>
+                </select>
             </div>
         </div>
     </div>
     
-    <!-- ===========================================
-         FILTROS E ORDENAÇÃO
-         =========================================== -->
-    <div class="section-header">
-        <h3>
-            <i class="fas fa-gamepad"></i>
-            Catálogo <?php echo sanitize($categoria['nome']); ?>
-            <span class="results-count">(<?php echo count($todosJogos); ?> jogos)</span>
-        </h3>
+    <!-- MAIN -->
+    <main class="categoria-main">
+        <!-- Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
         
-        <form action="" method="GET" style="display: inline-block;">
-            <input type="hidden" name="slug" value="<?php echo sanitize($slug); ?>">
-            <select name="ordem" onchange="this.form.submit()" class="order-select">
-                <option value="popular" <?php echo $ordem == 'popular' ? 'selected' : ''; ?>>Mais Populares</option>
-                <option value="novos" <?php echo $ordem == 'novos' ? 'selected' : ''; ?>>Lançamentos</option>
-                <option value="nota" <?php echo $ordem == 'nota' ? 'selected' : ''; ?>>Melhor Avaliados</option>
-                <option value="preco_menor" <?php echo $ordem == 'preco_menor' ? 'selected' : ''; ?>>Menor Preço</option>
-                <option value="preco_maior" <?php echo $ordem == 'preco_maior' ? 'selected' : ''; ?>>Maior Preço</option>
-            </select>
-        </form>
-    </div>
-    
-    <!-- ===========================================
-         NUVEM DE TAGS
-         =========================================== -->
-    <?php if (!empty($tagsPopulares)): ?>
-    <div class="tags-cloud">
-        <span class="tags-label">
-            <i class="fas fa-tags"></i> Tags populares:
-        </span>
-        <?php foreach ($tagsPopulares as $tag): ?>
-            <a href="<?php echo SITE_URL; ?>/pages/busca.php?q=<?php echo urlencode($tag); ?>" class="tag-pill">
-                <i class="fas fa-tag"></i> <?php echo sanitize($tag); ?>
-            </a>
-        <?php endforeach; ?>
-    </div>
-    <?php endif; ?>
-    
-    <!-- ===========================================
-         GRID DE JOGOS
-         =========================================== -->
-    <?php if (count($jogosGrid) > 0): ?>
-        <div class="games-grid">
-            <?php foreach ($jogosGrid as $jogo): ?>
-                <?php renderGameCard($jogo, $pdo, $user_id); ?>
-            <?php endforeach; ?>
-        </div>
+        <!-- SIDEBAR FILTROS -->
+        <aside class="filters-sidebar" id="filtersSidebar">
+            <div class="filters-header">
+                <div class="filters-title">
+                    <i class="fas fa-filter"></i>
+                    Filtros
+                </div>
+                <?php if (count($filtros_ativos) > 0): ?>
+                    <a href="?slug=<?= $slug ?>" class="btn-clear-all">Limpar tudo</a>
+                <?php endif; ?>
+            </div>
+            
+            <form id="filterForm" method="GET">
+                <input type="hidden" name="slug" value="<?= htmlspecialchars($slug) ?>">
+                <input type="hidden" name="ordem" value="<?= htmlspecialchars($ordem) ?>">
+                
+                <!-- Plataformas -->
+                <?php if (!empty($plataformas)): ?>
+                <div class="filter-group">
+                    <div class="filter-group-title">Plataforma</div>
+                    <div class="filter-options">
+                        <label class="filter-option <?= empty($plataforma) ? 'active' : '' ?>">
+                            <input type="radio" name="plataforma" value="" <?= empty($plataforma) ? 'checked' : '' ?>>
+                            <span class="filter-radio"></span>
+                            <span class="filter-name">Todas</span>
+                        </label>
+                        <?php foreach ($plataformas as $plat): ?>
+                        <label class="filter-option <?= $plataforma === $plat['slug'] ? 'active' : '' ?>">
+                            <input type="radio" name="plataforma" value="<?= htmlspecialchars($plat['slug']) ?>" <?= $plataforma === $plat['slug'] ? 'checked' : '' ?>>
+                            <span class="filter-radio"></span>
+                            <span class="filter-name"><?= htmlspecialchars($plat['nome']) ?></span>
+                            <span class="filter-count"><?= $plat['total_jogos'] ?></span>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+                
+                <!-- Promoção -->
+                <div class="filter-group">
+                    <div class="filter-group-title">Ofertas</div>
+                    <label class="filter-checkbox">
+                        <input type="checkbox" name="promocao" value="1" <?= $promocao === 1 ? 'checked' : '' ?>>
+                        <span class="filter-name">Apenas em promoção</span>
+                    </label>
+                </div>
+                
+                <!-- Preço -->
+                <div class="filter-group">
+                    <div class="filter-group-title">Faixa de Preço</div>
+                    <div class="price-range">
+                        <div class="price-input-group">
+                            <label>Mínimo</label>
+                            <input type="number" name="preco_min" class="price-input" placeholder="R$ 0" value="<?= $preco_min ?? '' ?>" min="0" step="1">
+                        </div>
+                        <div class="price-input-group">
+                            <label>Máximo</label>
+                            <input type="number" name="preco_max" class="price-input" placeholder="R$ 500" value="<?= $preco_max ?? '' ?>" min="0" step="1">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Rating Slider -->
+                <div class="filter-group">
+                    <div class="filter-group-title">Avaliação Mínima</div>
+                    <div class="rating-slider-container">
+                        <div class="rating-slider-header">
+                            <span class="rating-value">
+                                <i class="fas fa-star"></i>
+                                <span id="ratingDisplay"><?= $nota_min ?: 'Qualquer' ?></span>
+                            </span>
+                        </div>
+                        <input type="range" class="rating-slider" name="nota_min" id="ratingSlider" min="0" max="5" step="0.5" value="<?= $nota_min ?>">
+                        <div class="rating-labels">
+                            <span>Qualquer</span>
+                            <span>5.0</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn-apply-filters">
+                    <i class="fas fa-check"></i> Aplicar Filtros
+                </button>
+            </form>
+        </aside>
         
-        <div class="results-info">
-            <p>Mostrando <?php echo count($todosJogos); ?> jogos em <?php echo sanitize($categoria['nome']); ?></p>
-            <div class="results-divider"></div>
+        <!-- CONTEÚDO -->
+        <div class="content-area" id="contentArea">
+            <div class="games-grid">
+                <?php if (empty($jogos)): ?>
+                    <div class="empty-state">
+                        <div class="empty-icon"><i class="fas fa-search"></i></div>
+                        <h3 class="empty-title">Nenhum jogo encontrado</h3>
+                        <p class="empty-text">Tente ajustar os filtros para ver mais resultados</p>
+                    </div>
+                <?php else: ?>
+                    <?php foreach ($jogos as $jogo): ?>
+                        <?php
+                        $possui = in_array($jogo['id'], $meus_jogos);
+                        $na_wishlist = in_array($jogo['id'], $minha_wishlist);
+                        $no_carrinho = in_array($jogo['id'], $meu_carrinho);
+                        renderGameCard($jogo, $possui, $na_wishlist, $no_carrinho);
+                        ?>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+            
+            <?php if ($total_paginas > 1): ?>
+            <div class="pagination">
+                <?php if ($pagina > 1): ?>
+                    <a href="?<?= http_build_query(array_merge($_GET, ['pagina' => $pagina - 1])) ?>">
+                        <i class="fas fa-chevron-left"></i>
+                    </a>
+                <?php endif; ?>
+                
+                <?php
+                $inicio = max(1, $pagina - 2);
+                $fim = min($total_paginas, $pagina + 2);
+                
+                if ($inicio > 1): ?>
+                    <a href="?<?= http_build_query(array_merge($_GET, ['pagina' => 1])) ?>">1</a>
+                    <?php if ($inicio > 2): ?><span>...</span><?php endif; ?>
+                <?php endif; ?>
+                
+                <?php for ($i = $inicio; $i <= $fim; $i++): ?>
+                    <?php if ($i === $pagina): ?>
+                        <span class="current"><?= $i ?></span>
+                    <?php else: ?>
+                        <a href="?<?= http_build_query(array_merge($_GET, ['pagina' => $i])) ?>"><?= $i ?></a>
+                    <?php endif; ?>
+                <?php endfor; ?>
+                
+                <?php if ($fim < $total_paginas): ?>
+                    <?php if ($fim < $total_paginas - 1): ?><span>...</span><?php endif; ?>
+                    <a href="?<?= http_build_query(array_merge($_GET, ['pagina' => $total_paginas])) ?>"><?= $total_paginas ?></a>
+                <?php endif; ?>
+                
+                <?php if ($pagina < $total_paginas): ?>
+                    <a href="?<?= http_build_query(array_merge($_GET, ['pagina' => $pagina + 1])) ?>">
+                        <i class="fas fa-chevron-right"></i>
+                    </a>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
         </div>
-    <?php else: ?>
-        <div class="only-spotlight-msg">
-            <p>
-                <i class="fas fa-info-circle"></i>
-                Apenas o destaque acima foi encontrado nesta categoria.
-            </p>
-        </div>
-    <?php endif; ?>
-    
-    <?php else: ?>
-    
-    <!-- ===========================================
-         ESTADO VAZIO
-         =========================================== -->
-    <div class="empty-state">
-        <i class="fas fa-ghost empty-state-icon"></i>
-        <h2>Categoria Vazia</h2>
-        <p>Nenhum jogo encontrado em <?php echo sanitize($categoria['nome']); ?>.</p>
-        <a href="<?php echo SITE_URL; ?>" class="btn">
-            <i class="fas fa-home"></i> Voltar ao Início
-        </a>
-    </div>
-    
-    <?php endif; ?>
-
+    </main>
 </div>
 
-<!-- ===========================================
-     JAVASCRIPT
-     =========================================== -->
 <script>
-const SITE_URL = '<?php echo SITE_URL; ?>';
-const isLoggedIn = <?php echo $user_id ? 'true' : 'false'; ?>;
+// Toggle Sidebar
+const btnToggle = document.getElementById('btnFilterToggle');
+const sidebar = document.getElementById('filtersSidebar');
+const overlay = document.getElementById('sidebarOverlay');
 
-/**
- * Exibe notificação toast
- * @param {string} message - Mensagem a ser exibida
- * @param {string} type - Tipo: 'success', 'error', 'info'
- */
-function showNotification(message, type = 'success') {
-    // Remove toast existente
-    const existingToast = document.querySelector('.toast-notification');
-    if (existingToast) {
-        existingToast.remove();
-    }
+btnToggle.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    btnToggle.classList.toggle('active');
+    overlay.classList.toggle('active');
+});
 
-    // Cria novo toast
-    const toast = document.createElement('div');
-    toast.className = `toast-notification ${type}`;
-    
-    let icon = 'fa-check-circle';
-    if (type === 'error') icon = 'fa-exclamation-circle';
-    if (type === 'info') icon = 'fa-info-circle';
-    
-    toast.innerHTML = `
-        <i class="fas ${icon}"></i>
-        <span>${message}</span>
-    `;
-    document.body.appendChild(toast);
+overlay.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    btnToggle.classList.remove('active');
+    overlay.classList.remove('active');
+});
 
-    // Anima entrada
-    setTimeout(() => toast.classList.add('show'), 10);
-    
-    // Remove após 3.5 segundos
-    setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 400);
-    }, 3500);
-}
-
-/**
- * Toggle item no Carrinho
- * @param {number} jogoId - ID do jogo
- * @param {HTMLElement} button - Elemento do botão clicado
- */
-function toggleCart(jogoId, button) {
-    if (!isLoggedIn) {
-        showNotification('Você precisa estar logado!', 'error');
-        setTimeout(() => {
-            window.location.href = SITE_URL + '/auth/login.php';
-        }, 1500);
-        return;
-    }
-
-    // Desabilita botão e mostra loading
-    button.disabled = true;
-    const icon = button.querySelector('i');
-    const textSpan = button.querySelector('span');
-    const originalIconClass = icon.className;
-    icon.className = 'fas fa-spinner fa-spin';
-
-    fetch(SITE_URL + '/api/toggle-cart.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ jogo_id: jogoId })
-    })
-    .then(response => response.json())
-    .then(data => {
-        button.disabled = false;
-        
-        if (data.success) {
-            if (data.action === 'added') {
-                button.classList.add('in-cart');
-                icon.className = 'fas fa-times';
-                if (textSpan) textSpan.textContent = 'Remover do Carrinho';
-                showNotification('Adicionado ao carrinho!', 'success');
-            } else {
-                button.classList.remove('in-cart');
-                icon.className = 'fas fa-cart-plus';
-                if (textSpan) textSpan.textContent = 'Adicionar ao Carrinho';
-                showNotification('Removido do carrinho', 'info');
-            }
-            
-            // Atualiza contador do carrinho no header se existir
-            if (typeof updateCartCount === 'function') {
-                updateCartCount();
-            }
-        } else {
-            icon.className = originalIconClass;
-            showNotification(data.message || 'Erro ao processar', 'error');
-        }
-    })
-    .catch(error => {
-        console.error('Erro:', error);
-        button.disabled = false;
-        icon.className = originalIconClass;
-        showNotification('Erro de conexão. Tente novamente.', 'error');
-    });
-}
-
-/**
- * Toggle item na Lista de Desejos
- * @param {number} jogoId - ID do jogo
- * @param {HTMLElement} button - Elemento do botão clicado
- */
-function toggleWishlist(jogoId, button) {
-    if (!isLoggedIn) {
-        showNotification('Você precisa estar logado!', 'error');
-        setTimeout(() => {
-            window.location.href = SITE_URL + '/auth/login.php';
-        }, 1500);
-        return;
-    }
-
-    // Desabilita botão e anima
-    button.disabled = true;
-    const icon = button.querySelector('i');
-    icon.style.transform = 'scale(1.3)';
-
-    fetch(SITE_URL + '/api/toggle-wishlist.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ jogo_id: jogoId })
-    })
-    .then(response => response.json())
-    .then(data => {
-        button.disabled = false;
-        icon.style.transform = 'scale(1)';
-        
-        if (data.success) {
-            if (data.action === 'added') {
-                button.classList.add('active');
-                button.title = 'Remover da Lista de Desejos';
-                showNotification('Adicionado à lista de desejos!', 'success');
-            } else {
-                button.classList.remove('active');
-                button.title = 'Adicionar à Lista de Desejos';
-                showNotification('Removido da lista de desejos', 'info');
-            }
-        } else {
-            showNotification(data.message || 'Erro ao processar', 'error');
-        }
-    })
-    .catch(error => {
-        console.error('Erro:', error);
-        button.disabled = false;
-        icon.style.transform = 'scale(1)';
-        showNotification('Erro de conexão. Tente novamente.', 'error');
-    });
-}
-
-// Animação suave ao carregar a página
-document.addEventListener('DOMContentLoaded', function() {
-    // Anima o spotlight card
-    const spotlight = document.querySelector('.spotlight-card');
-    if (spotlight) {
-        spotlight.style.opacity = '0';
-        spotlight.style.transform = 'translateY(30px)';
-        setTimeout(() => {
-            spotlight.style.transition = 'all 0.6s ease-out';
-            spotlight.style.opacity = '1';
-            spotlight.style.transform = 'translateY(0)';
-        }, 100);
-    }
-    
-    // Anima os cards do grid
-    const cards = document.querySelectorAll('.games-grid > *');
-    cards.forEach((card, index) => {
-        card.style.opacity = '0';
-        card.style.transform = 'translateY(20px)';
-        setTimeout(() => {
-            card.style.transition = 'all 0.4s ease-out';
-            card.style.opacity = '1';
-            card.style.transform = 'translateY(0)';
-        }, 200 + (index * 50));
+// Feedback visual imediato nos radio buttons
+document.querySelectorAll('.filter-option input[type="radio"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        const group = this.closest('.filter-options');
+        group.querySelectorAll('.filter-option').forEach(opt => {
+            opt.classList.remove('active');
+        });
+        this.closest('.filter-option').classList.add('active');
     });
 });
+
+// Rating Slider
+const ratingSlider = document.getElementById('ratingSlider');
+const ratingDisplay = document.getElementById('ratingDisplay');
+
+ratingSlider.addEventListener('input', function() {
+    const val = parseFloat(this.value);
+    ratingDisplay.textContent = val === 0 ? 'Qualquer' : val.toFixed(1);
+});
+
+// Sort
+function applySort(value) {
+    const url = new URL(window.location);
+    url.searchParams.set('ordem', value);
+    url.searchParams.delete('pagina');
+    window.location = url;
+}
 </script>
 
 <?php require_once '../includes/footer.php'; ?>

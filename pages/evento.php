@@ -1,5 +1,5 @@
 <?php
-// pages/evento.php - Versão Clean
+// pages/evento.php - Sidebar Toggle + Slider Estrelas
 require_once '../config/config.php';
 require_once '../config/database.php';
 
@@ -23,17 +23,26 @@ if (!$evento) {
     exit;
 }
 
-// Status do evento
+// Banner
+$stmt = $pdo->prepare("
+    SELECT imagem_overlay FROM banner 
+    WHERE ativo = 1 
+    AND (data_inicio IS NULL OR data_inicio <= CURDATE())
+    AND (data_fim IS NULL OR data_fim >= CURDATE())
+    ORDER BY ordem ASC LIMIT 1
+");
+$stmt->execute();
+$banner = $stmt->fetch();
+$imagem_overlay = $banner['imagem_overlay'] ?? null;
+
+// Status
 $agora = date('Y-m-d H:i:s');
 $evento_ativo = ($agora >= $evento['data_inicio'] && $agora <= $evento['data_fim']);
 $evento_futuro = ($agora < $evento['data_inicio']);
 $evento_encerrado = ($agora > $evento['data_fim']);
 
-// Pre-load user data
-$meus_jogos = [];
-$minha_wishlist = [];
-$meu_carrinho = [];
-
+// User data
+$meus_jogos = $minha_wishlist = $meu_carrinho = [];
 if ($user_id) {
     $stmt = $pdo->prepare("SELECT jogo_id FROM biblioteca WHERE usuario_id = ?");
     $stmt->execute([$user_id]);
@@ -48,44 +57,111 @@ if ($user_id) {
     $meu_carrinho = $stmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
-// Buscar jogos em promoção
-$stmt = $pdo->query("
-    SELECT j.*, d.nome_estudio,
-           CASE 
-               WHEN j.preco_promocional_centavos IS NOT NULL 
-               THEN ROUND(((j.preco_centavos - j.preco_promocional_centavos) / j.preco_centavos) * 100)
-               ELSE 0
-           END as percentual_desconto
+// Filtros
+$categoria = $_GET['categoria'] ?? '';
+$plataforma = $_GET['plataforma'] ?? '';
+$preco_min = isset($_GET['preco_min']) && $_GET['preco_min'] !== '' ? (float)$_GET['preco_min'] : null;
+$preco_max = isset($_GET['preco_max']) && $_GET['preco_max'] !== '' ? (float)$_GET['preco_max'] : null;
+$nota_min = isset($_GET['nota_min']) ? (float)$_GET['nota_min'] : 0;
+$ordem = $_GET['ordem'] ?? 'desconto';
+$pagina = max(1, (int)($_GET['pagina'] ?? 1));
+$por_pagina = 24;
+$offset = ($pagina - 1) * $por_pagina;
+
+// Query
+$where = ["j.status = 'publicado'", "j.em_promocao = 1", "j.preco_promocional_centavos IS NOT NULL"];
+$params = [];
+$joins = [];
+
+if (!empty($categoria)) {
+    $joins[] = "INNER JOIN jogo_categoria jc ON j.id = jc.jogo_id INNER JOIN categoria cat ON jc.categoria_id = cat.id AND cat.slug = ?";
+    $params[] = $categoria;
+}
+if (!empty($plataforma)) {
+    $joins[] = "INNER JOIN jogo_plataforma jp ON j.id = jp.jogo_id INNER JOIN plataforma plat ON jp.plataforma_id = plat.id AND plat.slug = ?";
+    $params[] = $plataforma;
+}
+if ($preco_min !== null) {
+    $where[] = "j.preco_promocional_centavos >= ?";
+    $params[] = $preco_min * 100;
+}
+if ($preco_max !== null) {
+    $where[] = "j.preco_promocional_centavos <= ?";
+    $params[] = $preco_max * 100;
+}
+if ($nota_min > 0) {
+    $where[] = "j.nota_media >= ?";
+    $params[] = $nota_min;
+}
+
+$where_clause = implode(' AND ', $where);
+$joins_clause = implode(' ', $joins);
+
+$order_by = match($ordem) {
+    'preco_asc' => 'j.preco_promocional_centavos ASC',
+    'preco_desc' => 'j.preco_promocional_centavos DESC',
+    'nota' => 'j.nota_media DESC',
+    'titulo' => 'j.titulo ASC',
+    default => '(j.preco_centavos - j.preco_promocional_centavos) DESC'
+};
+
+$sql = "
+    SELECT DISTINCT j.*, d.nome_estudio,
+           ROUND(((j.preco_centavos - j.preco_promocional_centavos) / j.preco_centavos) * 100) as percentual_desconto
     FROM jogo j
-    JOIN desenvolvedor d ON j.desenvolvedor_id = d.id
-    WHERE j.status = 'publicado' 
-    AND j.em_promocao = 1
-    AND j.preco_promocional_centavos IS NOT NULL
-    ORDER BY percentual_desconto DESC, j.nota_media DESC
-    LIMIT 60
-");
+    LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id
+    $joins_clause
+    WHERE $where_clause
+    ORDER BY $order_by
+    LIMIT $por_pagina OFFSET $offset
+";
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
 $jogos_evento = $stmt->fetchAll();
 
-// Destaques (top 6)
-$jogos_destaque = array_slice($jogos_evento, 0, 6);
+$count_sql = "SELECT COUNT(DISTINCT j.id) as total FROM jogo j $joins_clause WHERE $where_clause";
+$stmt = $pdo->prepare($count_sql);
+$stmt->execute($params);
+$total_jogos = $stmt->fetch()['total'];
+$total_paginas = ceil($total_jogos / $por_pagina);
 
-// Estatísticas
-$total_jogos = count($jogos_evento);
-$desconto_medio = 0;
-$economia_total = 0;
-$maior_desconto = 0;
+// Stats
+$stats = $pdo->query("
+    SELECT MAX(ROUND(((preco_centavos - preco_promocional_centavos) / preco_centavos) * 100)) as maior_desconto
+    FROM jogo WHERE status = 'publicado' AND em_promocao = 1
+")->fetch();
+$maior_desconto = $stats['maior_desconto'] ?? 0;
 
-if ($total_jogos > 0) {
-    $soma_descontos = array_sum(array_column($jogos_evento, 'percentual_desconto'));
-    $desconto_medio = round($soma_descontos / $total_jogos);
-    $maior_desconto = max(array_column($jogos_evento, 'percentual_desconto'));
-    
-    foreach ($jogos_evento as $jogo) {
-        if ($jogo['preco_promocional_centavos']) {
-            $economia_total += ($jogo['preco_centavos'] - $jogo['preco_promocional_centavos']);
-        }
-    }
+// Dados filtros
+$categorias = $pdo->query("
+    SELECT c.*, COUNT(DISTINCT jc.jogo_id) as total_jogos
+    FROM categoria c
+    INNER JOIN jogo_categoria jc ON c.id = jc.categoria_id
+    INNER JOIN jogo j ON jc.jogo_id = j.id AND j.status = 'publicado' AND j.em_promocao = 1
+    WHERE c.ativa = 1 GROUP BY c.id HAVING total_jogos > 0 ORDER BY c.nome
+")->fetchAll();
+
+$plataformas = $pdo->query("
+    SELECT p.*, COUNT(DISTINCT jp.jogo_id) as total_jogos
+    FROM plataforma p
+    INNER JOIN jogo_plataforma jp ON p.id = jp.plataforma_id
+    INNER JOIN jogo j ON jp.jogo_id = j.id AND j.status = 'publicado' AND j.em_promocao = 1
+    WHERE p.ativa = 1 GROUP BY p.id HAVING total_jogos > 0 ORDER BY p.ordem
+")->fetchAll();
+
+// Filtros ativos
+$filtros_ativos = [];
+if (!empty($categoria)) {
+    $cat_nome = array_filter($categorias, fn($c) => $c['slug'] === $categoria);
+    $filtros_ativos[] = ['tipo' => 'categoria', 'label' => reset($cat_nome)['nome'] ?? $categoria];
 }
+if (!empty($plataforma)) {
+    $plat_nome = array_filter($plataformas, fn($p) => $p['slug'] === $plataforma);
+    $filtros_ativos[] = ['tipo' => 'plataforma', 'label' => reset($plat_nome)['nome'] ?? $plataforma];
+}
+if ($preco_min !== null) $filtros_ativos[] = ['tipo' => 'preco_min', 'label' => 'Min R$' . number_format($preco_min, 0)];
+if ($preco_max !== null) $filtros_ativos[] = ['tipo' => 'preco_max', 'label' => 'Max R$' . number_format($preco_max, 0)];
+if ($nota_min > 0) $filtros_ativos[] = ['tipo' => 'nota_min', 'label' => $nota_min . '+ ★'];
 
 $page_title = htmlspecialchars($evento['nome']) . ' - ' . SITE_NAME;
 require_once '../includes/header.php';
@@ -93,517 +169,626 @@ require_once '../components/game-card.php';
 ?>
 
 <style>
+:root {
+    --sidebar-width: 280px;
+}
+
+.evento-page {
+    min-height: 100vh;
+    background: var(--bg-primary);
+}
+
 /* ============================================
-   EVENTO PAGE - CLEAN VERSION
+   HERO COMPACTO
    ============================================ */
-
-/* Hero Section */
 .evento-hero {
-    position: relative;
-    min-height: 70vh;
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+    border-bottom: 1px solid var(--border);
+}
+
+.hero-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 32px 24px;
     display: flex;
-    align-items: flex-end;
-    overflow: hidden;
+    align-items: center;
+    gap: 32px;
 }
 
-.hero-bg {
-    position: absolute;
-    inset: 0;
-    background-size: cover;
-    background-position: center;
+.hero-image-wrapper {
+    width: 120px;
+    height: 120px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.hero-overlay {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, 
-        rgba(10, 10, 15, 0.4) 0%, 
-        rgba(10, 10, 15, 0.7) 50%,
-        var(--bg-primary) 100%
-    );
+.hero-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 8px 24px rgba(0,0,0,0.4));
+    animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
 }
 
 .hero-content {
-    position: relative;
-    z-index: 10;
-    width: 100%;
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 60px 24px 80px;
+    flex: 1;
 }
 
 .hero-badge {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 20px;
-    background: var(--accent);
-    color: white;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    font-weight: 700;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 20px;
+    color: #22c55e;
+    margin-bottom: 8px;
 }
 
-.hero-badge.inactive {
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    border: 1px solid var(--border);
+.hero-badge::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: #22c55e;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
 }
 
-.hero-badge i {
-    font-size: 10px;
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
 }
 
 .hero-title {
-    font-size: clamp(2.5rem, 6vw, 4rem);
-    font-weight: 800;
-    color: white;
-    margin-bottom: 16px;
-    line-height: 1.1;
-    letter-spacing: -1px;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 6px;
 }
 
-.hero-description {
-    font-size: 1.1rem;
-    color: rgba(255, 255, 255, 0.8);
-    max-width: 600px;
-    line-height: 1.7;
-    margin-bottom: 24px;
+.hero-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin: 0;
 }
 
-.hero-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 24px;
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 0.95rem;
-}
-
-.hero-meta span {
+.hero-stats {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 32px;
+    margin-left: auto;
 }
 
-.hero-meta i {
-    color: var(--accent);
-}
-
-/* Countdown */
-.countdown-section {
-    padding: 0 24px;
-    margin-top: -30px;
-    position: relative;
-    z-index: 20;
-}
-
-.countdown-card {
-    max-width: 800px;
-    margin: 0 auto;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 32px;
+.hero-stat {
     text-align: center;
 }
 
-.countdown-label {
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-    margin-bottom: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent);
 }
 
-.countdown-label i {
-    color: var(--accent);
+.stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.hero-countdown {
+    text-align: right;
+    padding-left: 32px;
+    border-left: 1px solid var(--border);
+}
+
+.countdown-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-bottom: 4px;
 }
 
 .countdown-timer {
     display: flex;
-    justify-content: center;
-    gap: 16px;
+    gap: 12px;
 }
 
-.countdown-item {
+.countdown-block {
     text-align: center;
 }
 
-.countdown-number {
-    display: block;
-    font-size: 3rem;
-    font-weight: 800;
+.countdown-num {
+    font-size: 1.25rem;
+    font-weight: 700;
     color: var(--text-primary);
-    line-height: 1;
-    min-width: 80px;
-    padding: 16px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    margin-bottom: 8px;
+    font-variant-numeric: tabular-nums;
 }
 
 .countdown-unit {
-    font-size: 0.8rem;
+    font-size: 9px;
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 1px;
 }
 
-/* Stats */
-.stats-section {
-    padding: 60px 24px;
+/* ============================================
+   TOOLBAR
+   ============================================ */
+.evento-toolbar {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 60px;
+    z-index: 90;
+}
+
+.toolbar-container {
     max-width: 1400px;
     margin: 0 auto;
-}
-
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
-}
-
-.stat-card {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 24px;
-    text-align: center;
-    transition: all 0.2s;
-}
-
-.stat-card:hover {
-    border-color: var(--accent);
-    transform: translateY(-4px);
-}
-
-.stat-icon {
-    width: 48px;
-    height: 48px;
-    background: rgba(var(--accent-rgb), 0.1);
-    border-radius: 12px;
+    padding: 12px 24px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    margin: 0 auto 16px;
-    color: var(--accent);
-    font-size: 20px;
-}
-
-.stat-value {
-    font-size: 2rem;
-    font-weight: 800;
-    color: var(--text-primary);
-    line-height: 1;
-    margin-bottom: 4px;
-}
-
-.stat-label {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-}
-
-/* Section Header */
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 32px;
     gap: 16px;
-    flex-wrap: wrap;
 }
 
-.section-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.section-title i {
-    color: var(--accent);
-    font-size: 20px;
-}
-
-/* Featured Section */
-.featured-section {
-    padding: 0 24px 60px;
-    max-width: 1400px;
-    margin: 0 auto;
-}
-
-.featured-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-}
-
-.featured-main {
-    grid-row: span 2;
-}
-
-.featured-card {
-    position: relative;
-    border-radius: 16px;
-    overflow: hidden;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    text-decoration: none;
-    display: block;
-    height: 100%;
-    min-height: 300px;
-    transition: all 0.3s;
-}
-
-.featured-card:hover {
-    border-color: var(--accent);
-    transform: translateY(-4px);
-}
-
-.featured-card-bg {
-    position: absolute;
-    inset: 0;
-    background-size: cover;
-    background-position: center;
-    transition: transform 0.4s;
-}
-
-.featured-card:hover .featured-card-bg {
-    transform: scale(1.05);
-}
-
-.featured-card-overlay {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.9) 100%);
-}
-
-.featured-card-discount {
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    background: var(--accent);
-    color: white;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 1rem;
-    font-weight: 800;
-}
-
-.featured-card-content {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 24px;
-}
-
-.featured-card-title {
-    font-size: 1.3rem;
-    font-weight: 700;
-    color: white;
-    margin-bottom: 8px;
-}
-
-.featured-card-dev {
-    font-size: 0.9rem;
-    color: rgba(255,255,255,0.7);
-    margin-bottom: 12px;
-}
-
-.featured-card-prices {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.price-original {
-    font-size: 0.9rem;
-    color: rgba(255,255,255,0.5);
-    text-decoration: line-through;
-}
-
-.price-current {
-    font-size: 1.2rem;
-    font-weight: 700;
-    color: var(--accent);
-}
-
-/* Featured List Item */
-.featured-list-item {
-    display: flex;
-    gap: 16px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 12px;
-    text-decoration: none;
-    transition: all 0.2s;
-}
-
-.featured-list-item:hover {
-    border-color: var(--accent);
-    transform: translateX(4px);
-}
-
-.featured-list-image {
-    width: 120px;
-    height: 70px;
-    border-radius: 8px;
-    overflow: hidden;
-    flex-shrink: 0;
-    position: relative;
-}
-
-.featured-list-image img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.featured-list-discount {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    background: var(--accent);
-    color: white;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 700;
-}
-
-.featured-list-info {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    min-width: 0;
-}
-
-.featured-list-title {
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.featured-list-dev {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    margin-bottom: 8px;
-}
-
-.featured-list-prices {
+.btn-filter-toggle {
     display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.featured-list-prices .price-original {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-}
-
-.featured-list-prices .price-current {
-    font-size: 1rem;
-    color: var(--accent);
-}
-
-/* Filters */
-.filters-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
-    margin-bottom: 24px;
-    padding: 16px 20px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-}
-
-.filters-left {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.filter-btn {
-    padding: 10px 18px;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.filter-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-}
-
-.filter-btn.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: white;
-}
-
-.sort-select {
-    appearance: none;
+    padding: 10px 16px;
     background: var(--bg-primary);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 10px 36px 10px 14px;
-    font-size: 0.9rem;
     color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 500;
     cursor: pointer;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%23888' viewBox='0 0 24 24'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 10px center;
-    background-size: 18px;
+    transition: all 0.2s;
 }
 
-.sort-select:focus {
+.btn-filter-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.btn-filter-toggle.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.btn-filter-toggle .filter-count-badge {
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.btn-filter-toggle.active .filter-count-badge {
+    background: #fff;
+    color: var(--accent);
+}
+
+/* Estilo base do Checkbox */
+.filter-checkbox input {
+    appearance: none; /* Esconde o padrão do navegador */
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s ease;
+    margin-right: 10px; /* Espaço entre o quadrado e o texto */
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* Quando o mouse passa por cima (Hover) */
+.filter-checkbox:hover input {
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* =========================================
+   ESTADO SELECIONADO (O FIX)
+   ========================================= */
+.filter-checkbox input:checked {
+    background-color: #66c0f4; /* Azul Steam */
+    border-color: #66c0f4;
+}
+
+/* Desenha o "V" (check) usando pseudo-elemento */
+.filter-checkbox input:checked::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 5px;
+    width: 4px;
+    height: 9px;
+    border: solid #000; /* Cor do Vzinho */
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+/* Muda a cor do texto do label quando selecionado */
+.filter-checkbox input:checked + span {
+    color: #fff;
+    font-weight: 500;
+}
+/* Tags de filtros ativos */
+.active-filters {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    overflow-x: auto;
+}
+
+.filter-tag {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(0, 174, 255, 0.1);
+    border: 1px solid rgba(0, 174, 255, 0.3);
+    border-radius: 20px;
+    font-size: 12px;
+    color: var(--accent);
+    white-space: nowrap;
+}
+
+.filter-tag-remove {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 174, 255, 0.2);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.filter-tag-remove:hover {
+    background: var(--accent);
+    color: #fff;
+}
+
+.toolbar-results {
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.toolbar-sort {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.toolbar-sort label {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.toolbar-sort select {
+    padding: 8px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+/* ============================================
+   MAIN LAYOUT
+   ============================================ */
+.evento-main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+    display: flex;
+    gap: 24px;
+    position: relative;
+}
+
+/* ============================================
+   SIDEBAR DE FILTROS
+   ============================================ */
+.filters-sidebar {
+    width: var(--sidebar-width);
+    flex-shrink: 0;
+    position: sticky;
+    top: 130px;
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transform: translateX(calc(-1 * var(--sidebar-width) - 24px));
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.filters-sidebar.open {
+    transform: translateX(0);
+    opacity: 1;
+    visibility: visible;
+}
+
+.filters-sidebar::-webkit-scrollbar {
+    width: 4px;
+}
+
+.filters-sidebar::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
+}
+
+.filters-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.filters-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.filters-title i {
+    color: var(--accent);
+}
+
+.btn-clear-all {
+    font-size: 12px;
+    color: var(--danger);
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.btn-clear-all:hover {
+    opacity: 0.7;
+}
+
+/* Filter Groups */
+.filter-group {
+    margin-bottom: 24px;
+}
+
+.filter-group:last-child {
+    margin-bottom: 0;
+}
+
+.filter-group-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+}
+
+.filter-options {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.filter-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.filter-option:hover {
+    background: rgba(255,255,255,0.03);
+}
+
+.filter-option.active {
+    background: rgba(0, 174, 255, 0.1);
+}
+
+.filter-option input {
+    display: none;
+}
+
+.filter-radio {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s;
+}
+
+.filter-option.active .filter-radio {
+    border-color: var(--accent);
+    background: var(--accent);
+}
+
+.filter-option.active .filter-radio::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: #fff;
+    border-radius: 50%;
+}
+
+.filter-name {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.filter-option.active .filter-name {
+    color: var(--accent);
+    font-weight: 500;
+}
+
+.filter-count {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+/* Price Range */
+.price-range {
+    display: flex;
+    gap: 12px;
+}
+
+.price-input-group {
+    flex: 1;
+}
+
+.price-input-group label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.price-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.price-input:focus {
     outline: none;
     border-color: var(--accent);
 }
 
-/* Games Section */
-.games-section {
-    padding: 0 24px 80px;
-    max-width: 1400px;
-    margin: 0 auto;
+/* Rating Slider */
+.rating-slider-container {
+    padding: 8px 0;
 }
 
+.rating-slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.rating-value {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.rating-value i {
+    color: #fbbf24;
+}
+
+.rating-slider {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    outline: none;
+}
+
+.rating-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.15s;
+}
+
+.rating-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+}
+
+.rating-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+}
+
+.rating-labels span {
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+/* Apply Button */
+.btn-apply-filters {
+    width: 100%;
+    padding: 12px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 20px;
+    transition: opacity 0.2s;
+}
+
+.btn-apply-filters:hover {
+    opacity: 0.9;
+}
+
+/* ============================================
+   CONTEÚDO PRINCIPAL
+   ============================================ */
+.content-area {
+    flex: 1;
+    min-width: 0;
+    transition: margin-left 0.3s ease;
+}
+
+.content-area.shifted {
+    margin-left: 0;
+}
+
+/* Games Grid */
 .games-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 20px;
-}
-
-.games-count {
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-    margin-bottom: 20px;
-}
-
-.games-count strong {
-    color: var(--text-primary);
 }
 
 /* Empty State */
@@ -611,519 +796,441 @@ require_once '../components/game-card.php';
     grid-column: 1 / -1;
     text-align: center;
     padding: 80px 20px;
-    background: var(--bg-secondary);
-    border: 1px dashed var(--border);
-    border-radius: 16px;
 }
 
-.empty-state i {
+.empty-icon {
     font-size: 48px;
     color: var(--text-secondary);
-    opacity: 0.3;
     margin-bottom: 16px;
+    opacity: 0.5;
 }
 
-.empty-state h3 {
-    font-size: 1.2rem;
+.empty-title {
+    font-size: 1.1rem;
     color: var(--text-primary);
     margin-bottom: 8px;
 }
 
-.empty-state p {
+.empty-text {
+    font-size: 14px;
     color: var(--text-secondary);
 }
 
-/* Event Ended */
-.event-ended {
-    max-width: 600px;
-    margin: 60px auto;
-    padding: 0 24px;
+/* Pagination */
+.pagination {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 40px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
 }
 
-.ended-card {
+.pagination a,
+.pagination span {
+    padding: 10px 16px;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 48px;
-    text-align: center;
-}
-
-.ended-icon {
-    width: 72px;
-    height: 72px;
-    background: rgba(var(--accent-rgb), 0.1);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 20px;
-    color: var(--accent);
-    font-size: 28px;
-}
-
-.ended-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 8px;
-}
-
-.ended-text {
-    color: var(--text-secondary);
-    margin-bottom: 24px;
-}
-
-.ended-date {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--bg-primary);
-    padding: 10px 20px;
     border-radius: 8px;
     color: var(--text-secondary);
-    font-size: 0.9rem;
-    margin-bottom: 24px;
-}
-
-.ended-date i {
-    color: var(--accent);
-}
-
-.ended-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 24px;
-    background: var(--accent);
-    color: white;
-    border-radius: 10px;
-    font-weight: 600;
+    font-size: 13px;
     text-decoration: none;
     transition: all 0.2s;
 }
 
-.ended-btn:hover {
-    transform: translateY(-2px);
-    opacity: 0.9;
+.pagination a:hover {
+    border-color: var(--accent);
+    color: var(--accent);
 }
 
-/* Responsive */
+.pagination .current {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+/* ============================================
+   OVERLAY MOBILE
+   ============================================ */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.sidebar-overlay.active {
+    opacity: 1;
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
 @media (max-width: 1024px) {
-    .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
+    .hero-container {
+        flex-wrap: wrap;
     }
     
-    .featured-grid {
-        grid-template-columns: 1fr;
+    .hero-stats {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
     }
     
-    .featured-main {
-        grid-row: auto;
+    .hero-countdown {
+        border-left: none;
+        padding-left: 0;
     }
 }
 
 @media (max-width: 768px) {
-    .evento-hero {
-        min-height: 60vh;
+    .filters-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        max-height: 100vh;
+        border-radius: 0;
+        z-index: 100;
+        transform: translateX(-100%);
     }
     
-    .hero-content {
-        padding: 40px 20px 60px;
+    .filters-sidebar.open {
+        transform: translateX(0);
     }
     
-    .hero-title {
-        font-size: 2rem;
+    .sidebar-overlay {
+        display: block;
     }
     
-    .countdown-timer {
-        gap: 8px;
-    }
-    
-    .countdown-number {
-        font-size: 2rem;
-        min-width: 60px;
-        padding: 12px;
-    }
-    
-    .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
-    }
-    
-    .stat-card {
-        padding: 20px 16px;
-    }
-    
-    .stat-value {
-        font-size: 1.5rem;
-    }
-    
-    .filters-bar {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .filters-left {
-        overflow-x: auto;
-        flex-wrap: nowrap;
-        padding-bottom: 8px;
-    }
-    
-    .filter-btn {
-        white-space: nowrap;
-        flex-shrink: 0;
+    .hero-image-wrapper {
+        display: none;
     }
     
     .games-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 12px;
     }
-    
-    .featured-list-item {
-        flex-direction: column;
-    }
-    
-    .featured-list-image {
-        width: 100%;
-        height: 100px;
-    }
 }
 </style>
 
+<!-- HERO -->
 <div class="evento-page">
-    
-    <!-- Hero -->
     <section class="evento-hero">
-        <div class="hero-bg" style="background-image: url('<?= SITE_URL . $evento['imagem_banner'] ?>');"></div>
-        <div class="hero-overlay"></div>
-        
-        <div class="hero-content">
-            <?php if ($evento_ativo): ?>
-                <span class="hero-badge">
-                    <i class="fas fa-circle"></i>
-                    Evento Ativo
-                </span>
-            <?php elseif ($evento_futuro): ?>
-                <span class="hero-badge inactive">
-                    <i class="fas fa-clock"></i>
-                    Em Breve
-                </span>
-            <?php else: ?>
-                <span class="hero-badge inactive">
-                    <i class="fas fa-calendar-times"></i>
-                    Encerrado
-                </span>
+        <div class="hero-container">
+            <?php if ($imagem_overlay): ?>
+            <div class="hero-image-wrapper">
+                <img src="<?= $imagem_overlay ?>" alt="" class="hero-image">
+            </div>
             <?php endif; ?>
             
-            <h1 class="hero-title"><?= htmlspecialchars($evento['nome']) ?></h1>
-            <p class="hero-description"><?= htmlspecialchars($evento['descricao']) ?></p>
-            
-            <div class="hero-meta">
-                <span>
-                    <i class="fas fa-calendar"></i>
-                    <?= date('d/m', strtotime($evento['data_inicio'])) ?> - <?= date('d/m/Y', strtotime($evento['data_fim'])) ?>
-                </span>
-                <span>
-                    <i class="fas fa-gamepad"></i>
-                    <?= $total_jogos ?> jogos
-                </span>
-                <span>
-                    <i class="fas fa-percent"></i>
-                    Até <?= $maior_desconto ?>% OFF
-                </span>
-            </div>
-        </div>
-    </section>
-    
-    <!-- Countdown -->
-    <?php if ($evento_ativo || $evento_futuro): ?>
-    <section class="countdown-section">
-        <div class="countdown-card">
-            <div class="countdown-label">
-                <i class="fas fa-hourglass-half"></i>
-                <?= $evento_ativo ? 'Termina em' : 'Começa em' ?>
+            <div class="hero-content">
+                <?php if ($evento_ativo): ?>
+                    <div class="hero-badge">Evento em andamento</div>
+                <?php endif; ?>
+                <h1 class="hero-title"><?= htmlspecialchars($evento['nome']) ?></h1>
+                <p class="hero-subtitle"><?= htmlspecialchars($evento['descricao'] ?? 'Ofertas imperdíveis por tempo limitado') ?></p>
             </div>
             
-            <div class="countdown-timer" id="countdown">
-                <div class="countdown-item">
-                    <span class="countdown-number" id="days">00</span>
-                    <span class="countdown-unit">Dias</span>
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <div class="stat-value"><?= $total_jogos ?></div>
+                    <div class="stat-label">Jogos</div>
                 </div>
-                <div class="countdown-item">
-                    <span class="countdown-number" id="hours">00</span>
-                    <span class="countdown-unit">Horas</span>
-                </div>
-                <div class="countdown-item">
-                    <span class="countdown-number" id="minutes">00</span>
-                    <span class="countdown-unit">Min</span>
-                </div>
-                <div class="countdown-item">
-                    <span class="countdown-number" id="seconds">00</span>
-                    <span class="countdown-unit">Seg</span>
+                <div class="hero-stat">
+                    <div class="stat-value">-<?= $maior_desconto ?>%</div>
+                    <div class="stat-label">Maior desconto</div>
                 </div>
             </div>
-        </div>
-    </section>
-    <?php endif; ?>
-    
-    <!-- Stats -->
-    <section class="stats-section">
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-gamepad"></i></div>
-                <div class="stat-value"><?= $total_jogos ?></div>
-                <div class="stat-label">Jogos em Oferta</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-percent"></i></div>
-                <div class="stat-value"><?= $desconto_medio ?>%</div>
-                <div class="stat-label">Desconto Médio</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-piggy-bank"></i></div>
-                <div class="stat-value"><?= formatPrice($economia_total) ?></div>
-                <div class="stat-label">Economia Possível</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-fire"></i></div>
-                <div class="stat-value"><?= $maior_desconto ?>%</div>
-                <div class="stat-label">Maior Desconto</div>
-            </div>
-        </div>
-    </section>
-    
-    <?php if ($evento_encerrado): ?>
-    
-    <!-- Event Ended -->
-    <section class="event-ended">
-        <div class="ended-card">
-            <div class="ended-icon">
-                <i class="fas fa-calendar-times"></i>
-            </div>
-            <h2 class="ended-title">Evento Encerrado</h2>
-            <p class="ended-text">Este evento já terminou, mas você pode conferir outras promoções disponíveis.</p>
-            <div class="ended-date">
-                <i class="fas fa-clock"></i>
-                Encerrado em <?= date('d/m/Y \à\s H:i', strtotime($evento['data_fim'])) ?>
-            </div>
-            <br>
-            <a href="<?= SITE_URL ?>/pages/busca.php?promocao=1" class="ended-btn">
-                <i class="fas fa-tags"></i>
-                Ver Promoções Atuais
-            </a>
-        </div>
-    </section>
-    
-    <?php else: ?>
-    
-    <!-- Featured -->
-    <?php if (!empty($jogos_destaque)): ?>
-    <section class="featured-section">
-        <div class="section-header">
-            <h2 class="section-title">
-                <i class="fas fa-star"></i>
-                Destaques
-            </h2>
-        </div>
-        
-        <div class="featured-grid">
-            <!-- Main Featured -->
-            <?php $main = $jogos_destaque[0]; ?>
-            <a href="<?= SITE_URL ?>/pages/jogo.php?slug=<?= $main['slug'] ?>" class="featured-card featured-main">
-                <div class="featured-card-bg" style="background-image: url('<?= SITE_URL . $main['imagem_banner'] ?>');"></div>
-                <div class="featured-card-overlay"></div>
-                <span class="featured-card-discount">-<?= $main['percentual_desconto'] ?>%</span>
-                <div class="featured-card-content">
-                    <h3 class="featured-card-title"><?= htmlspecialchars($main['titulo']) ?></h3>
-                    <p class="featured-card-dev"><?= htmlspecialchars($main['nome_estudio']) ?></p>
-                    <div class="featured-card-prices">
-                        <span class="price-original"><?= formatPrice($main['preco_centavos']) ?></span>
-                        <span class="price-current"><?= formatPrice($main['preco_promocional_centavos']) ?></span>
+            
+            <?php if ($evento_ativo): ?>
+            <div class="hero-countdown">
+                <div class="countdown-label">Termina em</div>
+                <div class="countdown-timer" id="countdown" data-end="<?= $evento['data_fim'] ?>">
+                    <div class="countdown-block">
+                        <div class="countdown-num" id="days">--</div>
+                        <div class="countdown-unit">Dias</div>
+                    </div>
+                    <div class="countdown-block">
+                        <div class="countdown-num" id="hours">--</div>
+                        <div class="countdown-unit">Hrs</div>
+                    </div>
+                    <div class="countdown-block">
+                        <div class="countdown-num" id="mins">--</div>
+                        <div class="countdown-unit">Min</div>
                     </div>
                 </div>
-            </a>
-            
-            <!-- List Items -->
-            <?php foreach (array_slice($jogos_destaque, 1, 4) as $jogo): ?>
-            <a href="<?= SITE_URL ?>/pages/jogo.php?slug=<?= $jogo['slug'] ?>" class="featured-list-item">
-                <div class="featured-list-image">
-                    <img src="<?= SITE_URL . $jogo['imagem_capa'] ?>" alt="<?= htmlspecialchars($jogo['titulo']) ?>">
-                    <span class="featured-list-discount">-<?= $jogo['percentual_desconto'] ?>%</span>
-                </div>
-                <div class="featured-list-info">
-                    <h4 class="featured-list-title"><?= htmlspecialchars($jogo['titulo']) ?></h4>
-                    <span class="featured-list-dev"><?= htmlspecialchars($jogo['nome_estudio']) ?></span>
-                    <div class="featured-list-prices">
-                        <span class="price-original"><?= formatPrice($jogo['preco_centavos']) ?></span>
-                        <span class="price-current"><?= formatPrice($jogo['preco_promocional_centavos']) ?></span>
-                    </div>
-                </div>
-            </a>
-            <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
         </div>
     </section>
-    <?php endif; ?>
     
-    <!-- All Games -->
-    <section class="games-section" id="ofertas">
-        <div class="section-header">
-            <h2 class="section-title">
-                <i class="fas fa-tags"></i>
-                Todas as Ofertas
-            </h2>
-        </div>
-        
-        <div class="filters-bar">
-            <div class="filters-left">
-                <button class="filter-btn active" data-filter="all">Todos</button>
-                <button class="filter-btn" data-filter="50">50%+ OFF</button>
-                <button class="filter-btn" data-filter="75">75%+ OFF</button>
-            </div>
-            <select class="sort-select" id="sortSelect">
-                <option value="discount">Maior Desconto</option>
-                <option value="price-low">Menor Preço</option>
-                <option value="price-high">Maior Preço</option>
-                <option value="name">Nome A-Z</option>
-            </select>
-        </div>
-        
-        <p class="games-count">
-            Mostrando <strong id="visibleCount"><?= $total_jogos ?></strong> jogos
-        </p>
-        
-        <div class="games-grid" id="gamesGrid">
-            <?php if (!empty($jogos_evento)): ?>
-                <?php foreach ($jogos_evento as $jogo): ?>
-                    <div class="game-card-wrapper" 
-                         data-discount="<?= $jogo['percentual_desconto'] ?>" 
-                         data-price="<?= $jogo['preco_promocional_centavos'] ?>"
-                         data-name="<?= htmlspecialchars($jogo['titulo']) ?>">
-                        <?php 
-                        renderGameCard($jogo, $pdo, $user_id, 'store', [
-                            'is_owned' => in_array($jogo['id'], $meus_jogos),
-                            'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
-                            'in_cart' => in_array($jogo['id'], $meu_carrinho)
-                        ]); 
-                        ?>
+    <!-- TOOLBAR -->
+    <div class="evento-toolbar">
+        <div class="toolbar-container">
+            <button class="btn-filter-toggle" id="btnFilterToggle">
+                <i class="fas fa-sliders-h"></i>
+                <span>Filtros</span>
+                <?php if (count($filtros_ativos) > 0): ?>
+                    <span class="filter-count-badge"><?= count($filtros_ativos) ?></span>
+                <?php endif; ?>
+            </button>
+            
+            <div class="active-filters">
+                <?php foreach ($filtros_ativos as $filtro): ?>
+                    <div class="filter-tag">
+                        <span><?= $filtro['label'] ?></span>
+                        <a href="<?= removeFilterParam($filtro['tipo']) ?>" class="filter-tag-remove">
+                            <i class="fas fa-times" style="font-size: 10px;"></i>
+                        </a>
                     </div>
                 <?php endforeach; ?>
-            <?php else: ?>
-                <div class="empty-state">
-                    <i class="fas fa-box-open"></i>
-                    <h3>Nenhuma oferta disponível</h3>
-                    <p>As ofertas serão adicionadas em breve.</p>
+            </div>
+            
+            <div class="toolbar-results">
+                <strong><?= $total_jogos ?></strong> jogos
+            </div>
+            
+            <div class="toolbar-sort">
+                <label>Ordenar:</label>
+                <select id="sortSelect" onchange="applySort(this.value)">
+                    <option value="desconto" <?= $ordem === 'desconto' ? 'selected' : '' ?>>Maior desconto</option>
+                    <option value="preco_asc" <?= $ordem === 'preco_asc' ? 'selected' : '' ?>>Menor preço</option>
+                    <option value="preco_desc" <?= $ordem === 'preco_desc' ? 'selected' : '' ?>>Maior preço</option>
+                    <option value="nota" <?= $ordem === 'nota' ? 'selected' : '' ?>>Melhor avaliados</option>
+                    <option value="titulo" <?= $ordem === 'titulo' ? 'selected' : '' ?>>A-Z</option>
+                </select>
+            </div>
+        </div>
+    </div>
+    
+    <!-- MAIN -->
+    <main class="evento-main">
+        <!-- Overlay -->
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+        
+        <!-- SIDEBAR FILTROS -->
+        <aside class="filters-sidebar" id="filtersSidebar">
+            <div class="filters-header">
+                <div class="filters-title">
+                    <i class="fas fa-filter"></i>
+                    Filtros
                 </div>
+                <?php if (count($filtros_ativos) > 0): ?>
+                    <a href="?slug=<?= $slug ?>" class="btn-clear-all">Limpar tudo</a>
+                <?php endif; ?>
+            </div>
+            
+            <form id="filterForm" method="GET">
+                <input type="hidden" name="slug" value="<?= $slug ?>">
+                <input type="hidden" name="ordem" value="<?= $ordem ?>">
+                
+                <!-- Categorias -->
+                <div class="filter-group">
+                    <div class="filter-group-title">Categoria</div>
+                    <div class="filter-options">
+                        <label class="filter-option <?= empty($categoria) ? 'active' : '' ?>">
+                            <input type="radio" name="categoria" value="" <?= empty($categoria) ? 'checked' : '' ?>>
+                            <span class="filter-radio"></span>
+                            <span class="filter-name">Todas</span>
+                        </label>
+                        <?php foreach ($categorias as $cat): ?>
+                        <label class="filter-option <?= $categoria === $cat['slug'] ? 'active' : '' ?>">
+                            <input type="radio" name="categoria" value="<?= $cat['slug'] ?>" <?= $categoria === $cat['slug'] ? 'checked' : '' ?>>
+                            <span class="filter-radio"></span>
+                            <span class="filter-name"><?= htmlspecialchars($cat['nome']) ?></span>
+                            <span class="filter-count"><?= $cat['total_jogos'] ?></span>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                
+                <!-- Plataformas -->
+                <div class="filter-group">
+                    <div class="filter-group-title">Plataforma</div>
+                    <div class="filter-options">
+                        <label class="filter-option <?= empty($plataforma) ? 'active' : '' ?>">
+                            <input type="radio" name="plataforma" value="" <?= empty($plataforma) ? 'checked' : '' ?>>
+                            <span class="filter-radio"></span>
+                            <span class="filter-name">Todas</span>
+                        </label>
+                        <?php foreach ($plataformas as $plat): ?>
+                        <label class="filter-option <?= $plataforma === $plat['slug'] ? 'active' : '' ?>">
+                            <input type="radio" name="plataforma" value="<?= $plat['slug'] ?>" <?= $plataforma === $plat['slug'] ? 'checked' : '' ?>>
+                            <span class="filter-radio"></span>
+                            <span class="filter-name"><?= htmlspecialchars($plat['nome']) ?></span>
+                            <span class="filter-count"><?= $plat['total_jogos'] ?></span>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                
+                <!-- Preço -->
+                <div class="filter-group">
+                    <div class="filter-group-title">Faixa de Preço</div>
+                    <div class="price-range">
+                        <div class="price-input-group">
+                            <label>Mínimo</label>
+                            <input type="number" name="preco_min" class="price-input" placeholder="R$ 0" value="<?= $preco_min ?? '' ?>" min="0" step="1">
+                        </div>
+                        <div class="price-input-group">
+                            <label>Máximo</label>
+                            <input type="number" name="preco_max" class="price-input" placeholder="R$ 500" value="<?= $preco_max ?? '' ?>" min="0" step="1">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Rating Slider -->
+                <div class="filter-group">
+                    <div class="filter-group-title">Avaliação Mínima</div>
+                    <div class="rating-slider-container">
+                        <div class="rating-slider-header">
+                            <span class="rating-value">
+                                <i class="fas fa-star"></i>
+                                <span id="ratingDisplay"><?= $nota_min ?: 'Qualquer' ?></span>
+                            </span>
+                        </div>
+                        <input type="range" class="rating-slider" name="nota_min" id="ratingSlider" min="0" max="5" step="0.5" value="<?= $nota_min ?>">
+                        <div class="rating-labels">
+                            <span>Qualquer</span>
+                            <span>5.0</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn-apply-filters">
+                    <i class="fas fa-check"></i> Aplicar Filtros
+                </button>
+            </form>
+        </aside>
+        
+        <!-- CONTEÚDO -->
+        <div class="content-area" id="contentArea">
+            <div class="games-grid">
+                <?php if (empty($jogos_evento)): ?>
+                    <div class="empty-state">
+                        <div class="empty-icon"><i class="fas fa-search"></i></div>
+                        <h3 class="empty-title">Nenhum jogo encontrado</h3>
+                        <p class="empty-text">Tente ajustar os filtros para ver mais resultados</p>
+                    </div>
+                <?php else: ?>
+                    <?php foreach ($jogos_evento as $jogo): ?>
+                        <?php
+                        $possui = in_array($jogo['id'], $meus_jogos);
+                        $na_wishlist = in_array($jogo['id'], $minha_wishlist);
+                        $no_carrinho = in_array($jogo['id'], $meu_carrinho);
+                            renderGameCard($jogo, $possui, $na_wishlist, $no_carrinho);
+                        ?>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+            
+            <?php if ($total_paginas > 1): ?>
+            <div class="pagination">
+                <?php if ($pagina > 1): ?>
+                    <a href="?<?= http_build_query(array_merge($_GET, ['pagina' => $pagina - 1])) ?>">
+                        <i class="fas fa-chevron-left"></i>
+                    </a>
+                <?php endif; ?>
+                
+                <?php
+                $inicio = max(1, $pagina - 2);
+                $fim = min($total_paginas, $pagina + 2);
+                
+                for ($i = $inicio; $i <= $fim; $i++):
+                ?>
+                    <?php if ($i === $pagina): ?>
+                        <span class="current"><?= $i ?></span>
+                    <?php else: ?>
+                        <a href="?<?= http_build_query(array_merge($_GET, ['pagina' => $i])) ?>"><?= $i ?></a>
+                    <?php endif; ?>
+                <?php endfor; ?>
+                
+                <?php if ($pagina < $total_paginas): ?>
+                    <a href="?<?= http_build_query(array_merge($_GET, ['pagina' => $pagina + 1])) ?>">
+                        <i class="fas fa-chevron-right"></i>
+                    </a>
+                <?php endif; ?>
+            </div>
             <?php endif; ?>
         </div>
-    </section>
-    
-    <?php endif; ?>
-    
+    </main>
 </div>
 
 <script>
-// Countdown
-<?php if ($evento_ativo || $evento_futuro): ?>
-const targetDate = new Date('<?= $evento_ativo ? $evento['data_fim'] : $evento['data_inicio'] ?>').getTime();
+// Toggle Sidebar
+const btnToggle = document.getElementById('btnFilterToggle');
+const sidebar = document.getElementById('filtersSidebar');
+const overlay = document.getElementById('sidebarOverlay');
 
-function updateCountdown() {
-    const now = Date.now();
-    const distance = targetDate - now;
+btnToggle.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    btnToggle.classList.toggle('active');
+    overlay.classList.toggle('active');
+});
+
+overlay.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    btnToggle.classList.remove('active');
+    overlay.classList.remove('active');
+});
+
+// ✅ Feedback visual imediato ao clicar nos filtros
+document.querySelectorAll('.filter-option input[type="radio"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        const group = this.closest('.filter-options');
+        group.querySelectorAll('.filter-option').forEach(opt => {
+            opt.classList.remove('active');
+        });
+        this.closest('.filter-option').classList.add('active');
+    });
+});
+
+// Rating Slider
+const ratingSlider = document.getElementById('ratingSlider');
+const ratingDisplay = document.getElementById('ratingDisplay');
+
+ratingSlider.addEventListener('input', function() {
+    const val = parseFloat(this.value);
+    ratingDisplay.textContent = val === 0 ? 'Qualquer' : val.toFixed(1);
+});
+
+// Sort
+function applySort(value) {
+    const url = new URL(window.location);
+    url.searchParams.set('ordem', value);
+    url.searchParams.delete('pagina');
+    window.location = url;
+}
+
+// Countdown
+const countdownEl = document.getElementById('countdown');
+if (countdownEl) {
+    const endDate = new Date(countdownEl.dataset.end).getTime();
     
-    if (distance < 0) {
-        location.reload();
-        return;
+    function updateCountdown() {
+        const now = new Date().getTime();
+        const diff = endDate - now;
+        
+        if (diff > 0) {
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            
+            document.getElementById('days').textContent = String(days).padStart(2, '0');
+            document.getElementById('hours').textContent = String(hours).padStart(2, '0');
+            document.getElementById('mins').textContent = String(mins).padStart(2, '0');
+        }
     }
     
-    const d = Math.floor(distance / (1000 * 60 * 60 * 24));
-    const h = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-    const s = Math.floor((distance % (1000 * 60)) / 1000);
-    
-    document.getElementById('days').textContent = String(d).padStart(2, '0');
-    document.getElementById('hours').textContent = String(h).padStart(2, '0');
-    document.getElementById('minutes').textContent = String(m).padStart(2, '0');
-    document.getElementById('seconds').textContent = String(s).padStart(2, '0');
+    updateCountdown();
+    setInterval(updateCountdown, 60000);
 }
-
-updateCountdown();
-setInterval(updateCountdown, 1000);
-<?php endif; ?>
-
-// Filter & Sort
-const grid = document.getElementById('gamesGrid');
-const filterBtns = document.querySelectorAll('.filter-btn');
-const sortSelect = document.getElementById('sortSelect');
-let allCards = Array.from(document.querySelectorAll('.game-card-wrapper'));
-
-filterBtns.forEach(btn => {
-    btn.addEventListener('click', function() {
-        filterBtns.forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
-        filterGames(this.dataset.filter);
-    });
-});
-
-sortSelect?.addEventListener('change', function() {
-    sortGames(this.value);
-});
-
-function filterGames(filter) {
-    let visible = 0;
-    
-    allCards.forEach(card => {
-        const discount = parseInt(card.dataset.discount) || 0;
-        let show = true;
-        
-        if (filter === '50') show = discount >= 50;
-        else if (filter === '75') show = discount >= 75;
-        
-        card.style.display = show ? '' : 'none';
-        if (show) visible++;
-    });
-    
-    document.getElementById('visibleCount').textContent = visible;
-}
-
-function sortGames(sortBy) {
-    const cards = Array.from(grid.querySelectorAll('.game-card-wrapper'));
-    
-    cards.sort((a, b) => {
-        const dA = parseInt(a.dataset.discount) || 0;
-        const dB = parseInt(b.dataset.discount) || 0;
-        const pA = parseInt(a.dataset.price) || 0;
-        const pB = parseInt(b.dataset.price) || 0;
-        const nA = a.dataset.name || '';
-        const nB = b.dataset.name || '';
-        
-        switch (sortBy) {
-            case 'discount': return dB - dA;
-            case 'price-low': return pA - pB;
-            case 'price-high': return pB - pA;
-            case 'name': return nA.localeCompare(nB);
-            default: return 0;
-        }
-    });
-    
-    cards.forEach(card => grid.appendChild(card));
-}
-
-// Simple fade-in animation
-const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-        if (entry.isIntersecting) {
-            entry.target.style.opacity = '1';
-            entry.target.style.transform = 'translateY(0)';
-        }
-    });
-}, { threshold: 0.1 });
-
-document.querySelectorAll('.game-card-wrapper, .stat-card').forEach(el => {
-    el.style.opacity = '0';
-    el.style.transform = 'translateY(20px)';
-    el.style.transition = 'opacity 0.4s, transform 0.4s';
-    observer.observe(el);
-});
 </script>
 
 <?php

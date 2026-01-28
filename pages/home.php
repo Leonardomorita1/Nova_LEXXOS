@@ -1,5 +1,5 @@
 <?php
-// pages/home.php - Versão Final Otimizada
+// pages/home.php - Versão com Personalidade Gaming
 require_once '../config/config.php';
 require_once '../config/database.php';
 require_once '../components/game-card.php';
@@ -36,10 +36,8 @@ if ($user_id) {
 }
 
 // --- QUERIES ---
-// Banners
 $banners = $pdo->query("SELECT * FROM banner WHERE ativo = 1 ORDER BY ordem LIMIT 5")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-// Jogos Destaque (Hero)
 $jogos_destaque = $pdo->query("
     SELECT j.*, d.nome_estudio FROM jogo j 
     LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id 
@@ -47,33 +45,31 @@ $jogos_destaque = $pdo->query("
     ORDER BY j.criado_em DESC LIMIT 5
 ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-// Categorias com Top 3 jogos
 $categorias = $pdo->query("
-    SELECT c.*, (SELECT COUNT(*) FROM jogo_categoria jc 
-    JOIN jogo j ON jc.jogo_id = j.id WHERE jc.categoria_id = c.id AND j.status = 'publicado') as total_jogos 
-    FROM categoria c WHERE c.ativa = 1 ORDER BY c.ordem, c.nome LIMIT 12
+    SELECT c.*, 
+    (SELECT COUNT(*) FROM jogo_categoria jc JOIN jogo j ON jc.jogo_id = j.id WHERE jc.categoria_id = c.id AND j.status = 'publicado') as total_jogos 
+    FROM categoria c WHERE c.ativa = 1 ORDER BY c.ordem LIMIT 10
 ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
+// Preenche imagens para categorias
 foreach ($categorias as &$cat) {
     $stmt = $pdo->prepare("
-        SELECT j.imagem_capa, j.titulo FROM jogo j
+        SELECT j.imagem_capa FROM jogo j
         JOIN jogo_categoria jc ON j.id = jc.jogo_id
         WHERE jc.categoria_id = ? AND j.status = 'publicado'
-        ORDER BY j.total_vendas DESC, j.nota_media DESC LIMIT 3
+        ORDER BY j.total_vendas DESC LIMIT 3
     ");
     $stmt->execute([$cat['id']]);
-    $cat['top_jogos'] = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $cat['covers'] = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
 }
 unset($cat);
 
-// Lançamentos (5 para o showcase)
 $lancamentos_showcase = $pdo->query("
     SELECT j.imagem_capa, j.titulo, j.slug FROM jogo j 
     WHERE j.status = 'publicado' 
     ORDER BY j.publicado_em DESC LIMIT 5
 ")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-// Outras seções
 $promocoes = $pdo->query("
     SELECT j.*, d.nome_estudio FROM jogo j 
     LEFT JOIN desenvolvedor d ON j.desenvolvedor_id = d.id 
@@ -118,36 +114,37 @@ require_once '../includes/header.php';
 ?>
 
 <style>
-    /* ============================================
-   HOME PAGE STYLES
+/* ============================================
+   HOME PAGE - GAMING IDENTITY
    ============================================ */
-    .home-wrapper {
-        background: var(--bg-primary);
-        min-height: 100vh;
-    }
+.home-wrapper {
+    background: var(--bg-primary);
+    min-height: 100vh;
+    position: relative;
+}
 
-    .home-container {
-        max-width: 1400px;
-        margin: 0 auto;
-        padding: 0 24px 80px;
-    }
+.home-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+}
 
-    /* ============================================
-   BANNERS PROMOCIONAIS - ESTILO PLAYSTATION
+/* ============================================
+   BANNER PRINCIPAL - ESTILO GAMING
    ============================================ */
-
 .promo-banner-section {
     position: relative;
     width: 100%;
-    margin-bottom: 40px;
+    margin-bottom: 48px;
 }
 
 .promo-banner-slider {
     position: relative;
     width: 100%;
-    height: 500px;
+    height: 480px;
     overflow: hidden;
-    border-radius: 12px;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 }
 
 .promo-banner-track {
@@ -163,165 +160,275 @@ require_once '../includes/header.php';
     overflow: hidden;
 }
 
-/* Imagem de Fundo */
-.promo-banner-image {
+/* Background Layer */
+.banner-bg-layer {
     position: absolute;
     inset: 0;
-    width: 100%;
-    height: 100%;
+    overflow: hidden;
 }
 
-.promo-banner-image img {
+.banner-bg-layer img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    transform: scale(1.1);
 }
 
-.promo-banner-overlay-gradient {
+/* Gaming Gradient Overlay */
+.banner-gradient-overlay {
     position: absolute;
     inset: 0;
     background: linear-gradient(
-        to right,
-        rgba(19, 19, 20, 0.95) 0%,
-        rgba(19, 19, 20, 0.7) 40%,
-        rgba(19, 19, 20, 0.3) 70%,
-        transparent 100%
+        135deg,
+        rgba(var(--banner-rgb, 19, 19, 20), 0.98) 0%,
+        rgba(var(--banner-rgb, 19, 19, 20), 0.85) 30%,
+        rgba(var(--banner-rgb, 19, 19, 20), 0.6) 60%,
+        rgba(var(--banner-rgb, 19, 19, 20), 0.3) 100%
     );
 }
 
-.promo-banner-image.no-image {
-    background: var(--banner-bg, #131314);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* Decorative Gaming Elements */
+.banner-decor {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
 }
 
-.promo-fallback-icon {
-    font-size: 80px;
-    color: rgba(227, 227, 227, 0.1);
+/* Glowing Orbs */
+.banner-decor::before {
+    content: '';
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, var(--banner-accent, #4C8BF5) 0%, transparent 70%);
+    opacity: 0.15;
+    top: -200px;
+    right: -100px;
+    animation: pulse-glow 4s ease-in-out infinite;
+}
+
+.banner-decor::after {
+    content: '';
+    position: absolute;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, var(--banner-accent, #4C8BF5) 0%, transparent 70%);
+    opacity: 0.1;
+    bottom: -100px;
+    left: 20%;
+    animation: pulse-glow 4s ease-in-out infinite 2s;
+}
+
+@keyframes pulse-glow {
+    0%, 100% { transform: scale(1); opacity: 0.15; }
+    50% { transform: scale(1.1); opacity: 0.2; }
+}
+
+/* Geometric Lines */
+.banner-lines {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    opacity: 0.1;
+}
+
+.banner-lines::before,
+.banner-lines::after {
+    content: '';
+    position: absolute;
+    background: linear-gradient(90deg, transparent, var(--banner-accent, #4C8BF5), transparent);
+    height: 1px;
+}
+
+.banner-lines::before {
+    width: 60%;
+    top: 30%;
+    right: 0;
+    transform: rotate(-5deg);
+}
+
+.banner-lines::after {
+    width: 40%;
+    bottom: 25%;
+    left: 0;
+    transform: rotate(3deg);
 }
 
 /* ============================================
-   LAYOUT PROMOCIONAL
+   BANNER CONTENT LAYOUT
    ============================================ */
-
-.promo-banner-content-promocional {
+.banner-content-wrapper {
     position: relative;
     z-index: 10;
     height: 100%;
     display: grid;
     grid-template-columns: 1fr 1fr;
     align-items: center;
-    padding: 60px;
+    padding: 50px 60px;
     max-width: 1400px;
     margin: 0 auto;
     gap: 40px;
 }
 
-.promo-content-left {
+.banner-text-content {
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    max-width: 600px;
+    gap: 16px;
 }
 
-/* Título Principal */
-.promo-title-main {
-    font-size: 56px;
-    font-weight: 900;
-    line-height: 1;
-    color: var(--banner-text, #E3E3E3);
-    text-transform: uppercase;
-    letter-spacing: -1px;
-    margin: 0;
-    text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-/* Subtítulo (ex: "TERMINA EM 4/2") */
-.promo-subtitle {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--banner-text, #E3E3E3);
-    text-transform: uppercase;
-    margin: 0;
-    display: flex;
+/* Event Tag */
+.banner-event-tag {
+    display: inline-flex;
     align-items: center;
     gap: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    padding: 8px 16px;
+    border-radius: 50px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    width: fit-content;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--banner-text, #fff);
 }
 
-.promo-date {
+.banner-event-tag i {
+    color: var(--banner-accent, #4C8BF5);
+}
+
+/* Main Title - Big Impact */
+.banner-main-title {
+    font-size: clamp(36px, 5vw, 64px);
+    font-weight: 900;
+    line-height: 1;
+    color: var(--banner-text, #fff);
+    text-transform: uppercase;
+    letter-spacing: -2px;
+    margin: 0;
+    text-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+}
+
+.banner-main-title .highlight {
+    color: var(--banner-accent, #4C8BF5);
+    display: block;
+    text-shadow: 0 0 40px var(--banner-accent);
+}
+
+/* Countdown/Date Info */
+.banner-date-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.banner-date-badge {
     background: var(--banner-accent, #4C8BF5);
-    padding: 4px 12px;
+    color: #fff;
+    padding: 6px 14px;
     border-radius: 6px;
     font-weight: 700;
-    color: white;
+    font-size: 13px;
 }
 
-/* Box de Desconto */
-.promo-discount-box {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(10px);
-    padding: 24px 32px;
-    border-radius: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    width: fit-content;
+/* Discount Display - Gaming Style */
+.banner-discount-display {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    margin: 8px 0;
 }
 
-.promo-discount-label {
-    font-size: 16px;
+.discount-label {
+    font-size: 14px;
     font-weight: 700;
     text-transform: uppercase;
-    color: var(--banner-text, #E3E3E3);
-    letter-spacing: 1px;
+    letter-spacing: 2px;
+    color: rgba(255, 255, 255, 0.7);
+    writing-mode: vertical-lr;
+    transform: rotate(180deg);
+    padding-bottom: 4px;
 }
 
-.promo-discount-value {
-    font-size: 72px;
+.discount-value-wrapper {
+    position: relative;
+}
+
+.discount-value {
+    font-size: clamp(60px, 8vw, 100px);
     font-weight: 900;
     color: var(--banner-accent, #4C8BF5);
     line-height: 1;
-    text-shadow: 0 0 20px var(--banner-accent);
+    text-shadow: 0 0 60px var(--banner-accent);
 }
 
-/* Botão CTA Promocional */
-.promo-banner-btn.promocional {
-    background: var(--banner-accent, #4C8BF5);
-    color: white;
-    padding: 16px 32px;
-    border-radius: 8px;
-    font-weight: 700;
-    font-size: 16px;
-    text-transform: uppercase;
+.discount-percent {
+    font-size: clamp(24px, 3vw, 36px);
+    font-weight: 800;
+    color: var(--banner-accent, #4C8BF5);
+    vertical-align: super;
+}
+
+/* CTA Button - Gaming Style */
+.banner-cta-btn {
     display: inline-flex;
     align-items: center;
     gap: 12px;
-    transition: all 0.3s;
-    width: fit-content;
-    border: none;
-    cursor: pointer;
+    background: var(--banner-accent, #4C8BF5);
+    color: #fff;
+    padding: 16px 32px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
     text-decoration: none;
-    box-shadow: 0 8px 24px rgba(76, 139, 245, 0.3);
+    width: fit-content;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 
+        0 8px 32px rgba(76, 139, 245, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    position: relative;
+    overflow: hidden;
 }
 
-.promo-banner-btn.promocional:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 32px rgba(76, 139, 245, 0.5);
+.banner-cta-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left 0.5s;
 }
 
-.promo-banner-btn.promocional i {
+.banner-cta-btn:hover::before {
+    left: 100%;
+}
+
+.banner-cta-btn:hover {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 
+        0 16px 48px rgba(76, 139, 245, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.banner-cta-btn i {
     transition: transform 0.3s;
 }
 
-.promo-banner-btn.promocional:hover i {
+.banner-cta-btn:hover i {
     transform: translateX(4px);
 }
 
-/* Imagem Overlay (Flutuante) */
-.promo-content-right {
+/* Featured Image Side */
+.banner-featured-side {
     position: relative;
     height: 100%;
     display: flex;
@@ -329,90 +436,78 @@ require_once '../includes/header.php';
     justify-content: center;
 }
 
-.promo-overlay-image {
+.banner-featured-image {
     max-width: 100%;
-    max-height: 90%;
+    max-height: 400px;
     object-fit: contain;
-    position: absolute;
-    filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.5));
-    animation: float 6s ease-in-out infinite;
+    filter: drop-shadow(0 30px 60px rgba(0, 0, 0, 0.6));
+    animation: float-gaming 5s ease-in-out infinite;
+    position: relative;
+    z-index: 2;
 }
 
-@keyframes float {
+@keyframes float-gaming {
     0%, 100% {
-        transform: translateY(0) rotate(-2deg);
+        transform: translateY(0) rotate(-1deg);
     }
     50% {
-        transform: translateY(-20px) rotate(2deg);
+        transform: translateY(-20px) rotate(1deg);
     }
 }
 
-/* ============================================
-   LAYOUT SIMPLES (Original)
-   ============================================ */
+/* Glow behind image */
+.banner-image-glow {
+    position: absolute;
+    width: 80%;
+    height: 80%;
+    background: radial-gradient(ellipse, var(--banner-accent, #4C8BF5) 0%, transparent 70%);
+    opacity: 0.3;
+    filter: blur(60px);
+    animation: glow-pulse 3s ease-in-out infinite;
+}
 
-.promo-banner-info {
+@keyframes glow-pulse {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.1); }
+}
+
+/* Simple Banner Style */
+.banner-simple-content {
     position: relative;
     z-index: 10;
-    max-width: 600px;
+    max-width: 650px;
     padding: 60px;
     display: flex;
     flex-direction: column;
     gap: 20px;
 }
 
-.promo-banner-title {
-    font-size: 48px;
+.banner-simple-title {
+    font-size: 42px;
     font-weight: 800;
-    color: #E3E3E3;
+    color: #fff;
     margin: 0;
-    line-height: 1.1;
+    line-height: 1.15;
 }
 
-.promo-banner-desc {
-    font-size: 18px;
-    color: #95a5a6;
+.banner-simple-desc {
+    font-size: 17px;
+    color: rgba(255, 255, 255, 0.7);
     margin: 0;
-    line-height: 1.5;
+    line-height: 1.6;
 }
 
-.promo-banner-btn {
-    background: #4C8BF5;
-    color: white;
-    padding: 14px 28px;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 16px;
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    transition: all 0.3s;
-    width: fit-content;
-    text-decoration: none;
-    border: none;
-    cursor: pointer;
-}
-
-.promo-banner-btn:hover {
-    background: #3a73d1;
-    transform: translateY(-2px);
-    box-shadow: 0 8px 16px rgba(76, 139, 245, 0.3);
-}
-
-/* ============================================
-   NAVEGAÇÃO
-   ============================================ */
-
-.promo-banner-nav {
+/* Navigation Arrows */
+.banner-nav-arrow {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: white;
-    width: 50px;
-    height: 50px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #fff;
+    width: 52px;
+    height: 52px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -420,1286 +515,1207 @@ require_once '../includes/header.php';
     cursor: pointer;
     transition: all 0.3s;
     z-index: 20;
+    font-size: 18px;
 }
 
-.promo-banner-nav:hover {
-    background: rgba(255, 255, 255, 0.2);
+.banner-nav-arrow:hover {
+    background: var(--accent);
+    border-color: var(--accent);
     transform: translateY(-50%) scale(1.1);
 }
 
-.promo-banner-nav.prev {
-    left: 20px;
-}
+.banner-nav-arrow.prev { left: 24px; }
+.banner-nav-arrow.next { right: 24px; }
 
-.promo-banner-nav.next {
-    right: 20px;
-}
-
-/* Dots de Navegação */
-.promo-banner-dots {
+/* Navigation Dots */
+.banner-dots {
     display: flex;
     justify-content: center;
     gap: 12px;
     margin-top: 20px;
 }
 
-.promo-banner-dot {
+.banner-dot {
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: rgba(227, 227, 227, 0.3);
+    background: rgba(255, 255, 255, 0.2);
     cursor: pointer;
     transition: all 0.3s;
+    position: relative;
 }
 
-.promo-banner-dot.active {
-    background: #4C8BF5;
-    width: 32px;
+.banner-dot::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    transition: border-color 0.3s;
+}
+
+.banner-dot.active {
+    background: var(--accent);
+    width: 36px;
     border-radius: 6px;
 }
 
-.promo-banner-dot:hover {
-    background: rgba(227, 227, 227, 0.5);
+.banner-dot.active::after {
+    border-color: var(--accent);
+    border-radius: 10px;
+}
+
+.banner-dot:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.4);
 }
 
 /* ============================================
-   RESPONSIVIDADE
+   HERO - FEATURED GAMES
    ============================================ */
+.hero-section {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 20px;
+    margin-bottom: 56px;
+}
 
+.hero-main {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+    background: var(--bg-secondary);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.hero-slide {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.6s ease;
+}
+
+.hero-slide.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.hero-bg {
+    position: absolute;
+    inset: 0;
+}
+
+.hero-bg img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.hero-bg::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        to top,
+        rgba(0, 0, 0, 0.95) 0%,
+        rgba(0, 0, 0, 0.5) 40%,
+        rgba(0, 0, 0, 0.2) 70%,
+        transparent 100%
+    );
+}
+
+.hero-content {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 36px;
+    z-index: 2;
+}
+
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--accent);
+    color: #000;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 14px;
+}
+
+.hero-badge.promo {
+    background: linear-gradient(135deg, #00d26a, #00a854);
+    color: #fff;
+}
+
+.hero-title {
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: #fff;
+    margin: 0 0 10px;
+    line-height: 1.15;
+    text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+}
+
+.hero-dev {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hero-dev::before {
+    content: '';
+    width: 20px;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 2px;
+}
+
+.hero-price-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 22px;
+}
+
+.hero-discount {
+    background: linear-gradient(135deg, #00d26a, #00a854);
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 800;
+}
+
+.hero-old-price {
+    color: rgba(255, 255, 255, 0.4);
+    text-decoration: line-through;
+    font-size: 15px;
+}
+
+.hero-price {
+    font-size: 26px;
+    font-weight: 800;
+    color: #fff;
+}
+
+.hero-price.free {
+    color: #00d26a;
+}
+
+.hero-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--accent);
+    color: #000;
+    padding: 14px 28px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.3s;
+}
+
+.hero-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(76, 139, 245, 0.4);
+}
+
+/* Hero Sidebar */
+.hero-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    padding: 14px;
+    border: 1px solid var(--border);
+}
+
+.hero-sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.25s;
+    border: 2px solid transparent;
+}
+
+.hero-sidebar-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.hero-sidebar-item.active {
+    background: rgba(76, 139, 245, 0.1);
+    border-color: var(--accent);
+}
+
+.hero-sidebar-thumb {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.hero-sidebar-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.hero-sidebar-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+
+.hero-sidebar-price {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.hero-sidebar-price .discount {
+    color: #00d26a;
+    font-weight: 700;
+}
+
+/* Hero Arrows */
+.hero-arrows {
+    position: absolute;
+    top: 50%;
+    left: 20px;
+    right: 20px;
+    transform: translateY(-50%);
+    display: flex;
+    justify-content: space-between;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.hero-arrow {
+    width: 48px;
+    height: 48px;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: all 0.25s;
+}
+
+.hero-arrow:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    transform: scale(1.1);
+}
+
+/* ============================================
+   SECTION HEADERS - GAMING STYLE
+   ============================================ */
+.section {
+    margin-bottom: 56px;
+    position: relative;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    position: relative;
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+    position: relative;
+}
+
+.section-title-icon {
+    width: 42px;
+    height: 42px;
+    background: linear-gradient(135deg, var(--accent), #667eea);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(76, 139, 245, 0.3);
+}
+
+.section-title-icon.fire {
+    background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
+    box-shadow: 0 4px 16px rgba(255, 107, 107, 0.3);
+}
+
+.section-title-icon.star {
+    background: linear-gradient(135deg, #f9ca24, #f0932b);
+    box-shadow: 0 4px 16px rgba(249, 202, 36, 0.3);
+}
+
+.section-title-icon.gift {
+    background: linear-gradient(135deg, #00d26a, #00a854);
+    box-shadow: 0 4px 16px rgba(0, 210, 106, 0.3);
+}
+
+.section-title-icon.dev {
+    background: linear-gradient(135deg, #9147ff, #772ce8);
+    box-shadow: 0 4px 16px rgba(145, 71, 255, 0.3);
+}
+
+.section-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.section-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: rgba(76, 139, 245, 0.1);
+}
+
+.section-link:hover {
+    background: rgba(76, 139, 245, 0.2);
+}
+
+.section-link i {
+    transition: transform 0.2s;
+}
+
+.section-link:hover i {
+    transform: translateX(4px);
+}
+
+.section-nav {
+    display: flex;
+    gap: 8px;
+}
+
+.section-nav-btn {
+    width: 40px;
+    height: 40px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.section-nav-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(76, 139, 245, 0.1);
+}
+
+/* ============================================
+   SHOWCASE CARDS - GAMING STYLE
+   ============================================ */
+.showcase-cards-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 56px;
+}
+
+.showcase-card {
+    position: relative;
+    background: var(--bg-secondary);
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    text-decoration: none;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.showcase-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-6px);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+}
+
+.showcase-card.sale-card:hover {
+    border-color: #00d26a;
+    box-shadow: 0 20px 50px rgba(0, 210, 106, 0.15);
+}
+
+/* Showcase Images */
+.showcase-images {
+    position: relative;
+    height: 200px;
+    perspective: 1000px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(76, 139, 245, 0.1) 0%, transparent 100%);
+}
+
+.showcase-card.sale-card .showcase-images {
+    background: linear-gradient(135deg, rgba(0, 210, 106, 0.15) 0%, rgba(0, 100, 50, 0.1) 100%);
+}
+
+.showcase-stack {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.showcase-img {
+    position: absolute;
+    width: 100px;
+    height: 140px;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.showcase-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.showcase-img:nth-child(1) {
+    transform: translateX(-140px) rotateY(25deg) scale(0.75);
+    z-index: 1;
+    filter: brightness(0.5);
+}
+
+.showcase-img:nth-child(2) {
+    transform: translateX(-70px) rotateY(15deg) scale(0.85);
+    z-index: 2;
+    filter: brightness(0.7);
+}
+
+.showcase-img:nth-child(3) {
+    transform: translateX(0) rotateY(0deg) scale(1);
+    z-index: 3;
+    box-shadow: 0 16px 48px rgba(76, 139, 245, 0.3);
+}
+
+.showcase-card.sale-card .showcase-img:nth-child(3) {
+    box-shadow: 0 16px 48px rgba(0, 210, 106, 0.3);
+}
+
+.showcase-img:nth-child(4) {
+    transform: translateX(70px) rotateY(-15deg) scale(0.85);
+    z-index: 2;
+    filter: brightness(0.7);
+}
+
+.showcase-img:nth-child(5) {
+    transform: translateX(140px) rotateY(-25deg) scale(0.75);
+    z-index: 1;
+    filter: brightness(0.5);
+}
+
+.showcase-card:hover .showcase-img:nth-child(1) {
+    transform: translateX(-155px) rotateY(30deg) scale(0.7);
+}
+
+.showcase-card:hover .showcase-img:nth-child(2) {
+    transform: translateX(-78px) rotateY(18deg) scale(0.82);
+}
+
+.showcase-card:hover .showcase-img:nth-child(3) {
+    transform: translateX(0) rotateY(0deg) scale(1.08);
+}
+
+.showcase-card:hover .showcase-img:nth-child(4) {
+    transform: translateX(78px) rotateY(-18deg) scale(0.82);
+}
+
+.showcase-card:hover .showcase-img:nth-child(5) {
+    transform: translateX(155px) rotateY(-30deg) scale(0.7);
+}
+
+/* Showcase Info */
+.showcase-info {
+    padding: 24px 28px;
+    border-top: 1px solid var(--border);
+}
+
+.showcase-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.showcase-tag.new {
+    background: linear-gradient(135deg, var(--accent), #667eea);
+    color: #fff;
+}
+
+.showcase-tag.sale {
+    background: linear-gradient(135deg, #00d26a, #00a854);
+    color: #fff;
+}
+
+.showcase-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 8px;
+}
+
+.showcase-desc {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* ============================================
+   CATEGORY CARDS
+   ============================================ */
+.category-scroll {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 20px;
+    scrollbar-width: none;
+}
+.category-scroll::-webkit-scrollbar { display: none; }
+
+.cat-tile {
+    flex: 0 0 200px;
+    height: 120px;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    transition: 0.3s;
+}
+
+/* Imagens de fundo em colagem */
+.cat-bg-collage {
+    position: absolute;
+    inset: 0;
+    opacity: 0.3;
+    display: flex;
+    filter: blur(2px) grayscale(100%);
+    transition: 0.3s;
+}
+
+.cat-bg-collage img {
+    width: 33.33%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.cat-content {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.8));
+}
+
+.cat-icon { font-size: 24px; color: #fff; margin-bottom: 8px; }
+.cat-name { font-size: 16px; font-weight: 700; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+.cat-count { font-size: 11px; color: rgba(255,255,255,0.7); background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 10px; margin-top: 4px; }
+
+.cat-tile:hover {
+    border-color: var(--accent);
+    transform: translateY(-4px);
+}
+.cat-tile:hover .cat-bg-collage {
+    opacity: 0.6;
+    filter: blur(0) grayscale(0%);
+}
+
+
+/* ============================================
+   GAMES CAROUSEL
+   ============================================ */
+.games-carousel {
+    position: relative;
+}
+
+.games-carousel-track {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    padding-bottom: 8px;
+}
+
+.games-carousel-track::-webkit-scrollbar {
+    display: none;
+}
+
+.games-carousel-track .ps-card {
+    flex: 0 0 180px;
+    min-width: 180px;
+}
+
+/* ============================================
+   FREE GAMES SECTION
+   ============================================ */
+.free-games-section {
+    background: linear-gradient(135deg, rgba(0, 210, 106, 0.08) 0%, rgba(0, 168, 84, 0.03) 100%);
+    border: 1px solid rgba(0, 210, 106, 0.2);
+    border-radius: 20px;
+    padding: 32px;
+    margin-bottom: 56px;
+    position: relative;
+    overflow: hidden;
+}
+
+.free-games-section::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(0, 210, 106, 0.15) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+.free-games-section .section-title {
+    color: #00d26a;
+}
+
+.free-games-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 24px;
+}
+
+/* ============================================
+   DEVELOPERS CAROUSEL
+   ============================================ */
+.devs-carousel {
+    position: relative;
+}
+
+.devs-track {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    scrollbar-width: none;
+    padding-bottom: 8px;
+}
+
+.devs-track::-webkit-scrollbar {
+    display: none;
+}
+
+.dev-card {
+    flex: 0 0 200px;
+    min-width: 200px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 20px;
+    text-align: center;
+    text-decoration: none;
+    transition: all 0.3s;
+}
+
+.dev-card:hover {
+    border-color: #9147ff;
+    transform: translateY(-6px);
+    box-shadow: 0 12px 40px rgba(145, 71, 255, 0.15);
+}
+
+.dev-logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    object-fit: cover;
+    margin: 0 auto 14px;
+    background: var(--bg-primary);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.dev-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.dev-name i {
+    color: #9147ff;
+    font-size: 12px;
+}
+
+.dev-count {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
 @media (max-width: 1200px) {
-    .promo-banner-content-promocional {
+    .hero-section {
+        grid-template-columns: 1fr 300px;
+    }
+
+    .showcase-cards-row {
+        grid-template-columns: 1fr;
+    }
+
+    .banner-content-wrapper {
         padding: 40px;
     }
 
-    .promo-title-main {
-        font-size: 42px;
+    .free-games-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 1024px) {
+    .hero-section {
+        grid-template-columns: 1fr;
     }
 
-    .promo-discount-value {
-        font-size: 56px;
+    .hero-sidebar {
+        display: none;
+    }
+
+    .banner-content-wrapper {
+        grid-template-columns: 1fr;
+        text-align: center;
+    }
+
+    .banner-text-content {
+        align-items: center;
+    }
+
+    .banner-featured-side {
+        display: none;
+    }
+
+    .free-games-grid {
+        grid-template-columns: repeat(2, 1fr);
     }
 }
 
 @media (max-width: 768px) {
+    .home-container {
+        padding: 0 16px 60px;
+    }
+
     .promo-banner-slider {
-        height: 600px;
+        height: 400px;
+        border-radius: 16px;
     }
 
-    .promo-banner-content-promocional {
-        grid-template-columns: 1fr;
-        padding: 30px 20px;
-        gap: 30px;
+    .banner-content-wrapper {
+        padding: 30px 24px;
     }
 
-    .promo-content-right {
-        order: -1;
-        height: 250px;
-    }
-
-    .promo-overlay-image {
-        max-height: 100%;
-    }
-
-    .promo-title-main {
+    .banner-main-title {
         font-size: 32px;
     }
 
-    .promo-subtitle {
-        font-size: 14px;
+    .discount-value {
+        font-size: 56px;
     }
 
-    .promo-discount-box {
-        padding: 16px 24px;
-    }
-
-    .promo-discount-label {
-        font-size: 14px;
-    }
-
-    .promo-discount-value {
-        font-size: 48px;
-    }
-
-    .promo-banner-nav {
+    .banner-nav-arrow {
         width: 40px;
         height: 40px;
     }
 
-    .promo-banner-info {
-        padding: 30px 20px;
-    }
-
-    .promo-banner-title {
-        font-size: 32px;
-    }
-
-    .promo-banner-desc {
-        font-size: 16px;
-    }
-}
-
-    /* ============================================
-   HERO - EPIC GAMES STYLE
-   ============================================ */
-    .hero-section {
-        display: grid;
-        grid-template-columns: 1fr 320px;
-        gap: 16px;
-        margin-bottom: 48px;
-    }
-
     .hero-main {
-        position: relative;
+        aspect-ratio: 4 / 3;
         border-radius: 12px;
-        overflow: hidden;
-        aspect-ratio: 16 / 9;
-        background: var(--bg-secondary);
-    }
-
-    .hero-slide {
-        position: absolute;
-        inset: 0;
-        opacity: 0;
-        visibility: hidden;
-        transition: all 0.5s ease;
-    }
-
-    .hero-slide.active {
-        opacity: 1;
-        visibility: visible;
-    }
-
-    .hero-bg {
-        position: absolute;
-        inset: 0;
-    }
-
-    .hero-bg img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .hero-bg::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.3) 50%, transparent 100%);
     }
 
     .hero-content {
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        padding: 32px;
-        z-index: 2;
-    }
-
-    .hero-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: var(--accent);
-        color: #000;
-        padding: 6px 12px;
-        border-radius: 4px;
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        margin-bottom: 12px;
-    }
-
-    .hero-badge.promo {
-        background: var(--success);
+        padding: 24px;
     }
 
     .hero-title {
-        font-size: 2rem;
-        font-weight: 700;
-        color: #fff;
-        margin: 0 0 8px;
-        line-height: 1.2;
+        font-size: 1.5rem;
     }
 
-    .hero-dev {
-        font-size: 13px;
-        color: rgba(255, 255, 255, 0.6);
-        margin-bottom: 16px;
-    }
-
-    .hero-price-row {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 20px;
-    }
-
-    .hero-discount {
-        background: var(--success);
-        color: #fff;
-        padding: 6px 10px;
-        border-radius: 4px;
-        font-size: 14px;
-        font-weight: 700;
-    }
-
-    .hero-old-price {
-        color: rgba(255, 255, 255, 0.5);
-        text-decoration: line-through;
-        font-size: 14px;
-    }
-
-    .hero-price {
-        font-size: 24px;
-        font-weight: 700;
-        color: #fff;
-    }
-
-    .hero-price.free {
-        color: var(--success);
-    }
-
-    .hero-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: var(--accent);
-        color: #000;
-        padding: 12px 24px;
-        border-radius: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        text-decoration: none;
-        transition: all 0.2s;
-    }
-
-    .hero-btn:hover {
-        filter: brightness(1.1);
-    }
-
-    /* Hero Sidebar */
-    .hero-sidebar {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        background: var(--bg-secondary);
-        border-radius: 12px;
-        padding: 12px;
-        overflow-y: auto;
-    }
-
-    .hero-sidebar-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 10px;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.2s;
-        border: 2px solid transparent;
-    }
-
-    .hero-sidebar-item:hover {
-        background: var(--bg-primary);
-    }
-
-    .hero-sidebar-item.active {
-        background: var(--bg-primary);
-        border-color: var(--accent);
-    }
-
-    .hero-sidebar-thumb {
-        width: 56px;
-        height: 56px;
-        border-radius: 6px;
-        overflow: hidden;
-        flex-shrink: 0;
-    }
-
-    .hero-sidebar-thumb img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .hero-sidebar-title {
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--text-primary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .hero-sidebar-price {
-        font-size: 12px;
-        color: var(--text-secondary);
-        margin-top: 4px;
-    }
-
-    .hero-sidebar-price .discount {
-        color: var(--success);
-        font-weight: 600;
-    }
-
-    /* Hero Arrows */
     .hero-arrows {
-        position: absolute;
-        top: 50%;
-        left: 16px;
-        right: 16px;
-        transform: translateY(-50%);
-        display: flex;
-        justify-content: space-between;
-        pointer-events: none;
-        z-index: 10;
-    }
-
-    .hero-arrow {
-        width: 44px;
-        height: 44px;
-        background: rgba(0, 0, 0, 0.6);
-        backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 50%;
-        color: #fff;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        pointer-events: auto;
-        transition: all 0.2s;
-    }
-
-    .hero-arrow:hover {
-        background: rgba(0, 0, 0, 0.8);
-        border-color: var(--accent);
-    }
-
-    /* ============================================
-   SECTION HEADERS
-   ============================================ */
-    .section {
-        margin-bottom: 48px;
-    }
-
-    .section-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 20px;
+        display: none;
     }
 
     .section-title {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 20px;
-        font-weight: 600;
-        color: var(--text-primary);
-        margin: 0;
+        font-size: 18px;
     }
 
-    .section-controls {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-
-    .section-link {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        color: var(--accent);
-        font-size: 13px;
-        font-weight: 500;
-        text-decoration: none;
-        transition: opacity 0.2s;
-    }
-
-    .section-link:hover {
-        opacity: 0.8;
+    .section-title-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 16px;
     }
 
     .section-nav {
-        display: flex;
-        gap: 8px;
-    }
-
-    .section-nav-btn {
-        width: 36px;
-        height: 36px;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: 50%;
-        color: var(--text-primary);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-
-    .section-nav-btn:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-    }
-
-    /* ============================================
-   CATEGORY CARDS - OVERLAP EFFECT (CAROUSEL)
-   ============================================ */
-    .categories-carousel {
-        position: relative;
-    }
-
-    .categories-track {
-        display: flex;
-        gap: 16px;
-        overflow-x: auto;
-        scroll-behavior: smooth;
-        scrollbar-width: none;
-        padding-bottom: 8px;
-    }
-
-    .categories-track::-webkit-scrollbar {
         display: none;
     }
 
     .category-card {
-        flex: 0 0 280px;
-        min-width: 280px;
-        position: relative;
-        background: var(--bg-secondary);
-        border-radius: 12px;
-        overflow: hidden;
-        text-decoration: none;
-        transition: all 0.3s ease;
-        border: 1px solid var(--border);
+        flex: 0 0 250px;
+        min-width: 250px;
     }
 
-    .category-card:hover {
-        transform: translateY(-4px);
-        border-color: var(--accent);
-        box-shadow: 0 8px 32px rgba(0, 174, 255, 0.15);
-    }
-
-    /* Overlap Images Container */
-    .category-images {
-        position: relative;
-        height: 140px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 20px;
-        overflow: hidden;
-    }
-
-    /* Side Images (Left & Right) */
-    .cat-img-side {
-        position: absolute;
-        width: 70px;
-        height: 90px;
-        border-radius: 8px;
-        overflow: hidden;
-        filter: blur(2px) brightness(0.6);
-        transition: all 0.3s ease;
-        z-index: 1;
-    }
-
-    .cat-img-side.left {
-        left: 25px;
-        transform: rotate(-8deg) scale(0.9);
-    }
-
-    .cat-img-side.right {
-        right: 25px;
-        transform: rotate(8deg) scale(0.9);
-    }
-
-    .cat-img-side img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    /* Center Image (Main) */
-    .cat-img-center {
-        position: relative;
-        width: 90px;
-        height: 120px;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-        z-index: 2;
-        transition: all 0.3s ease;
-    }
-
-    .cat-img-center img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .category-card:hover .cat-img-center {
-        transform: scale(1.05);
-        box-shadow: 0 12px 32px rgba(0, 174, 255, 0.3);
-    }
-
-    .category-card:hover .cat-img-side {
-        filter: blur(1px) brightness(0.7);
-    }
-
-    .category-card:hover .cat-img-side.left {
-        transform: rotate(-10deg) scale(0.95) translateX(-5px);
-    }
-
-    .category-card:hover .cat-img-side.right {
-        transform: rotate(10deg) scale(0.95) translateX(5px);
-    }
-
-    /* Placeholder for missing images */
-    .cat-img-placeholder {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: var(--bg-primary);
-        color: var(--text-secondary);
-        font-size: 24px;
-    }
-
-    /* Category Info */
-    .category-info {
-        padding: 16px 20px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        border-top: 1px solid var(--border);
-    }
-
-    .category-name {
-        font-size: 15px;
-        font-weight: 600;
-        color: var(--accent);
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .category-name i {
-        font-size: 14px;
-        opacity: 0.8;
-    }
-
-    .category-count {
-        font-size: 12px;
-        color: var(--text-secondary);
-        background: var(--bg-primary);
-        padding: 4px 10px;
-        border-radius: 12px;
-    }
-
-    /* ============================================
-   SHOWCASE CARD - STEAM PERSPECTIVE STYLE
-   ============================================ */
-    .showcase-cards-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-        margin-bottom: 48px;
-    }
-
-    .showcase-card {
-        position: relative;
-        background: var(--bg-secondary);
-        border-radius: 16px;
-        overflow: hidden;
-        border: 1px solid var(--border);
-        text-decoration: none;
-        transition: all 0.3s ease;
-    }
-
-    .showcase-card:hover {
-        border-color: var(--accent);
-        transform: translateY(-4px);
-        box-shadow: 0 12px 40px rgba(0, 174, 255, 0.15);
-    }
-
-    /* Steam Perspective Images */
     .showcase-images {
-        position: relative;
-        height: 200px;
-        perspective: 1000px;
-        overflow: hidden;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .showcase-stack {
-        position: relative;
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        height: 160px;
     }
 
     .showcase-img {
-        position: absolute;
-        width: 100px;
-        height: 140px;
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-        transition: all 0.4s ease;
-    }
-
-    .showcase-img img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    /* 5 cards in perspective */
-    .showcase-img:nth-child(1) {
-        transform: translateX(-140px) rotateY(25deg) scale(0.75);
-        z-index: 1;
-        filter: brightness(0.5);
-    }
-
-    .showcase-img:nth-child(2) {
-        transform: translateX(-70px) rotateY(15deg) scale(0.85);
-        z-index: 2;
-        filter: brightness(0.7);
-    }
-
-    .showcase-img:nth-child(3) {
-        transform: translateX(0) rotateY(0deg) scale(1);
-        z-index: 3;
-        box-shadow: 0 15px 40px rgba(0, 174, 255, 0.3);
-    }
-
-    .showcase-img:nth-child(4) {
-        transform: translateX(70px) rotateY(-15deg) scale(0.85);
-        z-index: 2;
-        filter: brightness(0.7);
-    }
-
-    .showcase-img:nth-child(5) {
-        transform: translateX(140px) rotateY(-25deg) scale(0.75);
-        z-index: 1;
-        filter: brightness(0.5);
-    }
-
-    /* Hover effect */
-    .showcase-card:hover .showcase-img:nth-child(1) {
-        transform: translateX(-150px) rotateY(30deg) scale(0.7);
-    }
-
-    .showcase-card:hover .showcase-img:nth-child(2) {
-        transform: translateX(-75px) rotateY(18deg) scale(0.82);
-    }
-
-    .showcase-card:hover .showcase-img:nth-child(3) {
-        transform: translateX(0) rotateY(0deg) scale(1.05);
-    }
-
-    .showcase-card:hover .showcase-img:nth-child(4) {
-        transform: translateX(75px) rotateY(-18deg) scale(0.82);
-    }
-
-    .showcase-card:hover .showcase-img:nth-child(5) {
-        transform: translateX(150px) rotateY(-30deg) scale(0.7);
-    }
-
-    /* Showcase Info */
-    .showcase-info {
-        padding: 20px 24px;
-        border-top: 1px solid var(--border);
-    }
-
-    .showcase-tag {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        padding: 5px 10px;
-        border-radius: 4px;
-        margin-bottom: 10px;
-    }
-
-    .showcase-tag.new {
-        background: var(--accent);
-        color: #000;
-    }
-
-    .showcase-tag.sale {
-        background: var(--success);
-        color: #fff;
-    }
-
-    .showcase-title {
-        font-size: 18px;
-        font-weight: 700;
-        color: var(--text-primary);
-        margin: 0 0 6px;
-    }
-
-    .showcase-desc {
-        font-size: 13px;
-        color: var(--text-secondary);
-        margin: 0;
-    }
-
-    /* Showcase Sale - Different background when no images */
-    .showcase-card.sale-card .showcase-images {
-        background: linear-gradient(135deg, #1a472a 0%, #0d2818 50%, #1a472a 100%);
-    }
-
-    .showcase-card.sale-card .showcase-images::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background:
-            radial-gradient(circle at 30% 40%, rgba(40, 167, 69, 0.2) 0%, transparent 50%),
-            radial-gradient(circle at 70% 60%, rgba(40, 167, 69, 0.15) 0%, transparent 50%);
-        z-index: 0;
-    }
-
-    .showcase-card.sale-card:hover {
-        border-color: var(--success);
-        box-shadow: 0 12px 40px rgba(40, 167, 69, 0.2);
-    }
-
-    /* ============================================
-   GAMES CAROUSEL
-   ============================================ */
-    .games-carousel {
-        position: relative;
-    }
-
-    .games-carousel-track {
-        display: flex;
-        gap: 16px;
-        overflow-x: auto;
-        scroll-behavior: smooth;
-        scrollbar-width: none;
-        padding-bottom: 8px;
-    }
-
-    .games-carousel-track::-webkit-scrollbar {
-        display: none;
+        width: 85px;
+        height: 115px;
     }
 
     .games-carousel-track .ps-card {
+        flex: 0 0 155px;
+        min-width: 155px;
+    }
+
+    .dev-card {
         flex: 0 0 180px;
         min-width: 180px;
     }
 
-    /* ============================================
-   DEVELOPERS CAROUSEL
-   ============================================ */
-    .devs-carousel {
-        position: relative;
-    }
-
-    .devs-track {
-        display: flex;
-        gap: 16px;
-        overflow-x: auto;
-        scroll-behavior: smooth;
-        scrollbar-width: none;
-        padding-bottom: 8px;
-    }
-
-    .devs-track::-webkit-scrollbar {
-        display: none;
-    }
-
-    .dev-card {
-        flex: 0 0 200px;
-        min-width: 200px;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 24px 16px;
-        text-align: center;
-        text-decoration: none;
-        transition: all 0.2s;
-    }
-
-    .dev-card:hover {
-        border-color: var(--accent);
-        transform: translateY(-4px);
-    }
-
-    .dev-logo {
-        width: 60px;
-        height: 60px;
-        border-radius: 14px;
-        object-fit: cover;
-        margin: 0 auto 12px;
-        background: var(--bg-primary);
-    }
-
-    .dev-name {
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--text-primary);
-        margin-bottom: 4px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-    }
-
-    .dev-name i {
-        color: var(--accent);
-        font-size: 11px;
-    }
-
-    .dev-count {
-        font-size: 12px;
-        color: var(--text-secondary);
-    }
-
-    /* ============================================
-   FREE GAMES
-   ============================================ */
     .free-games-section {
-        background: linear-gradient(135deg, rgba(0, 174, 255, 0.1), transparent);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        padding: 28px;
-        margin-bottom: 48px;
-    }
-
-    .free-games-section .section-title {
-        color: var(--accent);
+        padding: 24px;
     }
 
     .free-games-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 16px;
-        margin-top: 20px;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .promo-banner-slider {
+        height: 360px;
+        border-radius: 12px;
     }
 
-    /* ============================================
-   RESPONSIVE
-   ============================================ */
-    @media (max-width: 1200px) {
-        .hero-section {
-            grid-template-columns: 1fr 280px;
-        }
-
-        .showcase-cards-row {
-            grid-template-columns: 1fr;
-        }
-
-        .free-games-grid {
-            grid-template-columns: repeat(3, 1fr);
-        }
+    .banner-main-title {
+        font-size: 26px;
     }
 
-    @media (max-width: 1024px) {
-        .hero-section {
-            grid-template-columns: 1fr;
-        }
-
-        .hero-sidebar {
-            display: none;
-        }
-
-        .hero-title {
-            font-size: 1.6rem;
-        }
-
-        .free-games-grid {
-            grid-template-columns: repeat(2, 1fr);
-        }
+    .discount-value {
+        font-size: 48px;
     }
 
-    @media (max-width: 768px) {
-        .home-container {
-            padding: 0 16px 60px;
-        }
-
-        .promo-banner-info {
-            padding: 16px 20px 24px;
-        }
-
-        .promo-banner-title {
-            font-size: 20px;
-        }
-
-        .promo-banner-nav {
-            display: none;
-        }
-
-        .hero-main {
-            aspect-ratio: 4 / 3;
-            border-radius: 10px;
-        }
-
-        .hero-content {
-            padding: 20px;
-        }
-
-        .hero-title {
-            font-size: 1.3rem;
-        }
-
-        .hero-dev {
-            display: none;
-        }
-
-        .hero-arrows {
-            display: none;
-        }
-
-        .section-title {
-            font-size: 17px;
-        }
-
-        .section-nav {
-            display: none;
-        }
-
-        .category-card {
-            flex: 0 0 240px;
-            min-width: 240px;
-        }
-
-        .category-images {
-            height: 120px;
-        }
-
-        .showcase-images {
-            height: 160px;
-        }
-
-        .showcase-img {
-            width: 80px;
-            height: 110px;
-        }
-
-        .showcase-img:nth-child(1) {
-            transform: translateX(-100px) rotateY(25deg) scale(0.75);
-        }
-
-        .showcase-img:nth-child(2) {
-            transform: translateX(-50px) rotateY(15deg) scale(0.85);
-        }
-
-        .showcase-img:nth-child(4) {
-            transform: translateX(50px) rotateY(-15deg) scale(0.85);
-        }
-
-        .showcase-img:nth-child(5) {
-            transform: translateX(100px) rotateY(-25deg) scale(0.75);
-        }
-
-        .games-carousel-track .ps-card {
-            flex: 0 0 150px;
-            min-width: 150px;
-        }
-
-        .dev-card {
-            flex: 0 0 170px;
-            min-width: 170px;
-        }
-
-        .free-games-section {
-            padding: 20px;
-        }
-
-        .free-games-grid {
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-        }
+    .banner-cta-btn {
+        padding: 14px 24px;
+        font-size: 13px;
     }
 
-    @media (max-width: 480px) {
-        .promo-banner-title {
-            font-size: 18px;
-        }
-
-        .promo-banner-btn {
-            padding: 10px 18px;
-            font-size: 13px;
-        }
-
-        .hero-main {
-            aspect-ratio: 1 / 1;
-        }
-
-        .hero-title {
-            font-size: 1.1rem;
-        }
-
-        .hero-price {
-            font-size: 20px;
-        }
-
-        .category-card {
-            flex: 0 0 220px;
-            min-width: 220px;
-        }
-
-        .showcase-images {
-            height: 140px;
-        }
-
-        .showcase-img {
-            width: 65px;
-            height: 90px;
-        }
-
-        .showcase-img:nth-child(1) {
-            transform: translateX(-80px) rotateY(25deg) scale(0.75);
-        }
-
-        .showcase-img:nth-child(2) {
-            transform: translateX(-40px) rotateY(15deg) scale(0.85);
-        }
-
-        .showcase-img:nth-child(4) {
-            transform: translateX(40px) rotateY(-15deg) scale(0.85);
-        }
-
-        .showcase-img:nth-child(5) {
-            transform: translateX(80px) rotateY(-25deg) scale(0.75);
-        }
+    .hero-main {
+        aspect-ratio: 1 / 1;
     }
+
+    .hero-title {
+        font-size: 1.2rem;
+    }
+
+    .category-card {
+        flex: 0 0 220px;
+        min-width: 220px;
+    }
+}
 </style>
 
 <div class="home-wrapper">
-
-
-
     <div class="home-container">
 
         <?php if (!empty($banners)): ?>
-            <section class="promo-banner-section">
-                <div class="promo-banner-slider">
-                    <div class="promo-banner-track" id="promoBannerTrack">
-                        <?php foreach ($banners as $i => $banner):
-                            $hasImage = !empty($banner['imagem_desktop']);
-                            $hasOverlay = !empty($banner['imagem_overlay']);
-                            $isPromocional = ($banner['estilo_banner'] ?? 'simples') === 'promocional';
+        <section class="promo-banner-section">
+            <div class="promo-banner-slider">
+                <div class="promo-banner-track" id="promoBannerTrack">
+                    <?php foreach ($banners as $i => $banner):
+                        $hasImage = !empty($banner['imagem_desktop']);
+                        $hasOverlay = !empty($banner['imagem_overlay']);
+                        $isPromocional = ($banner['estilo_banner'] ?? 'simples') === 'promocional';
+                        
+                        $corFundo = $banner['cor_fundo'] ?? '#131314';
+                        $corTexto = $banner['cor_texto'] ?? '#ffffff';
+                        $corDestaque = $banner['cor_destaque'] ?? '#4C8BF5';
+                        
+                        // Convert hex to RGB for gradients
+                        $rgb = sscanf($corFundo, "#%02x%02x%02x");
+                        $rgbString = $rgb ? implode(', ', $rgb) : '19, 19, 20';
+                    ?>
+                    <div class="promo-banner-slide" 
+                         style="--banner-rgb: <?= $rgbString ?>; --banner-text: <?= $corTexto ?>; --banner-accent: <?= $corDestaque ?>;">
+                        
+                        <!-- Background Layer -->
+                        <div class="banner-bg-layer">
+                            <?php if ($hasImage): ?>
+                                <img src="<?= htmlspecialchars($banner['imagem_desktop']) ?>" 
+                                     alt="" loading="<?= $i === 0 ? 'eager' : 'lazy' ?>">
+                            <?php endif; ?>
+                            <div class="banner-gradient-overlay"></div>
+                        </div>
+                        
+                        <!-- Decorative Elements -->
+                        <div class="banner-decor"></div>
+                        <div class="banner-lines"></div>
 
-                            // Cores personalizadas
-                            $corFundo = $banner['cor_fundo'] ?? '#131314';
-                            $corTexto = $banner['cor_texto'] ?? '#E3E3E3';
-                            $corDestaque = $banner['cor_destaque'] ?? '#4C8BF5';
-                        ?>
-                            <div class="promo-banner-slide <?= $isPromocional ? 'promocional' : 'simples' ?>"
-                                style="--banner-bg: <?= $corFundo ?>; --banner-text: <?= $corTexto ?>; --banner-accent: <?= $corDestaque ?>;">
-
-                                <!-- Imagem de Fundo -->
-                                <div class="promo-banner-image <?= !$hasImage ? 'no-image' : '' ?>">
-                                    <?php if ($hasImage): ?>
-                                        <img src="<?= htmlspecialchars($banner['imagem_desktop']) ?>"
-                                            alt="<?= htmlspecialchars($banner['titulo'] ?? '') ?>"
-                                            loading="<?= $i === 0 ? 'eager' : 'lazy' ?>">
-                                        <div class="promo-banner-overlay-gradient"></div>
-                                    <?php else: ?>
-                                        <i class="fas fa-tags promo-fallback-icon"></i>
-                                    <?php endif; ?>
+                        <?php if ($isPromocional): ?>
+                        <!-- Promotional Layout -->
+                        <div class="banner-content-wrapper">
+                            <div class="banner-text-content">
+                                <!-- Event Tag -->
+                                <div class="banner-event-tag">
+                                    <i class="fas fa-bolt"></i>
+                                    <?= !empty($banner['texto_principal']) ? htmlspecialchars($banner['texto_principal']) : 'Evento Especial' ?>
                                 </div>
-
-                                <?php if ($isPromocional): ?>
-                                    <!-- Layout Promocional (Estilo PlayStation) -->
-                                    <div class="promo-banner-content-promocional">
-                                        <div class="promo-content-left">
-                                            <!-- Título Principal -->
-                                            <h2 class="promo-title-main">
-                                                <?= htmlspecialchars($banner['titulo'] ?? 'OFERTA ESPECIAL') ?>
-                                            </h2>
-
-                                            <!-- Texto Secundário (ex: "TERMINA EM 4/2") -->
-                                            <?php if (!empty($banner['texto_principal'])): ?>
-                                                <p class="promo-subtitle">
-                                                    <?= htmlspecialchars($banner['texto_principal']) ?>
-                                                    <?php if (!empty($banner['data_fim'])): ?>
-                                                        <span class="promo-date">
-                                                            <?= date('d/m', strtotime($banner['data_fim'])) ?>
-                                                        </span>
-                                                    <?php endif; ?>
-                                                </p>
-                                            <?php endif; ?>
-
-                                            <!-- Desconto/Destaque -->
-                                            <?php if (!empty($banner['texto_destaque']) || !empty($banner['texto_secundario'])): ?>
-                                                <div class="promo-discount-box">
-                                                    <?php if (!empty($banner['texto_secundario'])): ?>
-                                                        <span class="promo-discount-label">
-                                                            <?= htmlspecialchars($banner['texto_secundario']) ?>
-                                                        </span>
-                                                    <?php endif; ?>
-                                                    <?php if (!empty($banner['texto_destaque'])): ?>
-                                                        <span class="promo-discount-value">
-                                                            <?= htmlspecialchars($banner['texto_destaque']) ?>
-                                                        </span>
-                                                    <?php endif; ?>
-                                                </div>
-                                            <?php endif; ?>
-
-                                            <!-- Botão CTA -->
-                                            <a href="<?= htmlspecialchars($banner['url_destino'] ?? '#') ?>"
-                                                class="promo-banner-btn promocional">
-                                                Ver ofertas <i class="fas fa-arrow-right"></i>
-                                            </a>
-                                        </div>
-
-                                        <!-- Imagem Overlay (Flutuante) -->
-                                        <?php if ($hasOverlay): ?>
-                                            <div class="promo-content-right">
-                                                <img src="<?= htmlspecialchars($banner['imagem_overlay']) ?>"
-                                                    alt="Destaque"
-                                                    class="promo-overlay-image"
-                                                    loading="<?= $i === 0 ? 'eager' : 'lazy' ?>">
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-
-                                <?php else: ?>
-                                    <!-- Layout Simples (Original) -->
-                                    <div class="promo-banner-info">
-                                        <h2 class="promo-banner-title">
-                                            <?= htmlspecialchars($banner['titulo'] ?? 'Oferta Especial') ?>
-                                        </h2>
-                                        <p class="promo-banner-desc">
-                                            <?= htmlspecialchars($banner['subtitulo'] ?? 'Confira as melhores ofertas') ?>
-                                        </p>
-                                        <a href="<?= htmlspecialchars($banner['url_destino'] ?? '#') ?>"
-                                            class="promo-banner-btn">
-                                            Ver mais <i class="fas fa-arrow-right"></i>
-                                        </a>
-                                    </div>
+                                
+                                <!-- Main Title -->
+                                <h2 class="banner-main-title">
+                                    <?php 
+                                    $titulo = htmlspecialchars($banner['titulo'] ?? 'OFERTA ESPECIAL');
+                                    $palavras = explode(' ', $titulo);
+                                    if (count($palavras) > 1) {
+                                        $ultima = array_pop($palavras);
+                                        echo implode(' ', $palavras);
+                                        echo '<span class="highlight">' . $ultima . '</span>';
+                                    } else {
+                                        echo $titulo;
+                                    }
+                                    ?>
+                                </h2>
+                                
+                                <!-- Date Info -->
+                                <?php if (!empty($banner['data_fim'])): ?>
+                                <div class="banner-date-info">
+                                    <span>Termina em</span>
+                                    <span class="banner-date-badge">
+                                        <?= date('d/m', strtotime($banner['data_fim'])) ?>
+                                    </span>
+                                </div>
                                 <?php endif; ?>
+                                
+                                <!-- Discount Display -->
+                                <?php if (!empty($banner['texto_destaque'])): ?>
+                                <div class="banner-discount-display">
+                                    <?php if (!empty($banner['texto_secundario'])): ?>
+                                    <span class="discount-label"><?= htmlspecialchars($banner['texto_secundario']) ?></span>
+                                    <?php endif; ?>
+                                    <div class="discount-value-wrapper">
+                                        <span class="discount-value"><?= preg_replace('/[^0-9]/', '', $banner['texto_destaque']) ?></span>
+                                        <span class="discount-percent">%</span>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <!-- CTA Button -->
+                                <a href="<?= htmlspecialchars($banner['url_destino'] ?? '#') ?>" class="banner-cta-btn">
+                                    Ver Ofertas
+                                    <i class="fas fa-arrow-right"></i>
+                                </a>
                             </div>
-                        <?php endforeach; ?>
-                    </div>
 
-                    <?php if (count($banners) > 1): ?>
-                        <button class="promo-banner-nav prev" onclick="promoBanner.prev()">
-                            <i class="fas fa-chevron-left"></i>
-                        </button>
-                        <button class="promo-banner-nav next" onclick="promoBanner.next()">
-                            <i class="fas fa-chevron-right"></i>
-                        </button>
-                    <?php endif; ?>
+                            <!-- Featured Image -->
+                            <?php if ($hasOverlay): ?>
+                            <div class="banner-featured-side">
+                                <div class="banner-image-glow"></div>
+                                <img src="<?= htmlspecialchars($banner['imagem_overlay']) ?>" 
+                                     alt="" class="banner-featured-image"
+                                     loading="<?= $i === 0 ? 'eager' : 'lazy' ?>">
+                            </div>
+                            <?php endif; ?>
+                        </div>
+
+                        <?php else: ?>
+                        <!-- Simple Layout -->
+                        <div class="banner-simple-content">
+                            <h2 class="banner-simple-title">
+                                <?= htmlspecialchars($banner['titulo'] ?? 'Oferta Especial') ?>
+                            </h2>
+                            <p class="banner-simple-desc">
+                                <?= htmlspecialchars($banner['subtitulo'] ?? 'Confira as melhores ofertas') ?>
+                            </p>
+                            <a href="<?= htmlspecialchars($banner['url_destino'] ?? '#') ?>" class="banner-cta-btn">
+                                Ver mais <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
                 </div>
 
                 <?php if (count($banners) > 1): ?>
-                    <div class="promo-banner-dots">
-                        <?php for ($i = 0; $i < count($banners); $i++): ?>
-                            <div class="promo-banner-dot <?= $i === 0 ? 'active' : '' ?>"
-                                onclick="promoBanner.goTo(<?= $i ?>)"></div>
-                        <?php endfor; ?>
-                    </div>
+                <button class="banner-nav-arrow prev" onclick="promoBanner.prev()">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <button class="banner-nav-arrow next" onclick="promoBanner.next()">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
                 <?php endif; ?>
-            </section>
+            </div>
+
+            <?php if (count($banners) > 1): ?>
+            <div class="banner-dots">
+                <?php for ($i = 0; $i < count($banners); $i++): ?>
+                <div class="banner-dot <?= $i === 0 ? 'active' : '' ?>" onclick="promoBanner.goTo(<?= $i ?>)"></div>
+                <?php endfor; ?>
+            </div>
+            <?php endif; ?>
+        </section>
         <?php endif; ?>
 
-        <!-- HERO - Epic Games Style -->
+        <!-- HERO - Featured Games -->
         <?php if (!empty($jogos_destaque)): ?>
-            <section class="hero-section">
-                <div class="hero-main">
-                    <?php foreach ($jogos_destaque as $i => $jogo):
-                        $img = $jogo['imagem_banner'] ?: $jogo['imagem_capa'];
-                        $preco = $jogo['preco_centavos'] ?? 0;
-                        $preco_promo = $jogo['preco_promocional_centavos'] ?? null;
-                        $em_promocao = $jogo['em_promocao'] ?? false;
-                        $preco_final = $em_promocao && $preco_promo ? $preco_promo : $preco;
-                        $desconto = ($preco > 0 && $preco_promo) ? round((($preco - $preco_promo) / $preco) * 100) : 0;
-                    ?>
-                        <div class="hero-slide <?= $i === 0 ? 'active' : '' ?>" data-index="<?= $i ?>">
-                            <div class="hero-bg">
-                                <img src="<?= SITE_URL . $img ?>" alt="<?= htmlspecialchars($jogo['titulo']) ?>">
-                            </div>
-                            <div class="hero-content">
-                                <span class="hero-badge <?= $em_promocao ? 'promo' : '' ?>">
-                                    <i class="fas fa-<?= $em_promocao ? 'bolt' : 'star' ?>"></i>
-                                    <?= $em_promocao ? 'Oferta' : 'Destaque' ?>
-                                </span>
-                                <h2 class="hero-title"><?= htmlspecialchars($jogo['titulo']) ?></h2>
-                                <?php if (!empty($jogo['nome_estudio'])): ?>
-                                    <p class="hero-dev"><?= htmlspecialchars($jogo['nome_estudio']) ?></p>
+        <section class="hero-section">
+            <div class="hero-main">
+                <?php foreach ($jogos_destaque as $i => $jogo):
+                    $img = $jogo['imagem_banner'] ?: $jogo['imagem_capa'];
+                    $preco = $jogo['preco_centavos'] ?? 0;
+                    $preco_promo = $jogo['preco_promocional_centavos'] ?? null;
+                    $em_promocao = $jogo['em_promocao'] ?? false;
+                    $preco_final = $em_promocao && $preco_promo ? $preco_promo : $preco;
+                    $desconto = ($preco > 0 && $preco_promo) ? round((($preco - $preco_promo) / $preco) * 100) : 0;
+                ?>
+                <div class="hero-slide <?= $i === 0 ? 'active' : '' ?>" data-index="<?= $i ?>">
+                    <div class="hero-bg">
+                        <img src="<?= SITE_URL . $img ?>" alt="<?= htmlspecialchars($jogo['titulo']) ?>">
+                    </div>
+                    <div class="hero-content">
+                        <span class="hero-badge <?= $em_promocao ? 'promo' : '' ?>">
+                            <i class="fas fa-<?= $em_promocao ? 'bolt' : 'star' ?>"></i>
+                            <?= $em_promocao ? 'Em Oferta' : 'Destaque' ?>
+                        </span>
+                        <h2 class="hero-title"><?= htmlspecialchars($jogo['titulo']) ?></h2>
+                        <?php if (!empty($jogo['nome_estudio'])): ?>
+                        <p class="hero-dev"><?= htmlspecialchars($jogo['nome_estudio']) ?></p>
+                        <?php endif; ?>
+
+                        <div class="hero-price-row">
+                            <?php if ($preco_final == 0): ?>
+                                <span class="hero-price free">Gratuito</span>
+                            <?php else: ?>
+                                <?php if ($desconto > 0): ?>
+                                    <span class="hero-discount">-<?= $desconto ?>%</span>
+                                    <span class="hero-old-price"><?= formatPrice($preco) ?></span>
                                 <?php endif; ?>
-
-                                <div class="hero-price-row">
-                                    <?php if ($preco_final == 0): ?>
-                                        <span class="hero-price free">Gratuito</span>
-                                    <?php else: ?>
-                                        <?php if ($desconto > 0): ?>
-                                            <span class="hero-discount">-<?= $desconto ?>%</span>
-                                            <span class="hero-old-price"><?= formatPrice($preco) ?></span>
-                                        <?php endif; ?>
-                                        <span class="hero-price"><?= formatPrice($preco_final) ?></span>
-                                    <?php endif; ?>
-                                </div>
-
-                                <a href="<?= SITE_URL ?>/pages/jogo.php?slug=<?= $jogo['slug'] ?>" class="hero-btn">
-                                    <i class="fas fa-gamepad"></i> Ver Jogo
-                                </a>
-                            </div>
+                                <span class="hero-price"><?= formatPrice($preco_final) ?></span>
+                            <?php endif; ?>
                         </div>
-                    <?php endforeach; ?>
 
-                    <?php if (count($jogos_destaque) > 1): ?>
-                        <div class="hero-arrows">
-                            <button class="hero-arrow" onclick="heroSlider.prev()"><i class="fas fa-chevron-left"></i></button>
-                            <button class="hero-arrow" onclick="heroSlider.next()"><i class="fas fa-chevron-right"></i></button>
-                        </div>
-                    <?php endif; ?>
+                        <a href="<?= SITE_URL ?>/pages/jogo.php?slug=<?= $jogo['slug'] ?>" class="hero-btn">
+                            <i class="fas fa-gamepad"></i> Ver Jogo
+                        </a>
+                    </div>
                 </div>
+                <?php endforeach; ?>
 
-                <div class="hero-sidebar">
-                    <?php foreach ($jogos_destaque as $i => $jogo):
-                        $preco = $jogo['preco_centavos'] ?? 0;
-                        $preco_promo = $jogo['preco_promocional_centavos'] ?? null;
-                        $em_promocao = $jogo['em_promocao'] ?? false;
-                        $preco_final = $em_promocao && $preco_promo ? $preco_promo : $preco;
-                        $desconto = ($preco > 0 && $preco_promo) ? round((($preco - $preco_promo) / $preco) * 100) : 0;
-                    ?>
-                        <div class="hero-sidebar-item <?= $i === 0 ? 'active' : '' ?>" onclick="heroSlider.goTo(<?= $i ?>)">
-                            <div class="hero-sidebar-thumb">
-                                <img src="<?= SITE_URL . $jogo['imagem_capa'] ?>" alt="">
-                            </div>
-                            <div>
-                                <div class="hero-sidebar-title"><?= htmlspecialchars($jogo['titulo']) ?></div>
-                                <div class="hero-sidebar-price">
-                                    <?php if ($preco_final == 0): ?>
-                                        <span class="discount">Gratuito</span>
-                                    <?php elseif ($desconto > 0): ?>
-                                        <span class="discount">-<?= $desconto ?>%</span> <?= formatPrice($preco_final) ?>
-                                    <?php else: ?>
-                                        <?= formatPrice($preco_final) ?>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
+                <?php if (count($jogos_destaque) > 1): ?>
+                <div class="hero-arrows">
+                    <button class="hero-arrow" onclick="heroSlider.prev()"><i class="fas fa-chevron-left"></i></button>
+                    <button class="hero-arrow" onclick="heroSlider.next()"><i class="fas fa-chevron-right"></i></button>
                 </div>
-            </section>
+                <?php endif; ?>
+            </div>
+
+            <div class="hero-sidebar">
+                <?php foreach ($jogos_destaque as $i => $jogo):
+                    $preco = $jogo['preco_centavos'] ?? 0;
+                    $preco_promo = $jogo['preco_promocional_centavos'] ?? null;
+                    $em_promocao = $jogo['em_promocao'] ?? false;
+                    $preco_final = $em_promocao && $preco_promo ? $preco_promo : $preco;
+                    $desconto = ($preco > 0 && $preco_promo) ? round((($preco - $preco_promo) / $preco) * 100) : 0;
+                ?>
+                <div class="hero-sidebar-item <?= $i === 0 ? 'active' : '' ?>" onclick="heroSlider.goTo(<?= $i ?>)">
+                    <div class="hero-sidebar-thumb">
+                        <img src="<?= SITE_URL . $jogo['imagem_capa'] ?>" alt="">
+                    </div>
+                    <div>
+                        <div class="hero-sidebar-title"><?= htmlspecialchars($jogo['titulo']) ?></div>
+                        <div class="hero-sidebar-price">
+                            <?php if ($preco_final == 0): ?>
+                                <span class="discount">Gratuito</span>
+                            <?php elseif ($desconto > 0): ?>
+                                <span class="discount">-<?= $desconto ?>%</span> <?= formatPrice($preco_final) ?>
+                            <?php else: ?>
+                                <?= formatPrice($preco_final) ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </section>
         <?php endif; ?>
 
-        <!-- SHOWCASE CARDS - LANÇAMENTOS & PROMOÇÕES -->
+        <!-- SHOWCASE CARDS -->
         <section class="showcase-cards-row">
-            <!-- LANÇAMENTOS - Steam Perspective -->
             <a href="<?= SITE_URL ?>/pages/busca.php?ordem=recente" class="showcase-card">
                 <div class="showcase-images">
                     <div class="showcase-stack">
                         <?php
-                        // Garantir 5 imagens (repetir se necessário)
                         $imgs = $lancamentos_showcase;
                         while (count($imgs) < 5 && !empty($lancamentos_showcase)) {
                             $imgs = array_merge($imgs, $lancamentos_showcase);
@@ -1707,9 +1723,9 @@ require_once '../includes/header.php';
                         $imgs = array_slice($imgs, 0, 5);
                         foreach ($imgs as $jogo):
                         ?>
-                            <div class="showcase-img">
-                                <img src="<?= SITE_URL . $jogo['imagem_capa'] ?>" alt="<?= htmlspecialchars($jogo['titulo']) ?>" loading="lazy">
-                            </div>
+                        <div class="showcase-img">
+                            <img src="<?= SITE_URL . $jogo['imagem_capa'] ?>" alt="" loading="lazy">
+                        </div>
                         <?php endforeach; ?>
                     </div>
                 </div>
@@ -1720,7 +1736,6 @@ require_once '../includes/header.php';
                 </div>
             </a>
 
-            <!-- PROMOÇÕES - Different background -->
             <a href="<?= SITE_URL ?>/pages/busca.php?promocao=1" class="showcase-card sale-card">
                 <div class="showcase-images">
                     <div class="showcase-stack">
@@ -1732,9 +1747,9 @@ require_once '../includes/header.php';
                         $promo_imgs = array_slice($promo_imgs, 0, 5);
                         foreach ($promo_imgs as $jogo):
                         ?>
-                            <div class="showcase-img">
-                                <img src="<?= SITE_URL . $jogo['imagem_capa'] ?>" alt="<?= htmlspecialchars($jogo['titulo']) ?>" loading="lazy">
-                            </div>
+                        <div class="showcase-img">
+                            <img src="<?= SITE_URL . $jogo['imagem_capa'] ?>" alt="" loading="lazy">
+                        </div>
                         <?php endforeach; ?>
                     </div>
                 </div>
@@ -1746,132 +1761,60 @@ require_once '../includes/header.php';
             </a>
         </section>
 
-        <!-- CATEGORIAS - CARROSSEL -->
+        <!-- CATEGORIAS -->
         <?php if (!empty($categorias)): ?>
-            <section class="section">
-                <div class="section-header">
-                    <h2 class="section-title"><i class="fas fa-compass"></i> Explorar Categorias</h2>
-                    <div class="section-controls">
-                        <a href="<?= SITE_URL ?>/pages/categorias.php" class="section-link">Ver Todas <i class="fas fa-arrow-right"></i></a>
-                        <div class="section-nav">
-                            <button class="section-nav-btn" onclick="scrollCarousel('categoriesTrack', -1)"><i class="fas fa-chevron-left"></i></button>
-                            <button class="section-nav-btn" onclick="scrollCarousel('categoriesTrack', 1)"><i class="fas fa-chevron-right"></i></button>
-                        </div>
+        <section class="mb-5">
+            <div class="section-header">
+                <h2 class="section-title"><i class="fas fa-th-large"></i> Navegar por Gênero</h2>
+                <a href="<?= SITE_URL ?>/pages/categorias.php" class="section-link">Ver todas <i class="fas fa-arrow-right"></i></a>
+            </div>
+            <div class="category-scroll">
+                <?php foreach ($categorias as $cat): ?>
+                <a href="<?= SITE_URL ?>/pages/categoria.php?slug=<?= $cat['slug'] ?>" class="cat-tile">
+                    <div class="cat-bg-collage">
+                        <?php for($k=0; $k<3; $k++): 
+                            $img = $cat['covers'][$k] ?? null;
+                            if($img): ?>
+                                <img src="<?= SITE_URL . $img ?>">
+                            <?php endif; 
+                        endfor; ?>
                     </div>
-                </div>
-                <div class="categories-carousel">
-                    <div class="categories-track" id="categoriesTrack">
-                        <?php foreach ($categorias as $cat): ?>
-                            <a href="<?= SITE_URL ?>/pages/categoria.php?slug=<?= $cat['slug'] ?>" class="category-card">
-                                <div class="category-images">
-                                    <!-- Left Image -->
-                                    <div class="cat-img-side left">
-                                        <?php if (isset($cat['top_jogos'][0])): ?>
-                                            <img src="<?= SITE_URL . $cat['top_jogos'][0]['imagem_capa'] ?>" alt="" loading="lazy">
-                                        <?php else: ?>
-                                            <div class="cat-img-placeholder"><i class="fas fa-gamepad"></i></div>
-                                        <?php endif; ?>
-                                    </div>
-
-                                    <!-- Center Image (Main) -->
-                                    <div class="cat-img-center">
-                                        <?php if (isset($cat['top_jogos'][1])): ?>
-                                            <img src="<?= SITE_URL . $cat['top_jogos'][1]['imagem_capa'] ?>" alt="" loading="lazy">
-                                        <?php elseif (isset($cat['top_jogos'][0])): ?>
-                                            <img src="<?= SITE_URL . $cat['top_jogos'][0]['imagem_capa'] ?>" alt="" loading="lazy">
-                                        <?php else: ?>
-                                            <div class="cat-img-placeholder"><i class="fas fa-<?= $cat['icone'] ?: 'gamepad' ?>"></i></div>
-                                        <?php endif; ?>
-                                    </div>
-
-                                    <!-- Right Image -->
-                                    <div class="cat-img-side right">
-                                        <?php if (isset($cat['top_jogos'][2])): ?>
-                                            <img src="<?= SITE_URL . $cat['top_jogos'][2]['imagem_capa'] ?>" alt="" loading="lazy">
-                                        <?php elseif (isset($cat['top_jogos'][0])): ?>
-                                            <img src="<?= SITE_URL . $cat['top_jogos'][0]['imagem_capa'] ?>" alt="" loading="lazy">
-                                        <?php else: ?>
-                                            <div class="cat-img-placeholder"><i class="fas fa-gamepad"></i></div>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                                <div class="category-info">
-                                    <span class="category-name">
-                                        <i class="fas fa-<?= htmlspecialchars($cat['icone'] ?: 'gamepad') ?>"></i>
-                                        <?= htmlspecialchars($cat['nome']) ?>
-                                    </span>
-                                    <span class="category-count"><?= (int)$cat['total_jogos'] ?> jogos</span>
-                                </div>
-                            </a>
-                        <?php endforeach; ?>
+                    <div class="cat-content">
+                        <i class="cat-icon fas fa-<?= $cat['icone'] ?: 'gamepad' ?>"></i>
+                        <span class="cat-name"><?= $cat['nome'] ?></span>
+                        <span class="cat-count"><?= $cat['total_jogos'] ?> jogos</span>
                     </div>
-                </div>
-            </section>
+                </a>
+                <?php endforeach; ?>
+            </div>
+        </section>
         <?php endif; ?>
 
         <!-- PROMOÇÕES -->
         <?php if (!empty($promocoes)): ?>
-            <section class="section">
-                <div class="section-header">
-                    <h2 class="section-title"><i class="fas fa-bolt" style="color: var(--success)"></i> Ofertas</h2>
-                    <div class="section-controls">
-                        <a href="<?= SITE_URL ?>/pages/busca.php?promocao=1" class="section-link">Ver Todas <i class="fas fa-arrow-right"></i></a>
-                        <div class="section-nav">
-                            <button class="section-nav-btn" onclick="scrollCarousel('promoCarousel', -1)"><i class="fas fa-chevron-left"></i></button>
-                            <button class="section-nav-btn" onclick="scrollCarousel('promoCarousel', 1)"><i class="fas fa-chevron-right"></i></button>
-                        </div>
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon gift"><i class="fas fa-bolt"></i></span>
+                    Ofertas Imperdíveis
+                </h2>
+                <div class="section-controls">
+                    <a href="<?= SITE_URL ?>/pages/busca.php?promocao=1" class="section-link">
+                        Ver Todas <i class="fas fa-arrow-right"></i>
+                    </a>
+                    <div class="section-nav">
+                        <button class="section-nav-btn" onclick="scrollCarousel('promoCarousel', -1)">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <button class="section-nav-btn" onclick="scrollCarousel('promoCarousel', 1)">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
                     </div>
                 </div>
-                <div class="games-carousel">
-                    <div class="games-carousel-track" id="promoCarousel">
-                        <?php foreach ($promocoes as $jogo):
-                            renderGameCard($jogo, $pdo, $user_id, 'store', [
-                                'is_owned' => in_array($jogo['id'], $meus_jogos),
-                                'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
-                                'in_cart' => in_array($jogo['id'], $meu_carrinho)
-                            ]);
-                        endforeach; ?>
-                    </div>
-                </div>
-            </section>
-        <?php endif; ?>
-
-        <!-- LANÇAMENTOS -->
-        <?php if (!empty($lancamentos)): ?>
-            <section class="section">
-                <div class="section-header">
-                    <h2 class="section-title"><i class="fas fa-sparkles"></i> Novidades</h2>
-                    <div class="section-controls">
-                        <a href="<?= SITE_URL ?>/pages/busca.php?ordem=recente" class="section-link">Ver Todos <i class="fas fa-arrow-right"></i></a>
-                        <div class="section-nav">
-                            <button class="section-nav-btn" onclick="scrollCarousel('newCarousel', -1)"><i class="fas fa-chevron-left"></i></button>
-                            <button class="section-nav-btn" onclick="scrollCarousel('newCarousel', 1)"><i class="fas fa-chevron-right"></i></button>
-                        </div>
-                    </div>
-                </div>
-                <div class="games-carousel">
-                    <div class="games-carousel-track" id="newCarousel">
-                        <?php foreach ($lancamentos as $jogo):
-                            renderGameCard($jogo, $pdo, $user_id, 'store', [
-                                'is_owned' => in_array($jogo['id'], $meus_jogos),
-                                'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
-                                'in_cart' => in_array($jogo['id'], $meu_carrinho)
-                            ]);
-                        endforeach; ?>
-                    </div>
-                </div>
-            </section>
-        <?php endif; ?>
-
-        <!-- JOGOS GRATUITOS -->
-        <?php if (!empty($gratuitos)): ?>
-            <section class="free-games-section">
-                <div class="section-header">
-                    <h2 class="section-title"><i class="fas fa-gift"></i> Jogos Gratuitos</h2>
-                    <a href="<?= SITE_URL ?>/pages/busca.php?gratuito=1" class="section-link">Ver Todos <i class="fas fa-arrow-right"></i></a>
-                </div>
-                <div class="free-games-grid">
-                    <?php foreach (array_slice($gratuitos, 0, 4) as $jogo):
+            </div>
+            <div class="games-carousel">
+                <div class="games-carousel-track" id="promoCarousel">
+                    <?php foreach ($promocoes as $jogo):
                         renderGameCard($jogo, $pdo, $user_id, 'store', [
                             'is_owned' => in_array($jogo['id'], $meus_jogos),
                             'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
@@ -1879,98 +1822,182 @@ require_once '../includes/header.php';
                         ]);
                     endforeach; ?>
                 </div>
-            </section>
+            </div>
+        </section>
+        <?php endif; ?>
+
+        <!-- LANÇAMENTOS -->
+        <?php if (!empty($lancamentos)): ?>
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon"><i class="fas fa-sparkles"></i></span>
+                    Novidades
+                </h2>
+                <div class="section-controls">
+                    <a href="<?= SITE_URL ?>/pages/busca.php?ordem=recente" class="section-link">
+                        Ver Todos <i class="fas fa-arrow-right"></i>
+                    </a>
+                    <div class="section-nav">
+                        <button class="section-nav-btn" onclick="scrollCarousel('newCarousel', -1)">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <button class="section-nav-btn" onclick="scrollCarousel('newCarousel', 1)">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="games-carousel">
+                <div class="games-carousel-track" id="newCarousel">
+                    <?php foreach ($lancamentos as $jogo):
+                        renderGameCard($jogo, $pdo, $user_id, 'store', [
+                            'is_owned' => in_array($jogo['id'], $meus_jogos),
+                            'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
+                            'in_cart' => in_array($jogo['id'], $meu_carrinho)
+                        ]);
+                    endforeach; ?>
+                </div>
+            </div>
+        </section>
+        <?php endif; ?>
+
+        <!-- JOGOS GRATUITOS -->
+        <?php if (!empty($gratuitos)): ?>
+        <section class="free-games-section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon gift"><i class="fas fa-gift"></i></span>
+                    Jogos Gratuitos
+                </h2>
+                <a href="<?= SITE_URL ?>/pages/busca.php?gratuito=1" class="section-link">
+                    Ver Todos <i class="fas fa-arrow-right"></i>
+                </a>
+            </div>
+            <div class="free-games-grid">
+                <?php foreach (array_slice($gratuitos, 0, 4) as $jogo):
+                    renderGameCard($jogo, $pdo, $user_id, 'store', [
+                        'is_owned' => in_array($jogo['id'], $meus_jogos),
+                        'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
+                        'in_cart' => in_array($jogo['id'], $meu_carrinho)
+                    ]);
+                endforeach; ?>
+            </div>
+        </section>
         <?php endif; ?>
 
         <!-- POPULARES -->
         <?php if (!empty($populares)): ?>
-            <section class="section">
-                <div class="section-header">
-                    <h2 class="section-title"><i class="fas fa-fire" style="color: #ff6b6b"></i> Mais Populares</h2>
-                    <div class="section-controls">
-                        <a href="<?= SITE_URL ?>/pages/busca.php?ordem=vendas" class="section-link">Ver Todos <i class="fas fa-arrow-right"></i></a>
-                        <div class="section-nav">
-                            <button class="section-nav-btn" onclick="scrollCarousel('popularCarousel', -1)"><i class="fas fa-chevron-left"></i></button>
-                            <button class="section-nav-btn" onclick="scrollCarousel('popularCarousel', 1)"><i class="fas fa-chevron-right"></i></button>
-                        </div>
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon fire"><i class="fas fa-fire"></i></span>
+                    Mais Populares
+                </h2>
+                <div class="section-controls">
+                    <a href="<?= SITE_URL ?>/pages/busca.php?ordem=vendas" class="section-link">
+                        Ver Todos <i class="fas fa-arrow-right"></i>
+                    </a>
+                    <div class="section-nav">
+                        <button class="section-nav-btn" onclick="scrollCarousel('popularCarousel', -1)">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <button class="section-nav-btn" onclick="scrollCarousel('popularCarousel', 1)">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
                     </div>
                 </div>
-                <div class="games-carousel">
-                    <div class="games-carousel-track" id="popularCarousel">
-                        <?php foreach ($populares as $jogo):
-                            renderGameCard($jogo, $pdo, $user_id, 'store', [
-                                'is_owned' => in_array($jogo['id'], $meus_jogos),
-                                'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
-                                'in_cart' => in_array($jogo['id'], $meu_carrinho)
-                            ]);
-                        endforeach; ?>
-                    </div>
+            </div>
+            <div class="games-carousel">
+                <div class="games-carousel-track" id="popularCarousel">
+                    <?php foreach ($populares as $jogo):
+                        renderGameCard($jogo, $pdo, $user_id, 'store', [
+                            'is_owned' => in_array($jogo['id'], $meus_jogos),
+                            'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
+                            'in_cart' => in_array($jogo['id'], $meu_carrinho)
+                        ]);
+                    endforeach; ?>
                 </div>
-            </section>
+            </div>
+        </section>
         <?php endif; ?>
 
         <!-- MELHORES AVALIADOS -->
         <?php if (!empty($melhores)): ?>
-            <section class="section">
-                <div class="section-header">
-                    <h2 class="section-title"><i class="fas fa-star" style="color: #f9ca24"></i> Melhor Avaliados</h2>
-                    <div class="section-controls">
-                        <div class="section-nav">
-                            <button class="section-nav-btn" onclick="scrollCarousel('ratedCarousel', -1)"><i class="fas fa-chevron-left"></i></button>
-                            <button class="section-nav-btn" onclick="scrollCarousel('ratedCarousel', 1)"><i class="fas fa-chevron-right"></i></button>
-                        </div>
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon star"><i class="fas fa-star"></i></span>
+                    Melhor Avaliados
+                </h2>
+                <div class="section-controls">
+                    <div class="section-nav">
+                        <button class="section-nav-btn" onclick="scrollCarousel('ratedCarousel', -1)">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <button class="section-nav-btn" onclick="scrollCarousel('ratedCarousel', 1)">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
                     </div>
                 </div>
-                <div class="games-carousel">
-                    <div class="games-carousel-track" id="ratedCarousel">
-                        <?php foreach ($melhores as $jogo):
-                            renderGameCard($jogo, $pdo, $user_id, 'store', [
-                                'is_owned' => in_array($jogo['id'], $meus_jogos),
-                                'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
-                                'in_cart' => in_array($jogo['id'], $meu_carrinho)
-                            ]);
-                        endforeach; ?>
-                    </div>
+            </div>
+            <div class="games-carousel">
+                <div class="games-carousel-track" id="ratedCarousel">
+                    <?php foreach ($melhores as $jogo):
+                        renderGameCard($jogo, $pdo, $user_id, 'store', [
+                            'is_owned' => in_array($jogo['id'], $meus_jogos),
+                            'in_wishlist' => in_array($jogo['id'], $minha_wishlist),
+                            'in_cart' => in_array($jogo['id'], $meu_carrinho)
+                        ]);
+                    endforeach; ?>
                 </div>
-            </section>
+            </div>
+        </section>
         <?php endif; ?>
 
-        <!-- DESENVOLVEDORES - CARROSSEL -->
+        <!-- DESENVOLVEDORES -->
         <?php if (!empty($desenvolvedores)): ?>
-            <section class="section">
-                <div class="section-header">
-                    <h2 class="section-title"><i class="fas fa-building" style="color: #9147ff"></i> Desenvolvedores</h2>
-                    <div class="section-controls">
-                        <div class="section-nav">
-                            <button class="section-nav-btn" onclick="scrollCarousel('devsTrack', -1)"><i class="fas fa-chevron-left"></i></button>
-                            <button class="section-nav-btn" onclick="scrollCarousel('devsTrack', 1)"><i class="fas fa-chevron-right"></i></button>
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">
+                    <span class="section-title-icon dev"><i class="fas fa-building"></i></span>
+                    Desenvolvedores
+                </h2>
+                <div class="section-controls">
+                    <div class="section-nav">
+                        <button class="section-nav-btn" onclick="scrollCarousel('devsTrack', -1)">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <button class="section-nav-btn" onclick="scrollCarousel('devsTrack', 1)">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="devs-carousel">
+                <div class="devs-track" id="devsTrack">
+                    <?php foreach ($desenvolvedores as $dev): ?>
+                    <a href="<?= SITE_URL ?>/pages/desenvolvedor.php?slug=<?= $dev['slug'] ?>" class="dev-card">
+                        <img src="<?= SITE_URL . ($dev['logo_url'] ?: '/assets/images/default-dev.png') ?>"
+                             alt="" class="dev-logo"
+                             onerror="this.src='<?= SITE_URL ?>/assets/images/default-dev.png'">
+                        <div class="dev-name">
+                            <?= htmlspecialchars($dev['nome_estudio']) ?>
+                            <?php if ($dev['verificado']): ?><i class="fas fa-check-circle"></i><?php endif; ?>
                         </div>
-                    </div>
+                        <div class="dev-count"><?= (int)$dev['total_jogos'] ?> jogos</div>
+                    </a>
+                    <?php endforeach; ?>
                 </div>
-                <div class="devs-carousel">
-                    <div class="devs-track" id="devsTrack">
-                        <?php foreach ($desenvolvedores as $dev): ?>
-                            <a href="<?= SITE_URL ?>/pages/desenvolvedor.php?slug=<?= $dev['slug'] ?>" class="dev-card">
-                                <img src="<?= SITE_URL . ($dev['logo_url'] ?: '/assets/images/default-dev.png') ?>"
-                                    alt="" class="dev-logo"
-                                    onerror="this.src='<?= SITE_URL ?>/assets/images/default-dev.png'">
-                                <div class="dev-name">
-                                    <?= htmlspecialchars($dev['nome_estudio']) ?>
-                                    <?php if ($dev['verificado']): ?><i class="fas fa-check-circle"></i><?php endif; ?>
-                                </div>
-                                <div class="dev-count"><?= (int)$dev['total_jogos'] ?> jogos</div>
-                            </a>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-            </section>
+            </div>
+        </section>
         <?php endif; ?>
 
     </div>
 </div>
 
 <script>
-    // Banner Carousel
+// Banner Carousel
 const promoBanner = {
     track: null,
     slides: [],
@@ -1983,7 +2010,7 @@ const promoBanner = {
         if (!this.track) return;
 
         this.slides = this.track.querySelectorAll('.promo-banner-slide');
-        this.dots = document.querySelectorAll('.promo-banner-dot');
+        this.dots = document.querySelectorAll('.banner-dot');
 
         if (this.slides.length > 1) {
             this.startAutoSlide();
@@ -2017,7 +2044,7 @@ const promoBanner = {
     },
 
     startAutoSlide() {
-        this.interval = setInterval(() => this.next(), 5000);
+        this.interval = setInterval(() => this.next(), 6000);
     },
 
     resetAutoSlide() {
@@ -2026,94 +2053,78 @@ const promoBanner = {
     }
 };
 
-// Inicializar quando o DOM estiver pronto
+// Hero Slider
+const heroSlider = {
+    slides: document.querySelectorAll('.hero-slide'),
+    items: document.querySelectorAll('.hero-sidebar-item'),
+    current: 0,
+    interval: null,
+
+    goTo(index) {
+        if (index >= this.slides.length) index = 0;
+        if (index < 0) index = this.slides.length - 1;
+        this.slides.forEach(s => s.classList.remove('active'));
+        this.items.forEach(s => s.classList.remove('active'));
+        this.current = index;
+        this.slides[index]?.classList.add('active');
+        this.items[index]?.classList.add('active');
+        this.resetAuto();
+    },
+    next() { this.goTo(this.current + 1); },
+    prev() { this.goTo(this.current - 1); },
+    startAuto() { this.interval = setInterval(() => this.next(), 6000); },
+    resetAuto() {
+        clearInterval(this.interval);
+        this.startAuto();
+    },
+    init() {
+        if (this.slides.length > 1) this.startAuto();
+    }
+};
+
+// Initialize
 document.addEventListener('DOMContentLoaded', () => {
     promoBanner.init();
+    heroSlider.init();
 });
 
-    // Hero Slider
-    const heroSlider = {
-        slides: document.querySelectorAll('.hero-slide'),
-        items: document.querySelectorAll('.hero-sidebar-item'),
-        current: 0,
-        interval: null,
+// Carousel Scroll
+function scrollCarousel(id, dir) {
+    const el = document.getElementById(id);
+    if (!el) return;
 
-        goTo(index) {
-            if (index >= this.slides.length) index = 0;
-            if (index < 0) index = this.slides.length - 1;
-            this.slides.forEach(s => s.classList.remove('active'));
-            this.items.forEach(s => s.classList.remove('active'));
-            this.current = index;
-            this.slides[index]?.classList.add('active');
-            this.items[index]?.classList.add('active');
-            this.resetAuto();
-        },
-        next() {
-            this.goTo(this.current + 1);
-        },
-        prev() {
-            this.goTo(this.current - 1);
-        },
-        startAuto() {
-            this.interval = setInterval(() => this.next(), 6000);
-        },
-        resetAuto() {
-            clearInterval(this.interval);
-            this.startAuto();
-        },
-        init() {
-            if (this.slides.length > 1) this.startAuto();
-        }
-    };
-    heroSlider.init();
+    const firstItem = el.firstElementChild;
+    const itemWidth = firstItem ? firstItem.offsetWidth + 16 : 200;
+    const scrollAmount = itemWidth * 3;
 
-    // Generic Carousel Scroll
-    function scrollCarousel(id, dir) {
-        const el = document.getElementById(id);
-        if (!el) return;
-
-        // Detectar largura do primeiro item
-        const firstItem = el.firstElementChild;
-        const itemWidth = firstItem ? firstItem.offsetWidth + 16 : 200;
-        const scrollAmount = itemWidth * 3;
-
-        el.scrollBy({
-            left: scrollAmount * dir,
-            behavior: 'smooth'
-        });
-    }
-
-    // Touch/Mouse drag for all carousels
-    document.querySelectorAll('.games-carousel-track, .categories-track, .devs-track').forEach(el => {
-        let isDown = false,
-            startX, scrollLeft;
-
-        el.addEventListener('mousedown', e => {
-            isDown = true;
-            el.style.cursor = 'grabbing';
-            startX = e.pageX - el.offsetLeft;
-            scrollLeft = el.scrollLeft;
-        });
-
-        el.addEventListener('mouseleave', () => {
-            isDown = false;
-            el.style.cursor = 'grab';
-        });
-
-        el.addEventListener('mouseup', () => {
-            isDown = false;
-            el.style.cursor = 'grab';
-        });
-
-        el.addEventListener('mousemove', e => {
-            if (!isDown) return;
-            e.preventDefault();
-            el.scrollLeft = scrollLeft - (e.pageX - el.offsetLeft - startX) * 2;
-        });
-
-        // Set initial cursor
-        el.style.cursor = 'grab';
+    el.scrollBy({
+        left: scrollAmount * dir,
+        behavior: 'smooth'
     });
+}
+
+// Drag to scroll
+document.querySelectorAll('.games-carousel-track, .categories-track, .devs-track').forEach(el => {
+    let isDown = false, startX, scrollLeft;
+
+    el.addEventListener('mousedown', e => {
+        isDown = true;
+        el.style.cursor = 'grabbing';
+        startX = e.pageX - el.offsetLeft;
+        scrollLeft = el.scrollLeft;
+    });
+
+    el.addEventListener('mouseleave', () => { isDown = false; el.style.cursor = 'grab'; });
+    el.addEventListener('mouseup', () => { isDown = false; el.style.cursor = 'grab'; });
+
+    el.addEventListener('mousemove', e => {
+        if (!isDown) return;
+        e.preventDefault();
+        el.scrollLeft = scrollLeft - (e.pageX - el.offsetLeft - startX) * 2;
+    });
+
+    el.style.cursor = 'grab';
+});
 </script>
 
 <?php require_once '../includes/footer.php'; ?>
