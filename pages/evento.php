@@ -973,7 +973,7 @@ require_once '../components/game-card.php';
     <!-- TOOLBAR -->
     <div class="evento-toolbar">
         <div class="toolbar-container">
-            <button class="btn-filter-toggle" id="btnFilterToggle">
+            <button class="btn-filter-toggle active" id="btnFilterToggle">
                 <i class="fas fa-sliders-h"></i>
                 <span>Filtros</span>
                 <?php if (count($filtros_ativos) > 0): ?>
@@ -1015,7 +1015,7 @@ require_once '../components/game-card.php';
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
         
         <!-- SIDEBAR FILTROS -->
-        <aside class="filters-sidebar" id="filtersSidebar">
+        <aside class="filters-sidebar open" id="filtersSidebar">
             <div class="filters-header">
                 <div class="filters-title">
                     <i class="fas fa-filter"></i>

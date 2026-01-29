@@ -103,7 +103,7 @@ $order_by = match($ordem) {
     'preco_asc' => 'preco_efetivo ASC',
     'preco_desc' => 'preco_efetivo DESC',
     'nota' => 'j.nota_media DESC, j.titulo ASC',
-    'novos' => 'j.publicado_em DESC',
+    'novos' => 'COALESCE(j.publicado_em, j.criado_em) DESC, j.id DESC',
     'titulo' => 'j.titulo ASC',
     default => 'j.total_vendas DESC, j.nota_media DESC'
 };
@@ -355,8 +355,8 @@ require_once '../components/game-card.php';
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    background: rgba(185, 255, 102, 0.1);
-    border: 1px solid rgba(185, 255, 102, 0.3);
+    background: rgba(0, 174, 255, 0.1);
+    border: 1px solid rgba(0, 174, 255, 0.3);
     border-radius: 20px;
     font-size: 12px;
     color: var(--accent);
@@ -369,17 +369,15 @@ require_once '../components/game-card.php';
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(185, 255, 102, 0.2);
+    background: rgba(0, 174, 255, 0.2);
     border-radius: 50%;
     cursor: pointer;
     transition: background 0.2s;
-    text-decoration: none;
-    color: inherit;
 }
 
 .filter-tag-remove:hover {
     background: var(--accent);
-    color: #000;
+    color: #fff;
 }
 
 .toolbar-results {
@@ -484,7 +482,6 @@ require_once '../components/game-card.php';
     background: none;
     border: none;
     cursor: pointer;
-    text-decoration: none;
     transition: opacity 0.2s;
 }
 
@@ -531,7 +528,7 @@ require_once '../components/game-card.php';
 }
 
 .filter-option.active {
-    background: rgba(185, 255, 102, 0.1);
+    background: rgba(0, 174, 255, 0.1);
 }
 
 .filter-option input {
@@ -559,7 +556,7 @@ require_once '../components/game-card.php';
     content: '';
     width: 6px;
     height: 6px;
-    background: #000;
+    background: #fff;
     border-radius: 50%;
 }
 
@@ -577,61 +574,6 @@ require_once '../components/game-card.php';
 .filter-count {
     font-size: 11px;
     color: var(--text-secondary);
-}
-
-/* Checkbox style */
-.filter-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.15s;
-}
-
-.filter-checkbox:hover {
-    background: rgba(255,255,255,0.03);
-}
-
-.filter-checkbox input {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 18px;
-    height: 18px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 2px solid rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
-    cursor: pointer;
-    position: relative;
-    transition: all 0.2s ease;
-    margin: 0;
-}
-
-.filter-checkbox:hover input {
-    border-color: rgba(255, 255, 255, 0.5);
-}
-
-.filter-checkbox input:checked {
-    background-color: var(--accent);
-    border-color: var(--accent);
-}
-
-.filter-checkbox input:checked::after {
-    content: '';
-    position: absolute;
-    top: 1px;
-    left: 5px;
-    width: 4px;
-    height: 9px;
-    border: solid #000;
-    border-width: 0 2px 2px 0;
-    transform: rotate(45deg);
-}
-
-.filter-checkbox input:checked + span {
-    color: var(--accent);
-    font-weight: 500;
 }
 
 /* Price Range */
@@ -732,7 +674,7 @@ require_once '../components/game-card.php';
     background: var(--accent);
     border: none;
     border-radius: 8px;
-    color: #000;
+    color: #fff;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
@@ -926,7 +868,7 @@ require_once '../components/game-card.php';
     <!-- TOOLBAR -->
     <div class="categoria-toolbar">
         <div class="toolbar-container">
-            <button class="btn-filter-toggle" id="btnFilterToggle">
+            <button class="btn-filter-toggle active" id="btnFilterToggle">
                 <i class="fas fa-sliders-h"></i>
                 <span>Filtros</span>
                 <?php if (count($filtros_ativos) > 0): ?>
@@ -969,7 +911,7 @@ require_once '../components/game-card.php';
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
         
         <!-- SIDEBAR FILTROS -->
-        <aside class="filters-sidebar" id="filtersSidebar">
+        <aside class="filters-sidebar open" id="filtersSidebar">
             <div class="filters-header">
                 <div class="filters-title">
                     <i class="fas fa-filter"></i>

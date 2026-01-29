@@ -163,7 +163,6 @@ require_once '../includes/header.php';
     padding: 30px;
     text-align: center;
     border-bottom: 1px solid var(--border);
-    background: linear-gradient(135deg, rgba(20, 184, 166, 0.05), rgba(139, 92, 246, 0.05));
 }
 
 .payment-header h1 {
@@ -458,7 +457,7 @@ require_once '../includes/header.php';
    TOTAL BOX
    =========================================== */
 .total-box {
-    background: linear-gradient(135deg, rgba(185, 255, 102, 0.1), rgba(163, 230, 53, 0.1));
+    background: var(--bg-primary);
     border: 2px solid var(--accent);
     border-radius: 16px;
     padding: 25px;
@@ -484,38 +483,7 @@ require_once '../includes/header.php';
     margin-top: 5px;
 }
 
-/* ===========================================
-   TEST BANNER
-   =========================================== */
-.test-banner {
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(251, 191, 36, 0.1));
-    border: 2px solid var(--pay-orange);
-    border-radius: 14px;
-    padding: 20px;
-    margin-bottom: 25px;
-    display: flex;
-    gap: 15px;
-    align-items: flex-start;
-}
 
-.test-banner i {
-    font-size: 1.5rem;
-    color: var(--pay-orange);
-    flex-shrink: 0;
-}
-
-.test-banner-content h4 {
-    font-size: 0.95rem;
-    margin: 0 0 6px;
-    color: var(--pay-orange);
-}
-
-.test-banner-content p {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    margin: 0;
-    line-height: 1.5;
-}
 
 /* ===========================================
    SIMULATE BUTTON
@@ -873,10 +841,7 @@ require_once '../includes/header.php';
         font-size: 1.1rem;
     }
     
-    .test-banner {
-        flex-direction: column;
-        text-align: center;
-    }
+    
 }
 </style>
 
@@ -952,13 +917,7 @@ require_once '../includes/header.php';
                             <div class="total-items"><?php echo count($itens); ?> jogo<?php echo count($itens) > 1 ? 's' : ''; ?></div>
                         </div>
                         
-                        <div class="test-banner">
-                            <i class="fas fa-flask"></i>
-                            <div class="test-banner-content">
-                                <h4>Ambiente de Teste</h4>
-                                <p>Este é um ambiente de demonstração. Clique no botão abaixo para simular o pagamento aprovado. Nenhuma cobrança real será realizada.</p>
-                            </div>
-                        </div>
+                        
                         
                         <button class="btn-simulate" onclick="simularPagamento()" id="btnSimulate">
                             <i class="fas fa-check-circle"></i>
@@ -1039,13 +998,7 @@ require_once '../includes/header.php';
                             <div class="total-items"><?php echo count($itens); ?> jogo<?php echo count($itens) > 1 ? 's' : ''; ?></div>
                         </div>
                         
-                        <div class="test-banner">
-                            <i class="fas fa-flask"></i>
-                            <div class="test-banner-content">
-                                <h4>Ambiente de Teste</h4>
-                                <p>Os dados do cartão não serão processados. Clique no botão abaixo para simular o pagamento.</p>
-                            </div>
-                        </div>
+                        
                         
                         <button class="btn-simulate" onclick="simularPagamento()" id="btnSimulate">
                             <i class="fas fa-lock"></i>

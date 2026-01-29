@@ -214,14 +214,16 @@ require_once '../includes/header.php';
         display: grid;
         grid-template-columns: 1fr 1fr;
         align-items: center;
-        padding: 40px 60px;
+        padding: 40px 20%;
     }
 
     /* Lado Esquerdo - Informações */
     .ps-promo-info {
         display: flex;
         flex-direction: column;
-        align-items: flex-start;
+        align-items: center;
+        text-align: center;
+
         gap: 16px;
     }
 
@@ -245,6 +247,7 @@ require_once '../includes/header.php';
     .ps-promo-badges {
         display: flex;
         flex-direction: column;
+        align-items: center;
         gap: 8px;
         margin-top: 8px;
     }
@@ -1162,8 +1165,8 @@ require_once '../includes/header.php';
     }
 
     .games-track .ps-card {
-        flex: 0 0 170px;
-        min-width: 170px;
+        flex: 0 0 300px;
+        min-width: 300px;
     }
 
     /* ============================================

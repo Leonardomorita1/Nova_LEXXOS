@@ -277,7 +277,7 @@ require_once '../includes/header.php';
 }
 
 .search-title .highlight {
-    background: linear-gradient(135deg, var(--accent), #9147ff);
+    background: var(--accent);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -364,7 +364,7 @@ require_once '../includes/header.php';
     display: flex;
     align-items: center;
     gap: 10px;
-    background: linear-gradient(135deg, var(--accent), #0095d9);
+    background: var(--accent);
     color: #fff;
     border: none;
     padding: 18px 32px;
@@ -697,21 +697,57 @@ require_once '../includes/header.php';
 .filter-item.promo .filter-label i { color: var(--success); }
 .filter-item.free .filter-label i { color: #f9ca24; }
 
-/* Stars Rating Filter */
-.filter-rating .stars {
+/* --- CSS para o Slider de Avaliação --- */
+.range-slider-container {
+    padding: 15px 5px 5px;
+}
+.range-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border); /* Cor de fundo padrão se JS falhar */
+    outline: none;
+    cursor: pointer;
+    margin-bottom: 15px;
+    transition: background 0.1s;
+}
+.range-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 3px solid var(--bg-secondary);
+    box-shadow: 0 2px 6px rgba(0, 174, 255, 0.4);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.range-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+    box-shadow: 0 4px 10px rgba(0, 174, 255, 0.5);
+}
+/* Firefox thumb support */
+.range-slider::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 3px solid var(--bg-secondary);
+    cursor: pointer;
+}
+.range-values {
     display: flex;
-    gap: 2px;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
 }
-
-.filter-rating .stars i {
-    font-size: 11px;
-    color: var(--border);
-}
-
-.filter-rating .stars i.filled {
+.range-stars {
     color: #f9ca24;
+    font-size: 13px;
+    letter-spacing: 2px;
 }
-
 /* Price Range */
 .price-range {
     padding: 8px 0;
@@ -831,7 +867,7 @@ require_once '../includes/header.php';
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    background: linear-gradient(135deg, rgba(0, 174, 255, 0.1), rgba(145, 71, 255, 0.1));
+    background: rgba(0, 174, 255, 0.1);
     color: var(--accent);
     padding: 8px 14px;
     border-radius: 25px;
@@ -1057,7 +1093,7 @@ require_once '../includes/header.php';
 }
 
 .page-num.active {
-    background: linear-gradient(135deg, var(--accent), #0095d9);
+    background: var(--accent);
     color: #fff;
     border-color: var(--accent);
     font-weight: 700;
@@ -1177,7 +1213,7 @@ require_once '../includes/header.php';
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--accent), #0095d9);
+    background: var(--accent);
     color: #fff;
     box-shadow: 0 4px 15px rgba(0, 174, 255, 0.3);
 }
@@ -1687,42 +1723,43 @@ require_once '../includes/header.php';
                         </div>
                     </div>
 
-                    <!-- Avaliação -->
-                    <div class="filter-group">
-                        <button type="button" class="filter-header" onclick="toggleFilter(this)">
-                            <span><i class="fas fa-star"></i> Avaliação</span>
-                            <i class="fas fa-chevron-down"></i>
-                        </button>
-                        <div class="filter-content">
-                            <?php foreach ([4, 3, 2, 1] as $nota): 
-                                $isSelected = $nota_min == $nota;
-                            ?>
-                            <label class="filter-item filter-rating <?= $isSelected ? 'selected' : '' ?>">
-                                <input type="radio" 
-                                       name="nota_min" 
-                                       value="<?= $nota ?>"
-                                       <?= $isSelected ? 'checked' : '' ?>
-                                       onchange="this.form.submit()">
-                                <span class="filter-check"></span>
-                                <span class="filter-label">
-                                    <span class="stars">
-                                        <?php for ($i = 1; $i <= 5; $i++): ?>
-                                            <i class="fas fa-star <?= $i <= $nota ? 'filled' : '' ?>"></i>
-                                        <?php endfor; ?>
-                                    </span>
-                                    ou mais
-                                </span>
-                            </label>
-                            <?php endforeach; ?>
-                            <?php if ($nota_min > 0): ?>
-                            <label class="filter-item">
-                                <input type="radio" name="nota_min" value="0" onchange="this.form.submit()">
-                                <span class="filter-check"></span>
-                                <span class="filter-label">Qualquer avaliação</span>
-                            </label>
-                            <?php endif; ?>
-                        </div>
-                    </div>
+                    <!-- Avaliação-->
+<div class="filter-group">
+    <button type="button" class="filter-header" onclick="toggleFilter(this)">
+        <span><i class="fas fa-star"></i> Avaliação Mínima</span>
+        <i class="fas fa-chevron-down"></i>
+    </button>
+    <div class="filter-content">
+        <div class="range-slider-container">
+            <!-- 
+                O style inline define o gradiente inicial baseado no valor PHP.
+                oninput: atualiza visual sem recarregar.
+                onchange: submete o formulário ao soltar o mouse.
+            -->
+            <input type="range" 
+                   name="nota_min" 
+                   min="0" 
+                   max="5" 
+                   step="1" 
+                   value="<?= $nota_min ?>" 
+                   class="range-slider" 
+                   oninput="updateRatingDisplay(this)"
+                   onchange="this.form.submit()"
+                   style="background: linear-gradient(to right, var(--accent) <?= ($nota_min/5)*100 ?>%, var(--border) <?= ($nota_min/5)*100 ?>%)">
+            
+            <div class="range-values">
+                <span class="rating-text">
+                    <?= $nota_min > 0 ? $nota_min . '+ Estrelas' : 'Qualquer nota' ?>
+                </span>
+                <span class="range-stars">
+                    <?php for($i=1; $i<=5; $i++): ?>
+                        <i class="<?= $i <= $nota_min ? 'fas' : 'far' ?> fa-star"></i>
+                    <?php endfor; ?>
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
                 </form>
             </aside>
 
@@ -1966,6 +2003,29 @@ document.getElementById('searchInput')?.addEventListener('focus', function() {
 document.getElementById('searchInput')?.addEventListener('blur', function() {
     this.closest('.search-input-wrapper').classList.remove('focused');
 });
+function updateRatingDisplay(input) {
+    const val = input.value;
+    const container = input.closest('.range-slider-container');
+    const textEl = container.querySelector('.rating-text');
+    const starsEl = container.querySelector('.range-stars');
+    
+    // 1. Atualiza Texto
+    textEl.textContent = val > 0 ? val + '+ Estrelas' : 'Qualquer nota';
+    
+    // 2. Atualiza Ícones das Estrelas
+    let starsHtml = '';
+    for(let i=1; i<=5; i++) {
+        // Se o valor for >= i, estrela cheia (fas), senão vazia (far)
+        starsHtml += `<i class="${i <= val ? 'fas' : 'far'} fa-star"></i>`;
+    }
+    starsEl.innerHTML = starsHtml;
+
+    // 3. Atualiza Barra de Progresso (Background Gradient)
+    const max = input.max || 5;
+    const percent = (val / max) * 100;
+    // Pinta de 'accent' até a porcentagem atual, e 'border' no restante
+    input.style.background = `linear-gradient(to right, var(--accent) ${percent}%, var(--border) ${percent}%)`;
+}
 </script>
 
 <?php require_once '../includes/footer.php'; ?>

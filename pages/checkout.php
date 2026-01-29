@@ -225,13 +225,13 @@ require_once '../includes/header.php';
 }
 
 .payment-method label:hover {
-    border-color: rgba(185, 255, 102, 0.3);
-    background: rgba(185, 255, 102, 0.02);
+    border-color: var(--accent);
+    background: var(--bg-secondary);
 }
 
 .payment-method input[type="radio"]:checked + label {
     border-color: var(--accent);
-    background: rgba(185, 255, 102, 0.05);
+    background: var(--bg-secondary);
 }
 
 .payment-method input[type="radio"]:checked + label::before {
@@ -262,11 +262,11 @@ require_once '../includes/header.php';
 }
 
 .payment-method input[type="radio"]:checked + label .method-icon {
-    background: rgba(185, 255, 102, 0.15);
+    background: var(--bg-primary);
 }
 
 .method-icon.pix {
-    color: #32bcad;
+    color: var(--checkout-blue);
 }
 
 .method-icon.card {
@@ -296,35 +296,7 @@ require_once '../includes/header.php';
     text-transform: uppercase;
 }
 
-/* Test Mode Banner */
-.test-mode-banner {
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid #f59e0b;
-    border-radius: 14px;
-    padding: 20px;
-    display: flex;
-    gap: 15px;
-    align-items: flex-start;
-}
 
-.test-mode-banner i {
-    font-size: 1.5rem;
-    color: #f59e0b;
-    flex-shrink: 0;
-}
-
-.test-mode-banner h4 {
-    font-size: 0.95rem;
-    margin: 0 0 6px;
-    color: #f59e0b;
-}
-
-.test-mode-banner p {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    margin: 0;
-    line-height: 1.5;
-}
 
 /* Submit Button */
 .btn-proceed {
@@ -617,13 +589,7 @@ require_once '../includes/header.php';
                         </div>
                     </div>
                     
-                    <div class="test-mode-banner">
-                        <i class="fas fa-flask"></i>
-                        <div>
-                            <h4>Modo de Teste Ativo</h4>
-                            <p>Este é um ambiente de demonstração. Na próxima etapa você poderá simular o pagamento sem nenhuma cobrança real.</p>
-                        </div>
-                    </div>
+                    
                     
                     <button type="submit" class="btn-proceed">
                         <i class="fas fa-arrow-right"></i>

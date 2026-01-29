@@ -678,6 +678,7 @@ require_once '../includes/header.php';
 
 .main-content {
     min-width: 0;
+    padding: 0;
 }
 
 .sidebar {
