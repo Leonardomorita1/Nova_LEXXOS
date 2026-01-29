@@ -229,9 +229,10 @@ require_once '../includes/header.php';
 
     /* Título Principal - Quebrado */
     .ps-promo-title {
+        font-style: italic;
         font-size: clamp(36px, 5vw, 56px);
         font-weight: 900;
-        color: var(--banner-text, #fff);
+        color: var(--banner-text);
         text-transform: uppercase;
         line-height: 1;
         letter-spacing: -1px;
@@ -250,98 +251,92 @@ require_once '../includes/header.php';
         align-items: center;
         gap: 8px;
         margin-top: 8px;
+        font-style: italic;
     }
 
     /* Badge Termina Em - Formato Tag/Rampa */
     .ps-badge-date {
         display: inline-flex;
         align-items: center;
-        background: rgba(0, 0, 0, 0.6);
+        background: rgba(94, 94, 94, 0.31);
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.61);
+        backdrop-filter: blur(9px);
+        -webkit-backdrop-filter: blur(9px);
+        border: 1px solid rgba(73, 69, 69, 0.2);
         backdrop-filter: blur(10px);
         padding: 0;
-        border-radius: 4px;
-        overflow: hidden;
+
         width: fit-content;
+        -webkit-transform: skew(-15deg);
+        -moz-transform: skew(-15deg);
+        -o-transform: skew(-15deg);
     }
 
     .ps-badge-date-label {
         background: transparent;
         color: rgba(255, 255, 255, 0.9);
-        padding: 10px 14px;
-        font-size: 12px;
-        font-weight: 700;
+        padding: 4px 6px;
+        font-size: 15px;
+        font-weight: 900;
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
 
     .ps-badge-date-value {
-        background: rgba(255, 255, 255, 0.15);
         color: #fff;
-        padding: 10px 16px;
-        font-size: 14px;
+        background: var(--banner-accent);
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.61);
+        backdrop-filter: blur(9px);
+        -webkit-backdrop-filter: blur(9px);
+        border: 1px solid rgba(73, 69, 69, 0.2);
+        padding: 5px 16px;
+        font-size: 16px;
         font-weight: 800;
         position: relative;
+
     }
 
-    /* Rampa/Seta no Badge */
-    .ps-badge-date-value::before {
-        content: '';
-        position: absolute;
-        left: -10px;
-        top: 0;
-        bottom: 0;
-        width: 0;
-        height: 0;
-        border-style: solid;
-        border-width: 19px 10px 19px 0;
-        border-color: transparent rgba(255, 255, 255, 0.15) transparent transparent;
-    }
 
     /* Badge Economize - Formato PS Store */
     .ps-badge-discount {
         display: inline-flex;
         align-items: stretch;
-        border-radius: 4px;
-        overflow: hidden;
         width: fit-content;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
     }
 
     .ps-badge-discount-label {
-        background: var(--banner-accent, #0066CC);
+        background: var(--banner-accent);
         color: #fff;
-        padding: 12px 16px;
+        padding: 2px 3px;
         font-size: 13px;
-        font-weight: 700;
+        font-weight: 900;
         text-transform: uppercase;
         letter-spacing: 0.5px;
         display: flex;
         align-items: center;
         position: relative;
+        -webkit-transform: skew(-15deg);
+        -moz-transform: skew(-15deg);
+        -o-transform: skew(-15deg);
     }
 
-    /* Rampa/Seta Azul */
-    .ps-badge-discount-label::after {
-        content: '';
-        position: absolute;
-        right: -15px;
-        top: 0;
-        bottom: 0;
-        width: 0;
-        height: 0;
-        border-style: solid;
-        border-width: 22px 0 22px 15px;
-        border-color: transparent transparent transparent var(--banner-accent, #0066CC);
-        z-index: 2;
-    }
+
 
     .ps-badge-discount-value {
-        background: #fff;
-        color: #000;
-        padding: 8px 20px 8px 28px;
         display: flex;
-        align-items: baseline;
-        gap: 2px;
+        align-items: center;
+        padding: 10px;
+        -webkit-transform: skew(-15deg);
+        -moz-transform: skew(-15deg);
+        -o-transform: skew(-15deg);
+        background: rgba(94, 94, 94, 0.31);
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.61);
+        backdrop-filter: blur(9px);
+        -webkit-backdrop-filter: blur(9px);
+        border: 1px solid rgba(73, 69, 69, 0.2);
+        color: var(--banner-accent);
+
     }
 
     .ps-badge-discount-number {
@@ -1509,7 +1504,7 @@ require_once '../includes/header.php';
                                         <h2 class="ps-promo-title">
                                             <span><?= htmlspecialchars($tituloLinha1) ?></span>
                                             <?php if ($tituloLinha2): ?>
-                                                <span><?= htmlspecialchars($tituloLinha2) ?></span>
+                                                <span style="font-weight: bold;"><?= htmlspecialchars($tituloLinha2) ?></span>
                                             <?php endif; ?>
                                         </h2>
 
@@ -1527,11 +1522,12 @@ require_once '../includes/header.php';
                                             <?php if (!empty($descontoNum)): ?>
                                                 <div class="ps-badge-discount">
                                                     <span class="ps-badge-discount-label">Economize até</span>
-                                                    <span class="ps-badge-discount-value">
-                                                        <span class="ps-badge-discount-number"><?= $descontoNum ?></span>
-                                                        <span class="ps-badge-discount-percent">%</span>
-                                                    </span>
+
                                                 </div>
+                                                <span class="ps-badge-discount-value">
+                                                    <span class="ps-badge-discount-number"><?= $descontoNum ?></span>
+                                                    <span class="ps-badge-discount-percent">%</span>
+                                                </span>
                                             <?php endif; ?>
                                         </div>
                                     </div>
@@ -2001,66 +1997,72 @@ require_once '../includes/header.php';
 
 <script>
     // Dados dos banners para atualizar o bottom
-const bannersData = <?= json_encode(array_map(function($b) {
-    $isPromo = ($b['estilo_banner'] ?? 'simples') === 'promocional';
-    return [
-        'titulo' => $b['texto_principal'] ?? $b['titulo'] ?? 'Confira',
-        'subtitulo' => $b['subtitulo'] ?? '',
-        'url' => $b['url_destino'] ?? '#',
-        'btnText' => $isPromo ? 'Ver ofertas' : 'Saiba mais'
-    ];
-}, $banners)) ?>;
+    const bannersData = <?= json_encode(array_map(function ($b) {
+                            $isPromo = ($b['estilo_banner'] ?? 'simples') === 'promocional';
+                            return [
+                                'titulo' => $b['texto_principal'] ?? $b['titulo'] ?? 'Confira',
+                                'subtitulo' => $b['subtitulo'] ?? '',
+                                'url' => $b['url_destino'] ?? '#',
+                                'btnText' => $isPromo ? 'Ver ofertas' : 'Saiba mais'
+                            ];
+                        }, $banners)) ?>;
 
-// Banner Slider
-const psBanner = {
-    track: null,
-    slides: [],
-    dots: [],
-    bottom: null,
-    current: 0,
-    interval: null,
-    autoDelay: 6000,
+    // Banner Slider
+    const psBanner = {
+        track: null,
+        slides: [],
+        dots: [],
+        bottom: null,
+        current: 0,
+        interval: null,
+        autoDelay: 6000,
 
-    init() {
-        this.track = document.getElementById('psBannerTrack');
-        this.bottom = document.getElementById('psBannerBottom');
-        if (!this.track) return;
+        init() {
+            this.track = document.getElementById('psBannerTrack');
+            this.bottom = document.getElementById('psBannerBottom');
+            if (!this.track) return;
 
-        this.slides = this.track.querySelectorAll('.ps-banner-slide');
-        this.dots = document.querySelectorAll('.ps-banner-dot');
+            this.slides = this.track.querySelectorAll('.ps-banner-slide');
+            this.dots = document.querySelectorAll('.ps-banner-dot');
 
-        if (this.slides.length > 1) {
-            this.startAuto();
-            
-            const slider = this.track.closest('.ps-banner-slider');
-            slider.addEventListener('mouseenter', () => clearInterval(this.interval));
-            slider.addEventListener('mouseleave', () => this.startAuto());
+            if (this.slides.length > 1) {
+                this.startAuto();
+
+                const slider = this.track.closest('.ps-banner-slider');
+                slider.addEventListener('mouseenter', () => clearInterval(this.interval));
+                slider.addEventListener('mouseleave', () => this.startAuto());
+            }
+        },
+
+        goTo(index) {
+            if (index >= this.slides.length) index = 0;
+            if (index < 0) index = this.slides.length - 1;
+
+            this.current = index;
+            this.track.style.transform = `translateX(-${index * 100}%)`;
+
+            this.dots.forEach((dot, i) => dot.classList.toggle('active', i === index));
+
+            // Atualizar bottom
+            if (this.bottom && bannersData[index]) {
+                const data = bannersData[index];
+                this.bottom.querySelector('.ps-banner-bottom-title').textContent = data.titulo;
+                this.bottom.querySelector('.ps-banner-bottom-subtitle').textContent = data.subtitulo;
+                this.bottom.querySelector('.ps-banner-cta').href = data.url;
+                this.bottom.querySelector('.ps-banner-cta-text').textContent = data.btnText;
+            }
+        },
+
+        next() {
+            this.goTo(this.current + 1);
+        },
+        prev() {
+            this.goTo(this.current - 1);
+        },
+        startAuto() {
+            this.interval = setInterval(() => this.next(), this.autoDelay);
         }
-    },
-
-    goTo(index) {
-        if (index >= this.slides.length) index = 0;
-        if (index < 0) index = this.slides.length - 1;
-        
-        this.current = index;
-        this.track.style.transform = `translateX(-${index * 100}%)`;
-        
-        this.dots.forEach((dot, i) => dot.classList.toggle('active', i === index));
-        
-        // Atualizar bottom
-        if (this.bottom && bannersData[index]) {
-            const data = bannersData[index];
-            this.bottom.querySelector('.ps-banner-bottom-title').textContent = data.titulo;
-            this.bottom.querySelector('.ps-banner-bottom-subtitle').textContent = data.subtitulo;
-            this.bottom.querySelector('.ps-banner-cta').href = data.url;
-            this.bottom.querySelector('.ps-banner-cta-text').textContent = data.btnText;
-        }
-    },
-
-    next() { this.goTo(this.current + 1); },
-    prev() { this.goTo(this.current - 1); },
-    startAuto() { this.interval = setInterval(() => this.next(), this.autoDelay); }
-};
+    };
 
     // Hero Slider
     const heroSlider = {

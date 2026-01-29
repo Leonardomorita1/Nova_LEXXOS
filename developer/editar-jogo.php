@@ -358,7 +358,7 @@ require_once '../includes/header.php';
     .form-control:focus {
         outline: none;
         border-color: var(--accent);
-        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+        box-shadow: 0 0 0 3px var(--accent) opacity(0.2);
     }
 
     .form-control::placeholder {
@@ -402,7 +402,7 @@ require_once '../includes/header.php';
 
     .upload-zone:hover {
         border-color: var(--accent);
-        background: rgba(139, 92, 246, 0.05);
+        background: var(--accent) opacity(0.2);
     }
 
     .upload-zone.has-image {
@@ -548,7 +548,7 @@ require_once '../includes/header.php';
     }
 
     .popover-item.selected {
-        background: rgba(139, 92, 246, 0.1);
+        background: var(--accent) opacity(0.2);
         color: var(--accent);
     }
 
@@ -654,7 +654,7 @@ require_once '../includes/header.php';
     .add-shot:hover {
         border-color: var(--accent);
         color: var(--accent);
-        background: rgba(139, 92, 246, 0.05);
+        background: var(--accent) opacity(0.05);
     }
 
     .add-shot i {

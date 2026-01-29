@@ -259,6 +259,15 @@ require_once '../includes/header.php';
 }
 .back-link:hover { color: var(--accent); }
 
+.side_section {
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    height: fit-content;
+    top: 20px;
+    gap: 16px;
+}
+
 /* Status Badge */
 .status-badge {
     display: inline-flex;
@@ -976,8 +985,8 @@ require_once '../includes/header.php';
 
                     <!-- Sidebar -->
                     <div class="side-column">
-                        <!-- Ações -->
-                        <div class="card">
+                        <div class="side_section">
+                            <div class="card">
                             <div class="card-header">
                                 <h3><i class="fas fa-bolt"></i> Ações</h3>
                             </div>
@@ -1103,6 +1112,7 @@ require_once '../includes/header.php';
                                     <?php endif; ?>
                                 </div>
                             </div>
+                        </div>
                         </div>
                     </div>
                 </div>

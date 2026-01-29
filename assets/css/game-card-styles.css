@@ -246,7 +246,7 @@
 .cards-grid,
 .games-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 300));
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 24px 16px;
     width: 100%;
 }

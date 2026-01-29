@@ -657,10 +657,7 @@ body.admin-body {
                 <i class="fas fa-th-large"></i>
                 <span>Dashboard</span>
             </a>
-            <a href="<?= SITE_URL ?>/admin/eventos.php" class="nav-link <?= $current_page == 'eventos.php' ? 'active' : '' ?>">
-                <i class="fas fa-chart-line"></i>
-                <span>Monitoramento</span>
-            </a>
+            
         </div>
 
         <!-- Gestão -->
@@ -694,9 +691,9 @@ body.admin-body {
         <!-- Marketing -->
         <div class="nav-group">
             <div class="nav-label">Marketing</div>
-            <a href="<?= SITE_URL ?>/admin/banners.php" class="nav-link <?= $current_page == 'banners.php' ? 'active' : '' ?>">
+            <a href="<?= SITE_URL ?>/admin/eventos.php" class="nav-link <?= $current_page == 'eventos.php' ? 'active' : '' ?>">
                 <i class="fas fa-images"></i>
-                <span>Banners</span>
+                <span>Eventos e Banners</span>
             </a>
         </div>
 
