@@ -1,5 +1,6 @@
 <?php
-// admin/banners.php - GESTÃO UNIFICADA DE BANNERS E EVENTOS
+// admin/banners.php - Gestão de Banners e Eventos
+
 require_once '../config/config.php';
 require_once '../config/database.php';
 
@@ -15,21 +16,26 @@ $message = '';
 $error = '';
 $activeTab = $_GET['tab'] ?? 'eventos';
 
-// ============================================
-// FUNÇÕES DE UPLOAD
-// ============================================
 function uploadAndCompressImage($file, $tipo = 'banner', $maxWidth = 1920, $quality = 80)
 {
-    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/assets/images/banners/';
+    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/banners/';
     if (!is_dir($uploadDir)) {
         mkdir($uploadDir, 0755, true);
     }
 
-    $allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    $gdInfo = gd_info();
+    $webpSupport = !empty($gdInfo['WebP Support']);
+    
+    $allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+    if ($webpSupport) {
+        $allowedTypes[] = 'image/webp';
+    }
+    
     $fileType = mime_content_type($file['tmp_name']);
 
     if (!in_array($fileType, $allowedTypes)) {
-        throw new Exception('Tipo de arquivo não permitido. Use JPG, PNG, WebP ou GIF.');
+        $formats = $webpSupport ? 'JPG, PNG, WebP ou GIF' : 'JPG, PNG ou GIF';
+        throw new Exception("Tipo de arquivo não permitido. Use: $formats");
     }
 
     if ($file['size'] > 10 * 1024 * 1024) {
@@ -39,6 +45,8 @@ function uploadAndCompressImage($file, $tipo = 'banner', $maxWidth = 1920, $qual
     $filename = $tipo . '-' . uniqid() . '-' . time() . '.jpg';
     $filepath = $uploadDir . $filename;
 
+    $source = null;
+    
     switch ($fileType) {
         case 'image/jpeg':
             $source = imagecreatefromjpeg($file['tmp_name']);
@@ -47,17 +55,17 @@ function uploadAndCompressImage($file, $tipo = 'banner', $maxWidth = 1920, $qual
             $source = imagecreatefrompng($file['tmp_name']);
             break;
         case 'image/webp':
-            $source = imagecreatefromwebp($file['tmp_name']);
+            if ($webpSupport) {
+                $source = imagecreatefromwebp($file['tmp_name']);
+            }
             break;
         case 'image/gif':
             $source = imagecreatefromgif($file['tmp_name']);
             break;
-        default:
-            throw new Exception('Formato não suportado.');
     }
 
     if (!$source) {
-        throw new Exception('Erro ao processar imagem.');
+        throw new Exception('Erro ao processar imagem. Tente outro formato (JPG recomendado).');
     }
 
     $origWidth = imagesx($source);
@@ -81,21 +89,29 @@ function uploadAndCompressImage($file, $tipo = 'banner', $maxWidth = 1920, $qual
     imagedestroy($source);
     imagedestroy($resized);
 
-    return '/assets/images/banners/' . $filename;
+    return '/uploads/banners/' . $filename;
 }
 
 function uploadOverlayImage($file, $maxWidth = 800)
 {
-    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/assets/images/banners/';
+    $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/banners/overlays/';
     if (!is_dir($uploadDir)) {
         mkdir($uploadDir, 0755, true);
     }
 
-    $allowedTypes = ['image/png', 'image/webp', 'image/gif'];
+    $gdInfo = gd_info();
+    $webpSupport = !empty($gdInfo['WebP Support']);
+
+    $allowedTypes = ['image/png', 'image/gif'];
+    if ($webpSupport) {
+        $allowedTypes[] = 'image/webp';
+    }
+    
     $fileType = mime_content_type($file['tmp_name']);
 
     if (!in_array($fileType, $allowedTypes)) {
-        throw new Exception('Overlay deve ser PNG, WebP ou GIF.');
+        $formats = $webpSupport ? 'PNG, WebP ou GIF' : 'PNG ou GIF';
+        throw new Exception("Overlay deve ser: $formats (com transparência)");
     }
 
     if ($file['size'] > 5 * 1024 * 1024) {
@@ -105,16 +121,24 @@ function uploadOverlayImage($file, $maxWidth = 800)
     $filename = 'overlay-' . uniqid() . '-' . time() . '.png';
     $filepath = $uploadDir . $filename;
 
+    $source = null;
+    
     switch ($fileType) {
         case 'image/png':
             $source = imagecreatefrompng($file['tmp_name']);
             break;
         case 'image/webp':
-            $source = imagecreatefromwebp($file['tmp_name']);
+            if ($webpSupport) {
+                $source = imagecreatefromwebp($file['tmp_name']);
+            }
             break;
         case 'image/gif':
             $source = imagecreatefromgif($file['tmp_name']);
             break;
+    }
+
+    if (!$source) {
+        throw new Exception('Erro ao processar overlay. Use PNG.');
     }
 
     $origWidth = imagesx($source);
@@ -139,7 +163,7 @@ function uploadOverlayImage($file, $maxWidth = 800)
     imagedestroy($source);
     imagedestroy($resized);
 
-    return '/assets/images/banners/' . $filename;
+    return '/uploads/banners/overlays/' . $filename;
 }
 
 function deleteImageFile($path) {
@@ -150,10 +174,6 @@ function deleteImageFile($path) {
         }
     }
 }
-
-// ============================================
-// AÇÕES - EVENTOS PROMOCIONAIS
-// ============================================
 
 // Criar Evento + Banner Promocional
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['criar_evento'])) {
@@ -175,69 +195,89 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['criar_evento'])) {
             throw new Exception('Preencha todos os campos obrigatórios.');
         }
 
-        // Upload imagens
         $imagem_banner = '/assets/images/default-banner.jpg';
-        if (!empty($_FILES['imagem_banner']['tmp_name'])) {
+        $imagem_overlay = null;
+        
+        if (isset($_FILES['imagem_banner']) && 
+            !empty($_FILES['imagem_banner']['tmp_name']) &&
+            $_FILES['imagem_banner']['error'] === UPLOAD_ERR_OK &&
+            is_uploaded_file($_FILES['imagem_banner']['tmp_name'])) {
             $imagem_banner = uploadAndCompressImage($_FILES['imagem_banner'], 'evento', 1920, 85);
         }
 
-        $imagem_overlay = null;
-        if (!empty($_FILES['imagem_overlay']['tmp_name'])) {
+        if (isset($_FILES['imagem_overlay']) && 
+            !empty($_FILES['imagem_overlay']['tmp_name']) &&
+            $_FILES['imagem_overlay']['error'] === UPLOAD_ERR_OK &&
+            is_uploaded_file($_FILES['imagem_overlay']['tmp_name'])) {
             $imagem_overlay = uploadOverlayImage($_FILES['imagem_overlay'], 800);
         }
 
-        // Verificar slug único
         $stmt = $pdo->prepare("SELECT id FROM evento WHERE slug = ?");
         $stmt->execute([$slug]);
         if ($stmt->fetch()) {
             $slug .= '-' . rand(100, 999);
         }
 
-        // Criar evento
         $stmt = $pdo->prepare("
             INSERT INTO evento (nome, slug, descricao, imagem_banner, data_inicio, data_fim, ativo) 
             VALUES (?, ?, ?, ?, ?, ?, 1)
         ");
         $stmt->execute([$nome, $slug, $descricao, $imagem_banner, $data_inicio, $data_fim]);
+        $eventoId = $pdo->lastInsertId();
 
-        // URL do evento
         $url_evento = '/pages/evento.php?slug=' . $slug;
 
-        // Criar banner promocional (apenas se não existir)
         $stmt = $pdo->prepare("SELECT id FROM banner WHERE url_destino = ?");
         $stmt->execute([$url_evento]);
+        $bannerExistente = $stmt->fetch();
         
-        if (!$stmt->fetch()) {
+        if ($bannerExistente) {
+            $stmt = $pdo->prepare("
+                UPDATE banner SET 
+                    titulo = ?, subtitulo = ?, texto_destaque = ?,
+                    imagem_desktop = ?, imagem_overlay = ?,
+                    cor_fundo = ?, cor_texto = ?, cor_destaque = ?,
+                    estilo_banner = 'promocional', ordem = 0, ativo = 1,
+                    data_inicio = ?, data_fim = ?
+                WHERE id = ?
+            ");
+            $stmt->execute([
+                $nome, $descricao ?: 'Aproveite as ofertas especiais!', $texto_destaque,
+                $imagem_banner, $imagem_overlay,
+                $cor_fundo, $cor_texto, $cor_destaque,
+                date('Y-m-d', strtotime($data_inicio)), date('Y-m-d', strtotime($data_fim)),
+                $bannerExistente['id']
+            ]);
+        } else {
             $stmt = $pdo->prepare("
                 INSERT INTO banner (
-                    titulo, subtitulo, texto_destaque,
-                    imagem_desktop, imagem_overlay,
-                    cor_fundo, cor_texto, cor_destaque,
-                    estilo_banner, url_destino, ordem, ativo, 
-                    data_inicio, data_fim
+                    titulo, subtitulo, texto_destaque, imagem_desktop, imagem_overlay,
+                    cor_fundo, cor_texto, cor_destaque, estilo_banner, url_destino,
+                    ordem, ativo, data_inicio, data_fim
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'promocional', ?, 0, 1, ?, ?)
             ");
             $stmt->execute([
-                $nome,
-                $descricao ?: 'Aproveite as ofertas especiais!',
-                $texto_destaque,
-                $imagem_banner,
-                $imagem_overlay,
-                $cor_fundo,
-                $cor_texto,
-                $cor_destaque,
-                $url_evento,
-                date('Y-m-d', strtotime($data_inicio)),
-                date('Y-m-d', strtotime($data_fim))
+                $nome, $descricao ?: 'Aproveite as ofertas especiais!', $texto_destaque,
+                $imagem_banner, $imagem_overlay,
+                $cor_fundo, $cor_texto, $cor_destaque, $url_evento,
+                date('Y-m-d', strtotime($data_inicio)), date('Y-m-d', strtotime($data_fim))
             ]);
         }
 
         $pdo->commit();
         $message = 'Evento e banner promocional criados com sucesso!';
         $activeTab = 'eventos';
+        
     } catch (Exception $e) {
         $pdo->rollBack();
         $error = $e->getMessage();
+        
+        if (isset($imagem_banner) && $imagem_banner !== '/assets/images/default-banner.jpg') {
+            deleteImageFile($imagem_banner);
+        }
+        if (isset($imagem_overlay) && $imagem_overlay) {
+            deleteImageFile($imagem_overlay);
+        }
     }
 }
 
@@ -260,7 +300,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_evento'])) {
             throw new Exception('Preencha todos os campos obrigatórios.');
         }
 
-        // Buscar evento atual
         $stmt = $pdo->prepare("SELECT * FROM evento WHERE id = ?");
         $stmt->execute([$evento_id]);
         $eventoAtual = $stmt->fetch();
@@ -271,12 +310,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_evento'])) {
 
         $url_evento = '/pages/evento.php?slug=' . $eventoAtual['slug'];
 
-        // Buscar banner atual
         $stmt = $pdo->prepare("SELECT * FROM banner WHERE url_destino = ? AND estilo_banner = 'promocional'");
         $stmt->execute([$url_evento]);
         $bannerAtual = $stmt->fetch();
 
-        // Processar imagens
         $imagem_banner = $eventoAtual['imagem_banner'];
         if (!empty($_FILES['imagem_banner']['tmp_name'])) {
             deleteImageFile($eventoAtual['imagem_banner']);
@@ -298,7 +335,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_evento'])) {
             $imagem_overlay = null;
         }
 
-        // Atualizar evento (SEM atualizado_em)
         $stmt = $pdo->prepare("
             UPDATE evento SET 
                 nome = ?, descricao = ?, imagem_banner = ?, 
@@ -307,7 +343,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_evento'])) {
         ");
         $stmt->execute([$nome, $descricao, $imagem_banner, $data_inicio, $data_fim, $evento_id]);
 
-        // Atualizar ou criar banner
         if ($bannerAtual) {
             $stmt = $pdo->prepare("
                 UPDATE banner SET 
@@ -318,16 +353,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_evento'])) {
                 WHERE id = ?
             ");
             $stmt->execute([
-                $nome,
-                $descricao ?: 'Aproveite as ofertas especiais!',
-                $texto_destaque,
-                $imagem_banner,
-                $imagem_overlay,
-                $cor_fundo,
-                $cor_texto,
-                $cor_destaque,
-                date('Y-m-d', strtotime($data_inicio)),
-                date('Y-m-d', strtotime($data_fim)),
+                $nome, $descricao ?: 'Aproveite as ofertas especiais!', $texto_destaque,
+                $imagem_banner, $imagem_overlay,
+                $cor_fundo, $cor_texto, $cor_destaque,
+                date('Y-m-d', strtotime($data_inicio)), date('Y-m-d', strtotime($data_fim)),
                 $bannerAtual['id']
             ]);
         }
@@ -395,10 +424,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['deletar_evento'])) {
     $activeTab = 'eventos';
 }
 
-// ============================================
-// AÇÕES - BANNERS SIMPLES
-// ============================================
-
 // Criar Banner Simples
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['criar_banner'])) {
     try {
@@ -445,8 +470,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_banner'])) {
         $data_inicio = !empty($_POST['data_inicio']) ? $_POST['data_inicio'] : null;
         $data_fim = !empty($_POST['data_fim']) ? $_POST['data_fim'] : null;
 
-        // Buscar banner atual
-        $stmt = $pdo->prepare("SELECT * FROM banner WHERE id = ? AND estilo_banner = 'simples'");
+        $stmt = $pdo->prepare("SELECT * FROM banner WHERE id = ? AND (estilo_banner = 'simples' OR estilo_banner IS NULL OR estilo_banner = '')");
         $stmt->execute([$banner_id]);
         $bannerAtual = $stmt->fetch();
 
@@ -463,7 +487,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_banner'])) {
         $stmt = $pdo->prepare("
             UPDATE banner SET 
                 titulo = ?, subtitulo = ?, imagem_desktop = ?,
-                url_destino = ?, ordem = ?, data_inicio = ?, data_fim = ?
+                url_destino = ?, ordem = ?, data_inicio = ?, data_fim = ?,
+                estilo_banner = 'simples'
             WHERE id = ?
         ");
         $stmt->execute([$titulo, $subtitulo, $imagem_desktop, $url_destino, $ordem, $data_inicio, $data_fim, $banner_id]);
@@ -477,7 +502,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_banner'])) {
 
 // Toggle Banner
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['toggle_banner'])) {
-    $stmt = $pdo->prepare("UPDATE banner SET ativo = NOT ativo WHERE id = ?");
+    $stmt = $pdo->prepare("UPDATE banner SET ativo = NOT ativo WHERE id = ? AND estilo_banner != 'promocional'");
     $stmt->execute([$_POST['banner_id']]);
     $message = 'Status atualizado!';
     $activeTab = 'banners';
@@ -485,46 +510,36 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['toggle_banner'])) {
 
 // Deletar Banner
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['deletar_banner'])) {
-    $stmt = $pdo->prepare("SELECT imagem_desktop FROM banner WHERE id = ? AND estilo_banner = 'simples'");
+    $stmt = $pdo->prepare("SELECT imagem_desktop FROM banner WHERE id = ? AND estilo_banner != 'promocional'");
     $stmt->execute([$_POST['banner_id']]);
     $banner = $stmt->fetch();
 
     if ($banner) {
         deleteImageFile($banner['imagem_desktop']);
-        $stmt = $pdo->prepare("DELETE FROM banner WHERE id = ? AND estilo_banner = 'simples'");
+        $stmt = $pdo->prepare("DELETE FROM banner WHERE id = ? AND estilo_banner != 'promocional'");
         $stmt->execute([$_POST['banner_id']]);
         $message = 'Banner excluído!';
     }
     $activeTab = 'banners';
 }
 
-// ============================================
-// BUSCAR DADOS
-// ============================================
-
-// Eventos com dados do banner
+// Buscar dados
 $eventos = $pdo->query("
     SELECT e.*, 
-           b.id as banner_id,
-           b.texto_destaque,
-           b.cor_fundo,
-           b.cor_texto,
-           b.cor_destaque,
-           b.imagem_overlay
+           b.id as banner_id, b.texto_destaque, b.cor_fundo,
+           b.cor_texto, b.cor_destaque, b.imagem_overlay
     FROM evento e 
-    LEFT JOIN banner b ON b.url_destino = CONCAT('/pages/evento.php?slug=', e.slug) 
-                       AND b.estilo_banner = 'promocional'
+    LEFT JOIN banner b ON b.url_destino = CONCAT('/pages/evento.php?slug=', e.slug)
     ORDER BY e.data_inicio DESC
 ")->fetchAll();
 
-// Banners simples
 $banners = $pdo->query("
     SELECT * FROM banner 
-    WHERE estilo_banner = 'simples' OR estilo_banner IS NULL 
+    WHERE estilo_banner = 'simples'
+      AND (url_destino IS NULL OR url_destino NOT LIKE '%/pages/evento.php?slug=%')
     ORDER BY ordem, id DESC
 ")->fetchAll();
 
-// Contadores
 $totalEventos = count($eventos);
 $eventosAtivos = count(array_filter($eventos, fn($e) => $e['ativo']));
 $totalBanners = count($banners);
@@ -533,6 +548,7 @@ $bannersAtivos = count(array_filter($banners, fn($b) => $b['ativo']));
 $page_title = 'Banners & Eventos - Admin';
 require_once '../includes/header.php';
 ?>
+
 
 <style>
 :root {

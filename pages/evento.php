@@ -23,15 +23,16 @@ if (!$evento) {
     exit;
 }
 
-// Banner
+// Banner 
+$url_evento = '/pages/evento.php?slug=' . $slug;
 $stmt = $pdo->prepare("
-    SELECT imagem_overlay FROM banner 
-    WHERE ativo = 1 
-    AND (data_inicio IS NULL OR data_inicio <= CURDATE())
-    AND (data_fim IS NULL OR data_fim >= CURDATE())
-    ORDER BY ordem ASC LIMIT 1
+    SELECT imagem_overlay, texto_destaque, cor_fundo, cor_texto, cor_destaque 
+    FROM banner 
+    WHERE url_destino = ?
+    AND estilo_banner = 'promocional'
+    LIMIT 1
 ");
-$stmt->execute();
+$stmt->execute([$url_evento]);
 $banner = $stmt->fetch();
 $imagem_overlay = $banner['imagem_overlay'] ?? null;
 

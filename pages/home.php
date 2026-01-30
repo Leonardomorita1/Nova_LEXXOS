@@ -237,7 +237,7 @@ require_once '../includes/header.php';
         line-height: 1;
         letter-spacing: -1px;
         margin: 0;
-        text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        text-shadow: 0 4px 20px rgb(0, 0, 0);
     }
 
     .ps-promo-title span {
@@ -258,12 +258,7 @@ require_once '../includes/header.php';
     .ps-badge-date {
         display: inline-flex;
         align-items: center;
-        background: rgba(94, 94, 94, 0.31);
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.61);
-        backdrop-filter: blur(9px);
-        -webkit-backdrop-filter: blur(9px);
-        border: 1px solid rgba(73, 69, 69, 0.2);
-        backdrop-filter: blur(10px);
+        background: var(--banner-accent);
         padding: 0;
 
         width: fit-content;
@@ -284,11 +279,7 @@ require_once '../includes/header.php';
 
     .ps-badge-date-value {
         color: #fff;
-        background: var(--banner-accent);
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.61);
-        backdrop-filter: blur(9px);
-        -webkit-backdrop-filter: blur(9px);
-        border: 1px solid rgba(73, 69, 69, 0.2);
+        background: rgba(0, 0, 0, 0.38);
         padding: 5px 16px;
         font-size: 16px;
         font-weight: 800;
