@@ -265,6 +265,7 @@ require_once '../includes/header.php';
         -webkit-transform: skew(-15deg);
         -moz-transform: skew(-15deg);
         -o-transform: skew(-15deg);
+        transform: skew(-15deg);
     }
 
     .ps-badge-date-label {
@@ -310,6 +311,7 @@ require_once '../includes/header.php';
         -webkit-transform: skew(-15deg);
         -moz-transform: skew(-15deg);
         -o-transform: skew(-15deg);
+        transform: skew(-15deg);
     }
 
 
@@ -321,6 +323,7 @@ require_once '../includes/header.php';
         -webkit-transform: skew(-15deg);
         -moz-transform: skew(-15deg);
         -o-transform: skew(-15deg);
+        transform: skew(-15deg);
         background: rgba(94, 94, 94, 0.31);
         box-shadow: 0 4px 30px rgba(0, 0, 0, 0.61);
         backdrop-filter: blur(9px);

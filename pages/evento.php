@@ -722,7 +722,9 @@ require_once '../components/game-card.php';
 .rating-slider {
     width: 100%;
     height: 6px;
+    appearance: none;
     -webkit-appearance: none;
+    -moz-appearance: none;
     background: var(--bg-primary);
     border-radius: 3px;
     outline: none;
