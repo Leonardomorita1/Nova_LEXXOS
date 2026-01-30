@@ -21,6 +21,119 @@ if (!$dev || $dev['status'] != 'ativo') {
 
 $error = '';
 
+// ===========================================
+// CONFIGURAÇÕES DE COMPRESSÃO
+// ===========================================
+define('COMPRESSION_QUALITY', 80);
+
+$image_config = [
+    'capa' => ['max_width' => 378],
+    'banner' => ['max_width' => 1456],
+    'screenshots' => ['max_width' => 746]
+];
+
+$allowed_types = ['image/jpeg', 'image/png', 'image/webp'];
+$allowed_ext = ['jpg', 'jpeg', 'png', 'webp'];
+
+// ===========================================
+// FUNÇÃO DE COMPRESSÃO DE IMAGEM
+// ===========================================
+function compressImage($source, $destination, $maxWidth, $quality = 80) {
+    $info = getimagesize($source);
+    if ($info === false) {
+        return false;
+    }
+    
+    $mime = $info['mime'];
+    $width = $info[0];
+    $height = $info[1];
+    
+    switch ($mime) {
+        case 'image/jpeg':
+            $image = imagecreatefromjpeg($source);
+            break;
+        case 'image/png':
+            $image = imagecreatefrompng($source);
+            break;
+        case 'image/webp':
+            $image = imagecreatefromwebp($source);
+            break;
+        default:
+            return false;
+    }
+    
+    if (!$image) {
+        return false;
+    }
+    
+    // Calcular novas dimensões mantendo proporção
+    if ($width > $maxWidth) {
+        $ratio = $maxWidth / $width;
+        $newWidth = $maxWidth;
+        $newHeight = (int)($height * $ratio);
+    } else {
+        $newWidth = $width;
+        $newHeight = $height;
+    }
+    
+    $newImage = imagecreatetruecolor($newWidth, $newHeight);
+    
+    // Preservar transparência para PNG e WebP
+    if ($mime === 'image/png' || $mime === 'image/webp') {
+        imagealphablending($newImage, false);
+        imagesavealpha($newImage, true);
+        $transparent = imagecolorallocatealpha($newImage, 0, 0, 0, 127);
+        imagefill($newImage, 0, 0, $transparent);
+    }
+    
+    imagecopyresampled(
+        $newImage, $image,
+        0, 0, 0, 0,
+        $newWidth, $newHeight,
+        $width, $height
+    );
+    
+    $ext = strtolower(pathinfo($destination, PATHINFO_EXTENSION));
+    
+    switch ($ext) {
+        case 'jpg':
+        case 'jpeg':
+            $result = imagejpeg($newImage, $destination, $quality);
+            break;
+        case 'png':
+            $pngQuality = (int)((100 - $quality) / 10);
+            $result = imagepng($newImage, $destination, $pngQuality);
+            break;
+        case 'webp':
+            $result = imagewebp($newImage, $destination, $quality);
+            break;
+        default:
+            $result = imagejpeg($newImage, $destination, $quality);
+    }
+    
+    imagedestroy($image);
+    imagedestroy($newImage);
+    
+    return $result;
+}
+
+// ===========================================
+// VALIDAÇÃO SIMPLES DE TIPO
+// ===========================================
+function isValidImage($file, $allowed_types, $allowed_ext) {
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        return false;
+    }
+    
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+    
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    
+    return in_array($mime, $allowed_types) && in_array($ext, $allowed_ext);
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     try {
         $pdo->beginTransaction();
@@ -41,7 +154,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         // 2. Slug
         $slug = generateSlug($titulo);
-        if ($pdo->prepare("SELECT id FROM jogo WHERE slug = ?")->execute([$slug]) && $stmt->fetch()) {
+        $stmt_check = $pdo->prepare("SELECT id FROM jogo WHERE slug = ?");
+        $stmt_check->execute([$slug]);
+        if ($stmt_check->fetch()) {
             $slug .= '-' . uniqid();
         }
 
@@ -49,62 +164,84 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $upload_dir = '../uploads/jogos/' . $slug;
         if (!file_exists($upload_dir)) mkdir($upload_dir, 0755, true);
 
-        // 4. Uploads (Capa/Banner)
+        // 4. Upload Capa (com compressão)
         $capa_path = null;
-        if (!empty($_FILES['capa']['name'])) {
-            $ext = pathinfo($_FILES['capa']['name'], PATHINFO_EXTENSION);
-            $target = $upload_dir . '/capa.' . $ext;
-            if (move_uploaded_file($_FILES['capa']['tmp_name'], $target)) {
-                $capa_path = '/uploads/jogos/' . $slug . '/capa.' . $ext;
+        if (!empty($_FILES['capa']['name']) && $_FILES['capa']['error'] === UPLOAD_ERR_OK) {
+            if (isValidImage($_FILES['capa'], $allowed_types, $allowed_ext)) {
+                $ext = strtolower(pathinfo($_FILES['capa']['name'], PATHINFO_EXTENSION));
+                $target = $upload_dir . '/capa.' . $ext;
+                
+                if (compressImage($_FILES['capa']['tmp_name'], $target, $image_config['capa']['max_width'], COMPRESSION_QUALITY)) {
+                    $capa_path = '/uploads/jogos/' . $slug . '/capa.' . $ext;
+                }
+            } else {
+                throw new Exception('Capa: formato inválido. Use JPG, PNG ou WebP.');
             }
         }
 
+        // 5. Upload Banner (com compressão)
         $banner_path = null;
-        if (!empty($_FILES['banner']['name'])) {
-            $ext = pathinfo($_FILES['banner']['name'], PATHINFO_EXTENSION);
-            $target = $upload_dir . '/banner.' . $ext;
-            if (move_uploaded_file($_FILES['banner']['tmp_name'], $target)) {
-                $banner_path = '/uploads/jogos/' . $slug . '/banner.' . $ext;
+        if (!empty($_FILES['banner']['name']) && $_FILES['banner']['error'] === UPLOAD_ERR_OK) {
+            if (isValidImage($_FILES['banner'], $allowed_types, $allowed_ext)) {
+                $ext = strtolower(pathinfo($_FILES['banner']['name'], PATHINFO_EXTENSION));
+                $target = $upload_dir . '/banner.' . $ext;
+                
+                if (compressImage($_FILES['banner']['tmp_name'], $target, $image_config['banner']['max_width'], COMPRESSION_QUALITY)) {
+                    $banner_path = '/uploads/jogos/' . $slug . '/banner.' . $ext;
+                }
+            } else {
+                throw new Exception('Banner: formato inválido. Use JPG, PNG ou WebP.');
             }
         }
 
-        // 5. Inserir Jogo
+        // 6. Inserir Jogo
         $sql = "INSERT INTO jogo (desenvolvedor_id, titulo, slug, descricao_curta, descricao_completa, preco_centavos, imagem_capa, imagem_banner, video_trailer, requisitos_minimos, requisitos_recomendados, classificacao_etaria, status, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'rascunho', NOW())";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$dev['id'], $titulo, $slug, $descricao_curta, $descricao_completa, $preco_centavos, $capa_path, $banner_path, $video_trailer, $req_min, $req_rec, $classificacao]);
         $jogo_id = $pdo->lastInsertId();
 
-        // 6. Screenshots
+        // 7. Screenshots (com compressão)
         if (!empty($_FILES['screenshots']['name'][0])) {
             $shot_dir = $upload_dir . '/screenshots';
             if (!file_exists($shot_dir)) mkdir($shot_dir, 0755, true);
             
             foreach ($_FILES['screenshots']['tmp_name'] as $k => $tmp) {
-                if ($_FILES['screenshots']['error'][$k] == 0) {
-                    $fname = time() . "-$k." . pathinfo($_FILES['screenshots']['name'][$k], PATHINFO_EXTENSION);
-                    if (move_uploaded_file($tmp, "$shot_dir/$fname")) {
-                        $pdo->prepare("INSERT INTO jogo_imagens (jogo_id, imagem, ordem) VALUES (?, ?, ?)")
-                            ->execute([$jogo_id, "/uploads/jogos/$slug/screenshots/$fname", $k+1]);
+                if ($_FILES['screenshots']['error'][$k] === UPLOAD_ERR_OK) {
+                    $shot_file = [
+                        'name' => $_FILES['screenshots']['name'][$k],
+                        'tmp_name' => $tmp,
+                        'error' => $_FILES['screenshots']['error'][$k]
+                    ];
+                    
+                    if (isValidImage($shot_file, $allowed_types, $allowed_ext)) {
+                        $ext = strtolower(pathinfo($_FILES['screenshots']['name'][$k], PATHINFO_EXTENSION));
+                        $fname = time() . "-$k." . $ext;
+                        $target = "$shot_dir/$fname";
+                        
+                        if (compressImage($tmp, $target, $image_config['screenshots']['max_width'], COMPRESSION_QUALITY)) {
+                            $pdo->prepare("INSERT INTO jogo_imagens (jogo_id, imagem, ordem) VALUES (?, ?, ?)")
+                                ->execute([$jogo_id, "/uploads/jogos/$slug/screenshots/$fname", $k+1]);
+                        }
                     }
                 }
             }
         }
 
-        // 7. Processar Tags/Categorias/Plataformas (Vindas dos Inputs Ocultos)
+        // 8. Processar Tags/Categorias/Plataformas
         if (!empty($_POST['cats_selecionadas'])) {
-            $ids = explode(',', $_POST['cats_selecionadas']);
+            $ids = array_filter(explode(',', $_POST['cats_selecionadas']), 'is_numeric');
             $stmt = $pdo->prepare("INSERT INTO jogo_categoria (jogo_id, categoria_id) VALUES (?, ?)");
             foreach ($ids as $id) $stmt->execute([$jogo_id, (int)$id]);
         }
 
         if (!empty($_POST['tags_selecionadas'])) {
-            $ids = explode(',', $_POST['tags_selecionadas']);
+            $ids = array_filter(explode(',', $_POST['tags_selecionadas']), 'is_numeric');
             $stmt = $pdo->prepare("INSERT INTO jogo_tag (jogo_id, tag_id) VALUES (?, ?)");
             foreach ($ids as $id) $stmt->execute([$jogo_id, (int)$id]);
         }
 
         if (!empty($_POST['plats_selecionadas'])) {
-            $ids = explode(',', $_POST['plats_selecionadas']);
+            $ids = array_filter(explode(',', $_POST['plats_selecionadas']), 'is_numeric');
             $stmt = $pdo->prepare("INSERT INTO jogo_plataforma (jogo_id, plataforma_id) VALUES (?, ?)");
             foreach ($ids as $id) $stmt->execute([$jogo_id, (int)$id]);
         }
@@ -130,15 +267,11 @@ require_once '../includes/header.php';
 ?>
 
 <style>
-    /* Estilos Globais do Dashboard */
     .dev-layout { display: grid; grid-template-columns: 260px 1fr; gap: 30px; padding: 30px 0; }
     .dev-content { min-width: 0; }
     .publish-wrapper { max-width: 1200px; margin: 0 auto; }
-    
-    /* Grid Principal */
     .publish-grid { display: grid; grid-template-columns: 1fr 380px; gap: 30px; align-items: start; }
     
-    /* Cards */
     .form-box { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 25px; margin-bottom: 25px; }
     .box-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 20px; color: var(--accent); display: flex; align-items: center; gap: 10px; }
     
@@ -147,17 +280,30 @@ require_once '../includes/header.php';
     .upload-zone:hover { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.05); }
     .upload-zone.capa { aspect-ratio: 1/1; }
     .upload-zone.banner { aspect-ratio: 16/9; }
+    .upload-zone.error { border-color: #ff4757 !important; background: rgba(255, 71, 87, 0.1) !important; }
+    .upload-zone.success { border-color: #2ed573 !important; }
     .preview-img { width: 100%; height: 100%; object-fit: cover; position: absolute; top:0; left:0; display: none; }
     .remove-btn { position: absolute; top: 10px; right: 10px; background: #ff4757; color: white; border: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; z-index: 10; display: none; font-size: 12px; }
+    .upload-info { font-size: 11px; color: var(--text-secondary); margin-top: 8px; text-align: center; }
+    .upload-error { color: #ff4757; font-size: 12px; margin-top: 5px; display: none; }
+    .upload-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-secondary); }
+    .upload-placeholder i { font-size: 2rem; }
+    .upload-placeholder span { font-size: 12px; }
     
     /* Tags & Chips */
-    .chips-input { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); min-height: 45px; cursor: pointer; }
-    .chip { background: var(--accent); color: white; padding: 4px 10px; border-radius: 20px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
-    .chip i { cursor: pointer; font-size: 11px; }
-    .popover-list { display: none; position: absolute; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; width: 100%; z-index: 100; max-height: 250px; overflow-y: auto; margin-top: 5px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
-    .popover-item { padding: 8px 12px; cursor: pointer; transition: 0.2s; font-size: 14px; }
+    .multi-select-wrapper { position: relative; }
+    .chips-input { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); min-height: 45px; cursor: pointer; align-items: center; }
+    .chips-input:hover { border-color: var(--accent); }
+    .chips-placeholder { color: #888; padding: 5px; font-size: 14px; }
+    .chip { background: var(--accent); color: white; padding: 5px 10px; border-radius: 20px; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
+    .chip-remove { cursor: pointer; font-size: 11px; opacity: 0.8; transition: 0.2s; background: none; border: none; color: white; padding: 0; line-height: 1; }
+    .chip-remove:hover { opacity: 1; }
+    .popover-list { display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; z-index: 100; max-height: 250px; overflow-y: auto; margin-top: 5px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+    .popover-list.open { display: block; }
+    .popover-item { padding: 10px 15px; cursor: pointer; transition: 0.2s; font-size: 14px; display: flex; align-items: center; justify-content: space-between; }
     .popover-item:hover { background: var(--bg-primary); color: var(--accent); }
-    .popover-item.selected { background: var(--bg-primary); opacity: 0.5; pointer-events: none; }
+    .popover-item.selected { background: rgba(var(--accent-rgb), 0.1); color: var(--accent); }
+    .popover-item.selected::after { content: '✓'; font-weight: bold; }
 
     /* Plataformas */
     .plat-grid { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -166,13 +312,21 @@ require_once '../includes/header.php';
     .plat-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
 
     /* Screenshots */
-    .shots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+    .shots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
     .shot-item { aspect-ratio: 16/9; position: relative; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
     .shot-item img { width: 100%; height: 100%; object-fit: cover; }
-    .add-shot { border: 2px dashed var(--border); display: flex; align-items: center; justify-content: center; cursor: pointer; aspect-ratio: 16/9; border-radius: 6px; transition: 0.3s; }
+    .shot-remove { position: absolute; top: 5px; right: 5px; background: #ff4757; color: white; border: none; width: 22px; height: 22px; border-radius: 50%; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+    .add-shot { border: 2px dashed var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; aspect-ratio: 16/9; border-radius: 6px; transition: 0.3s; gap: 5px; }
     .add-shot:hover { border-color: var(--accent); color: var(--accent); }
+    .add-shot span { font-size: 10px; color: var(--text-secondary); }
 
-    @media(max-width: 992px) { .dev-layout { grid-template-columns: 1fr; } .publish-grid { grid-template-columns: 1fr; } }
+    .alert { padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+    .alert-danger { background: rgba(255, 71, 87, 0.1); border: 1px solid #ff4757; color: #ff4757; }
+
+    @media(max-width: 992px) { 
+        .dev-layout { grid-template-columns: 1fr; } 
+        .publish-grid { grid-template-columns: 1fr; } 
+    }
 </style>
 
 <div class="container">
@@ -193,6 +347,7 @@ require_once '../includes/header.php';
                 <form id="pubForm" method="POST" enctype="multipart/form-data">
                     <div class="publish-grid">
                         <div class="main-col">
+                            <!-- Detalhes Básicos -->
                             <div class="form-box">
                                 <div class="box-title"><i class="fas fa-info-circle"></i> Detalhes Básicos</div>
                                 <div class="form-group">
@@ -213,86 +368,124 @@ require_once '../includes/header.php';
                                 </div>
                             </div>
 
+                            <!-- Classificação -->
                             <div class="form-box">
                                 <div class="box-title"><i class="fas fa-tags"></i> Classificação</div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                                    <div style="position: relative;">
+                                    <!-- Categorias -->
+                                    <div class="multi-select-wrapper">
                                         <label>Categorias</label>
-                                        <div class="chips-input" id="triggerCat"></div>
-                                        <div class="popover-list" id="popCat">
+                                        <div class="chips-input" data-target="cat">
+                                            <span class="chips-placeholder">Selecionar categorias...</span>
+                                        </div>
+                                        <div class="popover-list" id="popover-cat">
                                             <?php foreach($categorias as $c): ?>
-                                                <div class="popover-item" data-id="<?= $c['id'] ?>" data-name="<?= $c['nome'] ?>"><?= $c['nome'] ?></div>
+                                                <div class="popover-item" data-id="<?= $c['id'] ?>" data-name="<?= htmlspecialchars($c['nome']) ?>">
+                                                    <?= htmlspecialchars($c['nome']) ?>
+                                                </div>
                                             <?php endforeach; ?>
                                         </div>
-                                        <input type="hidden" name="cats_selecionadas" id="inputCat">
+                                        <input type="hidden" name="cats_selecionadas" id="input-cat">
                                     </div>
-                                    <div style="position: relative;">
+                                    
+                                    <!-- Tags -->
+                                    <div class="multi-select-wrapper">
                                         <label>Tags</label>
-                                        <div class="chips-input" id="triggerTag"></div>
-                                        <div class="popover-list" id="popTag">
+                                        <div class="chips-input" data-target="tag">
+                                            <span class="chips-placeholder">Selecionar tags...</span>
+                                        </div>
+                                        <div class="popover-list" id="popover-tag">
                                             <?php foreach($tags as $t): ?>
-                                                <div class="popover-item" data-id="<?= $t['id'] ?>" data-name="<?= $t['nome'] ?>"><?= $t['nome'] ?></div>
+                                                <div class="popover-item" data-id="<?= $t['id'] ?>" data-name="<?= htmlspecialchars($t['nome']) ?>">
+                                                    <?= htmlspecialchars($t['nome']) ?>
+                                                </div>
                                             <?php endforeach; ?>
                                         </div>
-                                        <input type="hidden" name="tags_selecionadas" id="inputTag">
+                                        <input type="hidden" name="tags_selecionadas" id="input-tag">
                                     </div>
                                 </div>
                             </div>
 
+                            <!-- Requisitos e Plataformas -->
                             <div class="form-box">
                                 <div class="box-title"><i class="fas fa-desktop"></i> Requisitos e Plataformas</div>
                                 <label style="margin-bottom: 10px; display:block;">Plataformas Suportadas</label>
                                 <div class="plat-grid" style="margin-bottom: 20px;">
                                     <?php foreach($plataformas as $p): ?>
                                         <div class="plat-btn" data-id="<?= $p['id'] ?>">
-                                            <i class="<?= $p['icone'] ?>"></i> <?= $p['nome'] ?>
+                                            <i class="<?= $p['icone'] ?>"></i> <?= htmlspecialchars($p['nome']) ?>
                                         </div>
                                     <?php endforeach; ?>
-                                    <input type="hidden" name="plats_selecionadas" id="inputPlat">
                                 </div>
+                                <input type="hidden" name="plats_selecionadas" id="input-plat">
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                                    <textarea name="requisitos_minimos" class="form-control" rows="4" placeholder="Mínimos..."></textarea>
-                                    <textarea name="requisitos_recomendados" class="form-control" rows="4" placeholder="Recomendados..."></textarea>
+                                    <div>
+                                        <label>Requisitos Mínimos</label>
+                                        <textarea name="requisitos_minimos" class="form-control" rows="4" placeholder="Mínimos..."></textarea>
+                                    </div>
+                                    <div>
+                                        <label>Requisitos Recomendados</label>
+                                        <textarea name="requisitos_recomendados" class="form-control" rows="4" placeholder="Recomendados..."></textarea>
+                                    </div>
                                 </div>
                             </div>
 
+                            <!-- Screenshots -->
                             <div class="form-box">
                                 <div class="box-title"><i class="fas fa-images"></i> Screenshots</div>
+                                <p class="upload-info" style="text-align:left; margin-bottom:15px;">
+                                    <i class="fas fa-info-circle"></i> Formatos: JPG, PNG, WebP • Imagens serão otimizadas automaticamente
+                                </p>
                                 <div class="shots-grid" id="shotContainer">
-                                    <label class="add-shot">
+                                    <label class="add-shot" id="addShotBtn">
                                         <i class="fas fa-plus fa-lg"></i>
-                                        <input type="file" name="screenshots[]" multiple accept="image/*" style="display:none" id="shotInput">
+                                        <span>Adicionar</span>
                                     </label>
                                 </div>
+                                <input type="file" name="screenshots[]" multiple accept="image/jpeg,image/png,image/webp" style="display:none" id="shotInput">
                             </div>
                         </div>
 
                         <div class="side-col">
+                            <!-- Mídia Principal -->
                             <div class="form-box">
                                 <div class="box-title"><i class="fas fa-image"></i> Mídia Principal</div>
                                 
+                                <!-- Capa -->
                                 <label>Capa (1:1)</label>
-                                <div class="upload-zone capa" onclick="document.getElementById('capa').click()">
+                                <div class="upload-zone capa" id="zone-capa">
                                     <img id="prev-capa" class="preview-img">
-                                    <button type="button" class="remove-btn" onclick="clearImg(event, 'capa')">Remover</button>
-                                    <div id="place-capa"><i class="fas fa-upload fa-2x"></i></div>
+                                    <button type="button" class="remove-btn" id="remove-capa">Remover</button>
+                                    <div class="upload-placeholder" id="place-capa">
+                                        <i class="fas fa-upload"></i>
+                                        <span>Clique para enviar</span>
+                                    </div>
                                 </div>
-                                <input type="file" name="capa" id="capa" style="display:none" accept="image/*">
+                                <input type="file" name="capa" id="input-file-capa" style="display:none" accept="image/jpeg,image/png,image/webp">
+                                <p class="upload-info">JPG, PNG, WebP • Será otimizada automaticamente</p>
+                                <div class="upload-error" id="error-capa"></div>
 
+                                <!-- Banner -->
                                 <label style="margin-top: 20px; display:block;">Banner (16:9)</label>
-                                <div class="upload-zone banner" onclick="document.getElementById('banner').click()">
+                                <div class="upload-zone banner" id="zone-banner">
                                     <img id="prev-banner" class="preview-img">
-                                    <button type="button" class="remove-btn" onclick="clearImg(event, 'banner')">Remover</button>
-                                    <div id="place-banner"><i class="fas fa-panorama fa-2x"></i></div>
+                                    <button type="button" class="remove-btn" id="remove-banner">Remover</button>
+                                    <div class="upload-placeholder" id="place-banner">
+                                        <i class="fas fa-panorama"></i>
+                                        <span>Clique para enviar</span>
+                                    </div>
                                 </div>
-                                <input type="file" name="banner" id="banner" style="display:none" accept="image/*">
+                                <input type="file" name="banner" id="input-file-banner" style="display:none" accept="image/jpeg,image/png,image/webp">
+                                <p class="upload-info">JPG, PNG, WebP • Será otimizada automaticamente</p>
+                                <div class="upload-error" id="error-banner"></div>
                             </div>
 
+                            <!-- Venda -->
                             <div class="form-box">
                                 <div class="box-title"><i class="fas fa-dollar-sign"></i> Venda</div>
                                 <div class="form-group">
                                     <label>Preço (R$)</label>
-                                    <input type="number" name="preco" class="form-control" step="0.01" placeholder="0.00">
+                                    <input type="number" name="preco" class="form-control" step="0.01" min="0" placeholder="0.00">
                                 </div>
                                 <div class="form-group">
                                     <label>Classificação Indicativa</label>
@@ -307,7 +500,7 @@ require_once '../includes/header.php';
                                 </div>
                             </div>
 
-                            <button type="submit" class="btn btn-primary btn-lg" style="width:100%">
+                            <button type="submit" class="btn btn-primary btn-lg" style="width:100%" id="submitBtn">
                                 <i class="fas fa-save"></i> Salvar Rascunho
                             </button>
                         </div>
@@ -319,154 +512,291 @@ require_once '../includes/header.php';
 </div>
 
 <script>
-// 1. Upload Preview Logic
-function setupUpload(id) {
-    const input = document.getElementById(id);
-    const prev = document.getElementById('prev-' + id);
-    const place = document.getElementById('place-' + id);
-    const btn = prev.nextElementSibling;
+document.addEventListener('DOMContentLoaded', function() {
+    
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
-    input.onchange = function() {
-        if(this.files[0]) {
-            const r = new FileReader();
-            r.onload = e => {
-                prev.src = e.target.result;
-                prev.style.display = 'block';
-                place.style.display = 'none';
-                btn.style.display = 'block';
-            };
-            r.readAsDataURL(this.files[0]);
-        }
-    };
-}
-setupUpload('capa');
-setupUpload('banner');
-
-function clearImg(e, id) {
-    e.stopPropagation();
-    document.getElementById(id).value = '';
-    document.getElementById('prev-'+id).style.display = 'none';
-    document.getElementById('place-'+id).style.display = 'flex';
-    e.target.style.display = 'none';
-}
-
-// 2. Screenshots Logic
-document.getElementById('shotInput').onchange = function() {
-    Array.from(this.files).forEach(f => {
-        const r = new FileReader();
-        r.onload = e => {
-            const d = document.createElement('div');
-            d.className = 'shot-item';
-            d.innerHTML = `<img src="${e.target.result}"><button type="button" class="remove-btn" style="display:block" onclick="this.parentElement.remove()">X</button>`;
-            document.getElementById('shotContainer').insertBefore(d, this.parentElement);
-        };
-        r.readAsDataURL(f);
-    });
-};
-
-// 3. MultiSelect Logic (Chips)
-function initMulti(triggerId, popId, inputId, cacheKey) {
-    const trig = document.getElementById(triggerId);
-    const pop = document.getElementById(popId);
-    const inp = document.getElementById(inputId);
-    let selected = [];
-
-    // Cache Load
-    const cached = localStorage.getItem(cacheKey);
-    if(cached) {
-        const ids = cached.split(',');
-        pop.querySelectorAll('.popover-item').forEach(i => {
-            if(ids.includes(i.dataset.id)) selected.push({id: i.dataset.id, name: i.dataset.name});
-        });
-        render();
+    // ===========================================
+    // VALIDAÇÃO SIMPLES DE TIPO
+    // ===========================================
+    function isValidType(file) {
+        return allowedTypes.includes(file.type);
     }
 
-    trig.onclick = e => { e.stopPropagation(); pop.style.display = (pop.style.display=='block'?'none':'block'); };
+    // ===========================================
+    // UPLOAD DE CAPA E BANNER
+    // ===========================================
+    function setupImageUpload(type) {
+        const zone = document.getElementById(`zone-${type}`);
+        const input = document.getElementById(`input-file-${type}`);
+        const preview = document.getElementById(`prev-${type}`);
+        const placeholder = document.getElementById(`place-${type}`);
+        const removeBtn = document.getElementById(`remove-${type}`);
+        const errorDiv = document.getElementById(`error-${type}`);
+        
+        zone.addEventListener('click', function(e) {
+            if (e.target !== removeBtn && !removeBtn.contains(e.target)) {
+                input.click();
+            }
+        });
+        
+        input.addEventListener('change', function() {
+            const file = this.files[0];
+            if (!file) return;
+            
+            if (!isValidType(file)) {
+                zone.classList.add('error');
+                zone.classList.remove('success');
+                errorDiv.textContent = 'Formato inválido. Use JPG, PNG ou WebP.';
+                errorDiv.style.display = 'block';
+                this.value = '';
+                return;
+            }
+            
+            zone.classList.remove('error');
+            zone.classList.add('success');
+            errorDiv.style.display = 'none';
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+                placeholder.style.display = 'none';
+                removeBtn.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        removeBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            input.value = '';
+            preview.style.display = 'none';
+            preview.src = '';
+            placeholder.style.display = 'flex';
+            removeBtn.style.display = 'none';
+            zone.classList.remove('success', 'error');
+            errorDiv.style.display = 'none';
+        });
+    }
     
-    pop.querySelectorAll('.popover-item').forEach(item => {
-        item.onclick = function() {
-            const id = this.dataset.id;
-            if(!selected.find(i=>i.id==id)) {
-                selected.push({id, name: this.dataset.name});
+    setupImageUpload('capa');
+    setupImageUpload('banner');
+
+    // ===========================================
+    // SCREENSHOTS
+    // ===========================================
+    const shotInput = document.getElementById('shotInput');
+    const shotContainer = document.getElementById('shotContainer');
+    const addShotBtn = document.getElementById('addShotBtn');
+    let screenshotFiles = new DataTransfer();
+    
+    addShotBtn.addEventListener('click', () => shotInput.click());
+    
+    shotInput.addEventListener('change', function() {
+        Array.from(this.files).forEach((file) => {
+            if (!isValidType(file)) return;
+            
+            screenshotFiles.items.add(file);
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const div = document.createElement('div');
+                div.className = 'shot-item';
+                div.innerHTML = `
+                    <img src="${e.target.result}">
+                    <button type="button" class="shot-remove" data-index="${screenshotFiles.files.length - 1}">×</button>
+                `;
+                shotContainer.insertBefore(div, addShotBtn);
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        shotInput.files = screenshotFiles.files;
+    });
+    
+    shotContainer.addEventListener('click', function(e) {
+        if (e.target.classList.contains('shot-remove')) {
+            const item = e.target.closest('.shot-item');
+            const index = parseInt(e.target.dataset.index);
+            
+            const newDT = new DataTransfer();
+            Array.from(screenshotFiles.files).forEach((file, i) => {
+                if (i !== index) newDT.items.add(file);
+            });
+            screenshotFiles = newDT;
+            shotInput.files = screenshotFiles.files;
+            
+            item.remove();
+            
+            document.querySelectorAll('.shot-remove').forEach((btn, i) => {
+                btn.dataset.index = i;
+            });
+        }
+    });
+
+    // ===========================================
+    // MULTISELECT (TAGS/CATEGORIAS)
+    // ===========================================
+    function initMultiSelect(type) {
+        const wrapper = document.querySelector(`.chips-input[data-target="${type}"]`).closest('.multi-select-wrapper');
+        const chipsContainer = wrapper.querySelector('.chips-input');
+        const popover = document.getElementById(`popover-${type}`);
+        const hiddenInput = document.getElementById(`input-${type}`);
+        const cacheKey = `draft_${type}s`;
+        
+        let selected = new Map();
+        
+        const cached = localStorage.getItem(cacheKey);
+        if (cached && cached.length > 0) {
+            cached.split(',').forEach(id => {
+                const item = popover.querySelector(`[data-id="${id}"]`);
+                if (item) {
+                    selected.set(id, item.dataset.name);
+                }
+            });
+            render();
+        }
+        
+        chipsContainer.addEventListener('click', function(e) {
+            if (e.target.classList.contains('chip-remove')) return;
+            
+            e.stopPropagation();
+            
+            document.querySelectorAll('.popover-list.open').forEach(p => {
+                if (p !== popover) p.classList.remove('open');
+            });
+            
+            popover.classList.toggle('open');
+        });
+        
+        popover.addEventListener('click', function(e) {
+            const item = e.target.closest('.popover-item');
+            if (!item) return;
+            
+            e.stopPropagation();
+            
+            const id = item.dataset.id;
+            const name = item.dataset.name;
+            
+            if (selected.has(id)) {
+                selected.delete(id);
+            } else {
+                selected.set(id, name);
+            }
+            
+            render();
+        });
+        
+        chipsContainer.addEventListener('click', function(e) {
+            if (e.target.classList.contains('chip-remove')) {
+                e.stopPropagation();
+                const id = e.target.dataset.id;
+                selected.delete(id);
                 render();
             }
-            pop.style.display='none';
+        });
+        
+        function render() {
+            chipsContainer.innerHTML = '';
+            
+            if (selected.size === 0) {
+                chipsContainer.innerHTML = `<span class="chips-placeholder">Selecionar ${type === 'cat' ? 'categorias' : 'tags'}...</span>`;
+            } else {
+                selected.forEach((name, id) => {
+                    const chip = document.createElement('div');
+                    chip.className = 'chip';
+                    chip.innerHTML = `
+                        ${name}
+                        <button type="button" class="chip-remove" data-id="${id}">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    `;
+                    chipsContainer.appendChild(chip);
+                });
+            }
+            
+            hiddenInput.value = Array.from(selected.keys()).join(',');
+            localStorage.setItem(cacheKey, hiddenInput.value);
+            
+            popover.querySelectorAll('.popover-item').forEach(item => {
+                item.classList.toggle('selected', selected.has(item.dataset.id));
+            });
+        }
+    }
+    
+    initMultiSelect('cat');
+    initMultiSelect('tag');
+    
+    document.addEventListener('click', function() {
+        document.querySelectorAll('.popover-list.open').forEach(p => p.classList.remove('open'));
+    });
+
+    // ===========================================
+    // PLATAFORMAS
+    // ===========================================
+    const platBtns = document.querySelectorAll('.plat-btn');
+    const platInput = document.getElementById('input-plat');
+    let selectedPlats = new Set();
+    
+    const cachedPlats = localStorage.getItem('draft_plats');
+    if (cachedPlats) {
+        cachedPlats.split(',').forEach(id => {
+            if (id) selectedPlats.add(id);
+        });
+        updatePlats();
+    }
+    
+    platBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const id = this.dataset.id;
+            if (selectedPlats.has(id)) {
+                selectedPlats.delete(id);
+            } else {
+                selectedPlats.add(id);
+            }
+            updatePlats();
+        });
+    });
+    
+    function updatePlats() {
+        platBtns.forEach(btn => {
+            btn.classList.toggle('active', selectedPlats.has(btn.dataset.id));
+        });
+        platInput.value = Array.from(selectedPlats).join(',');
+        localStorage.setItem('draft_plats', platInput.value);
+    }
+
+    // ===========================================
+    // AUTO-SAVE CAMPOS DE TEXTO
+    // ===========================================
+    document.querySelectorAll('input[type=text], textarea, input[type=number], input[type=url], select').forEach(el => {
+        if (el.name) {
+            const cached = localStorage.getItem('draft_' + el.name);
+            if (cached) el.value = cached;
+            
+            el.addEventListener('input', function() {
+                localStorage.setItem('draft_' + el.name, el.value);
+            });
+            el.addEventListener('change', function() {
+                localStorage.setItem('draft_' + el.name, el.value);
+            });
         }
     });
 
-    function render() {
-        trig.innerHTML = selected.length ? '' : '<span style="color:#888; padding:5px">Selecionar...</span>';
-        selected.forEach(s => {
-            trig.innerHTML += `<div class="chip">${s.name} <i class="fas fa-times" onclick="remove('${s.id}')"></i></div>`;
-        });
-        const val = selected.map(s=>s.id).join(',');
-        inp.value = val;
-        localStorage.setItem(cacheKey, val);
-        
-        // Update selection visual in list
-        pop.querySelectorAll('.popover-item').forEach(i => {
-            i.classList.toggle('selected', selected.find(s=>s.id == i.dataset.id));
-        });
-    }
-
-    window[triggerId + '_remove'] = function(id) { // Global helper for remove click
-        selected = selected.filter(s => s.id !== id);
-        render();
-    };
-    trig.addEventListener('click', (e) => { if(e.target.tagName === 'I') window[triggerId + '_remove'](e.target.parentNode.dataset.id); }); // delegated
-}
-
-// Helper para o remove funcionar dentro do HTML string
-window.remove = function(id) { /* Dummy, handled inside render context mostly or delegated */ };
-// Quick hack for chips remove button:
-document.addEventListener('click', e => {
-    if(e.target.classList.contains('fa-times') && e.target.parentElement.classList.contains('chip')) {
-        e.stopPropagation(); // Handled by redraw, but we need to trigger the logic inside closure. 
-        // Re-implementing simplified remove logic for clarity:
-        // Actually, the initMulti defines a specific remove logic per instance.
-        // Let's rely on re-clicking the item in the list or clearing cache for simplicity in this snippet 
-        // OR better: Clicking the X triggers a refresh.
-        // For production, the closure above needs to expose the remove function.
-    }
-    document.querySelectorAll('.popover-list').forEach(p => p.style.display = 'none');
-});
-
-initMulti('triggerCat', 'popCat', 'inputCat', 'draft_cats');
-initMulti('triggerTag', 'popTag', 'inputTag', 'draft_tags');
-
-// 4. Platform Logic
-const platBtns = document.querySelectorAll('.plat-btn');
-const platInp = document.getElementById('inputPlat');
-let plats = localStorage.getItem('draft_plats') ? localStorage.getItem('draft_plats').split(',') : [];
-
-function updatePlats() {
-    platBtns.forEach(b => {
-        if(plats.includes(b.dataset.id)) b.classList.add('active');
-        else b.classList.remove('active');
+    // ===========================================
+    // LIMPAR CACHE AO SUBMETER
+    // ===========================================
+    document.getElementById('pubForm').addEventListener('submit', function() {
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('draft_')) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
     });
-    platInp.value = plats.join(',');
-    localStorage.setItem('draft_plats', platInp.value);
-}
-updatePlats();
-
-platBtns.forEach(b => {
-    b.onclick = function() {
-        const id = this.dataset.id;
-        if(plats.includes(id)) plats = plats.filter(p => p !== id);
-        else plats.push(id);
-        updatePlats();
-    }
 });
-
-// 5. Auto-Save Text Inputs
-document.querySelectorAll('input[type=text], textarea, input[type=number], input[type=url], select').forEach(el => {
-    if(el.name) {
-        el.value = localStorage.getItem('draft_'+el.name) || el.value;
-        el.oninput = () => localStorage.setItem('draft_'+el.name, el.value);
-    }
-});
-
-// Clear cache on submit
-document.getElementById('pubForm').onsubmit = () => localStorage.clear();
 </script>
+
 <?php require_once '../includes/footer.php'; ?>

@@ -16,7 +16,7 @@ $message = '';
 $error = '';
 $activeTab = $_GET['tab'] ?? 'eventos';
 
-function uploadAndCompressImage($file, $tipo = 'banner', $maxWidth = 1920, $quality = 80)
+function uploadAndCompressImage($file, $tipo = 'banner', $maxWidth = 1456, $quality = 80)
 {
     $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/banners/';
     if (!is_dir($uploadDir)) {
@@ -92,7 +92,7 @@ function uploadAndCompressImage($file, $tipo = 'banner', $maxWidth = 1920, $qual
     return '/uploads/banners/' . $filename;
 }
 
-function uploadOverlayImage($file, $maxWidth = 800)
+function uploadOverlayImage($file, $maxWidth = 440)
 {
     $uploadDir = $_SERVER['DOCUMENT_ROOT'] . '/uploads/banners/overlays/';
     if (!is_dir($uploadDir)) {
@@ -202,14 +202,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['criar_evento'])) {
             !empty($_FILES['imagem_banner']['tmp_name']) &&
             $_FILES['imagem_banner']['error'] === UPLOAD_ERR_OK &&
             is_uploaded_file($_FILES['imagem_banner']['tmp_name'])) {
-            $imagem_banner = uploadAndCompressImage($_FILES['imagem_banner'], 'evento', 1920, 85);
+            $imagem_banner = uploadAndCompressImage($_FILES['imagem_banner'], 'evento', 1456, 85);
         }
 
         if (isset($_FILES['imagem_overlay']) && 
             !empty($_FILES['imagem_overlay']['tmp_name']) &&
             $_FILES['imagem_overlay']['error'] === UPLOAD_ERR_OK &&
             is_uploaded_file($_FILES['imagem_overlay']['tmp_name'])) {
-            $imagem_overlay = uploadOverlayImage($_FILES['imagem_overlay'], 800);
+            $imagem_overlay = uploadOverlayImage($_FILES['imagem_overlay'], 440);
         }
 
         $stmt = $pdo->prepare("SELECT id FROM evento WHERE slug = ?");
@@ -317,7 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_evento'])) {
         $imagem_banner = $eventoAtual['imagem_banner'];
         if (!empty($_FILES['imagem_banner']['tmp_name'])) {
             deleteImageFile($eventoAtual['imagem_banner']);
-            $imagem_banner = uploadAndCompressImage($_FILES['imagem_banner'], 'evento', 1920, 85);
+            $imagem_banner = uploadAndCompressImage($_FILES['imagem_banner'], 'evento', 1456, 85);
         }
 
         $imagem_overlay = $bannerAtual['imagem_overlay'] ?? null;
@@ -325,7 +325,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_evento'])) {
             if ($bannerAtual && $bannerAtual['imagem_overlay']) {
                 deleteImageFile($bannerAtual['imagem_overlay']);
             }
-            $imagem_overlay = uploadOverlayImage($_FILES['imagem_overlay'], 800);
+            $imagem_overlay = uploadOverlayImage($_FILES['imagem_overlay'], 440);
         }
 
         if (isset($_POST['remover_overlay']) && $_POST['remover_overlay'] == '1') {
@@ -440,7 +440,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['criar_banner'])) {
 
         $imagem_desktop = '/assets/images/default-banner.jpg';
         if (!empty($_FILES['imagem_desktop']['tmp_name'])) {
-            $imagem_desktop = uploadAndCompressImage($_FILES['imagem_desktop'], 'banner', 1920, 85);
+            $imagem_desktop = uploadAndCompressImage($_FILES['imagem_desktop'], 'banner', 1456, 85);
         }
 
         $stmt = $pdo->prepare("
@@ -481,7 +481,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['atualizar_banner'])) {
         $imagem_desktop = $bannerAtual['imagem_desktop'];
         if (!empty($_FILES['imagem_desktop']['tmp_name'])) {
             deleteImageFile($bannerAtual['imagem_desktop']);
-            $imagem_desktop = uploadAndCompressImage($_FILES['imagem_desktop'], 'banner', 1920, 85);
+            $imagem_desktop = uploadAndCompressImage($_FILES['imagem_desktop'], 'banner', 1456, 85);
         }
 
         $stmt = $pdo->prepare("
@@ -1494,7 +1494,7 @@ require_once '../includes/header.php';
                             <div class="file-preview" id="eventoBannerPreview"><img src="" alt="Preview"></div>
                             <div class="file-info" id="eventoBannerInfo"></div>
                         </div>
-                        <p class="form-hint">Recomendado: 1920x500px • JPG/PNG • Máx 10MB</p>
+                        <p class="form-hint">Recomendado: 1456x500px • JPG/PNG • Máx 10MB</p>
                     </div>
 
                     <div class="form-group">
@@ -1632,7 +1632,7 @@ require_once '../includes/header.php';
                             <div class="file-preview" id="bannerImagePreview"><img src="" alt="Preview"></div>
                             <div class="file-info" id="bannerImageInfo"></div>
                         </div>
-                        <p class="form-hint">Recomendado: 1920x500px • JPG/PNG • Máx 10MB</p>
+                        <p class="form-hint">Recomendado: 1456x500px • JPG/PNG • Máx 10MB</p>
                     </div>
                 </div>
 

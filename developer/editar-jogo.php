@@ -38,6 +38,108 @@ if (!$jogo) {
 $success = '';
 $error = '';
 
+// ===========================================
+// CONFIGURAÇÕES DE COMPRESSÃO
+// ===========================================
+define('COMPRESSION_QUALITY', 80);
+
+$image_config = [
+    'capa' => ['max_width' => 378],
+    'banner' => ['max_width' => 1456],
+    'screenshots' => ['max_width' => 746]
+];
+
+$allowed_types = ['image/jpeg', 'image/png', 'image/webp'];
+$allowed_ext = ['jpg', 'jpeg', 'png', 'webp'];
+
+// ===========================================
+// FUNÇÃO DE COMPRESSÃO DE IMAGEM
+// ===========================================
+function compressImage($source, $destination, $maxWidth, $quality = 80)
+{
+    $info = getimagesize($source);
+    if ($info === false) return false;
+
+    $mime = $info['mime'];
+    $width = $info[0];
+    $height = $info[1];
+
+    switch ($mime) {
+        case 'image/jpeg':
+            $image = imagecreatefromjpeg($source);
+            break;
+        case 'image/png':
+            $image = imagecreatefrompng($source);
+            break;
+        case 'image/webp':
+            $image = imagecreatefromwebp($source);
+            break;
+        default:
+            return false;
+    }
+
+    if (!$image) return false;
+
+    if ($width > $maxWidth) {
+        $ratio = $maxWidth / $width;
+        $newWidth = $maxWidth;
+        $newHeight = (int)($height * $ratio);
+    } else {
+        $newWidth = $width;
+        $newHeight = $height;
+    }
+
+    $newImage = imagecreatetruecolor($newWidth, $newHeight);
+
+    if ($mime === 'image/png' || $mime === 'image/webp') {
+        imagealphablending($newImage, false);
+        imagesavealpha($newImage, true);
+        $transparent = imagecolorallocatealpha($newImage, 0, 0, 0, 127);
+        imagefill($newImage, 0, 0, $transparent);
+    }
+
+    imagecopyresampled($newImage, $image, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+
+    $ext = strtolower(pathinfo($destination, PATHINFO_EXTENSION));
+
+    switch ($ext) {
+        case 'jpg':
+        case 'jpeg':
+            $result = imagejpeg($newImage, $destination, $quality);
+            break;
+        case 'png':
+            $pngQuality = (int)((100 - $quality) / 10);
+            $result = imagepng($newImage, $destination, $pngQuality);
+            break;
+        case 'webp':
+            $result = imagewebp($newImage, $destination, $quality);
+            break;
+        default:
+            $result = imagejpeg($newImage, $destination, $quality);
+    }
+
+    imagedestroy($image);
+    imagedestroy($newImage);
+
+    return $result;
+}
+
+// ===========================================
+// VALIDAÇÃO DE TIPO
+// ===========================================
+function isValidImage($file, $allowed_types, $allowed_ext)
+{
+    if ($file['error'] !== UPLOAD_ERR_OK) return false;
+
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+
+    return in_array($mime, $allowed_types) && in_array($ext, $allowed_ext);
+}
+
 // --- ACTIONS ---
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $action = $_POST['action'] ?? 'save';
@@ -52,9 +154,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     // 2. PUBLISH - Enviar para Revisão
     if ($action == 'publish' && $jogo['status'] == 'rascunho') {
         try {
-            // Validações antes de enviar para revisão
             $errors = [];
-            
+
             if (empty($jogo['titulo']) || strlen($jogo['titulo']) < 3) {
                 $errors[] = 'Título deve ter pelo menos 3 caracteres';
             }
@@ -67,21 +168,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if (empty($jogo['imagem_capa'])) {
                 $errors[] = 'Imagem de capa é obrigatória';
             }
-            
-            // Verificar categorias
+
             $cat_count = $pdo->query("SELECT COUNT(*) FROM jogo_categoria WHERE jogo_id = $jogo_id")->fetchColumn();
             if ($cat_count == 0) {
                 $errors[] = 'Selecione pelo menos uma categoria';
             }
-            
+
             if (!empty($errors)) {
                 $error = implode('<br>', $errors);
             } else {
                 $stmt = $pdo->prepare("UPDATE jogo SET status = 'em_revisao', atualizado_em = NOW() WHERE id = ?");
                 $stmt->execute([$jogo_id]);
-                $success = 'Jogo enviado para revisão com sucesso! Você será notificado quando a análise for concluída.';
-                
-                // Atualizar dados do jogo na memória
+                $success = 'Jogo enviado para revisão com sucesso!';
                 $jogo['status'] = 'em_revisao';
             }
         } catch (Exception $e) {
@@ -97,13 +195,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $slug = $jogo['slug'];
             $upload_dir = '../uploads/jogos/' . $slug;
 
-            // Criar diretório se não existir
-            if (!is_dir($upload_dir)) {
-                mkdir($upload_dir, 0755, true);
-            }
-            if (!is_dir($upload_dir . '/screenshots')) {
-                mkdir($upload_dir . '/screenshots', 0755, true);
-            }
+            if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
+            if (!is_dir($upload_dir . '/screenshots')) mkdir($upload_dir . '/screenshots', 0755, true);
 
             // Basic Data
             $sql = "UPDATE jogo SET titulo=?, descricao_curta=?, descricao_completa=?, video_trailer=?, requisitos_minimos=?, requisitos_recomendados=?, preco_centavos=?, classificacao_etaria=?, atualizado_em=NOW() WHERE id=?";
@@ -119,35 +212,51 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $jogo_id
             ]);
 
-            // Images Update
-            if (!empty($_FILES['capa']['name']) && $_FILES['capa']['error'] == 0) {
-                $ext = strtolower(pathinfo($_FILES['capa']['name'], PATHINFO_EXTENSION));
-                if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'])) {
-                    $capa_path = "$upload_dir/capa.$ext";
-                    move_uploaded_file($_FILES['capa']['tmp_name'], $capa_path);
-                    $pdo->prepare("UPDATE jogo SET imagem_capa=? WHERE id=?")->execute(["/uploads/jogos/$slug/capa.$ext", $jogo_id]);
-                }
-            }
-            
-            if (!empty($_FILES['banner']['name']) && $_FILES['banner']['error'] == 0) {
-                $ext = strtolower(pathinfo($_FILES['banner']['name'], PATHINFO_EXTENSION));
-                if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'])) {
-                    $banner_path = "$upload_dir/banner.$ext";
-                    move_uploaded_file($_FILES['banner']['tmp_name'], $banner_path);
-                    $pdo->prepare("UPDATE jogo SET imagem_banner=? WHERE id=?")->execute(["/uploads/jogos/$slug/banner.$ext", $jogo_id]);
+            // Upload Capa (com compressão)
+            if (!empty($_FILES['capa']['name']) && $_FILES['capa']['error'] === UPLOAD_ERR_OK) {
+                if (isValidImage($_FILES['capa'], $allowed_types, $allowed_ext)) {
+                    $ext = strtolower(pathinfo($_FILES['capa']['name'], PATHINFO_EXTENSION));
+                    $target = "$upload_dir/capa.$ext";
+
+                    if (compressImage($_FILES['capa']['tmp_name'], $target, $image_config['capa']['max_width'], COMPRESSION_QUALITY)) {
+                        $pdo->prepare("UPDATE jogo SET imagem_capa=? WHERE id=?")->execute(["/uploads/jogos/$slug/capa.$ext", $jogo_id]);
+                    }
                 }
             }
 
-            // New Screenshots
+            // Upload Banner (com compressão)
+            if (!empty($_FILES['banner']['name']) && $_FILES['banner']['error'] === UPLOAD_ERR_OK) {
+                if (isValidImage($_FILES['banner'], $allowed_types, $allowed_ext)) {
+                    $ext = strtolower(pathinfo($_FILES['banner']['name'], PATHINFO_EXTENSION));
+                    $target = "$upload_dir/banner.$ext";
+
+                    if (compressImage($_FILES['banner']['tmp_name'], $target, $image_config['banner']['max_width'], COMPRESSION_QUALITY)) {
+                        $pdo->prepare("UPDATE jogo SET imagem_banner=? WHERE id=?")->execute(["/uploads/jogos/$slug/banner.$ext", $jogo_id]);
+                    }
+                }
+            }
+
+            // New Screenshots (com compressão)
             if (!empty($_FILES['screenshots']['name'][0])) {
                 $next_ordem = $pdo->query("SELECT COALESCE(MAX(ordem), 0) FROM jogo_imagens WHERE jogo_id=$jogo_id")->fetchColumn() + 1;
+
                 foreach ($_FILES['screenshots']['tmp_name'] as $k => $tmp) {
-                    if ($_FILES['screenshots']['error'][$k] == 0) {
-                        $ext = strtolower(pathinfo($_FILES['screenshots']['name'][$k], PATHINFO_EXTENSION));
-                        if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'])) {
+                    if ($_FILES['screenshots']['error'][$k] === UPLOAD_ERR_OK) {
+                        $shot_file = [
+                            'name' => $_FILES['screenshots']['name'][$k],
+                            'tmp_name' => $tmp,
+                            'error' => $_FILES['screenshots']['error'][$k]
+                        ];
+
+                        if (isValidImage($shot_file, $allowed_types, $allowed_ext)) {
+                            $ext = strtolower(pathinfo($_FILES['screenshots']['name'][$k], PATHINFO_EXTENSION));
                             $fname = time() . "-$k.$ext";
-                            move_uploaded_file($tmp, "$upload_dir/screenshots/$fname");
-                            $pdo->prepare("INSERT INTO jogo_imagens (jogo_id, imagem, ordem) VALUES (?,?,?)")->execute([$jogo_id, "/uploads/jogos/$slug/screenshots/$fname", $next_ordem++]);
+                            $target = "$upload_dir/screenshots/$fname";
+
+                            if (compressImage($tmp, $target, $image_config['screenshots']['max_width'], COMPRESSION_QUALITY)) {
+                                $pdo->prepare("INSERT INTO jogo_imagens (jogo_id, imagem, ordem) VALUES (?,?,?)")
+                                    ->execute([$jogo_id, "/uploads/jogos/$slug/screenshots/$fname", $next_ordem++]);
+                            }
                         }
                     }
                 }
@@ -156,7 +265,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             // Delete Marked Screenshots
             if (isset($_POST['delete_imgs']) && is_array($_POST['delete_imgs'])) {
                 foreach ($_POST['delete_imgs'] as $img_id) {
-                    // Buscar e deletar arquivo
                     $img_stmt = $pdo->prepare("SELECT imagem FROM jogo_imagens WHERE id = ? AND jogo_id = ?");
                     $img_stmt->execute([$img_id, $jogo_id]);
                     $img_data = $img_stmt->fetch();
@@ -167,7 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 }
             }
 
-            // Relations Update (Wipe & Re-insert)
+            // Relations Update
             $pdo->prepare("DELETE FROM jogo_categoria WHERE jogo_id=?")->execute([$jogo_id]);
             if (!empty($_POST['cats_selecionadas'])) {
                 foreach (explode(',', $_POST['cats_selecionadas']) as $c) {
@@ -206,7 +314,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 
 // --- DATA FETCHING ---
-// Recarregar dados do jogo após possíveis alterações
 $stmt = $pdo->prepare("SELECT * FROM jogo WHERE id = ? AND desenvolvedor_id = ?");
 $stmt->execute([$jogo_id, $dev['id']]);
 $jogo = $stmt->fetch();
@@ -218,12 +325,10 @@ $imgs = $pdo->prepare("SELECT * FROM jogo_imagens WHERE jogo_id=? ORDER BY ordem
 $imgs->execute([$jogo_id]);
 $screenshots = $imgs->fetchAll();
 
-// Pre-filled relations (Arrays of IDs)
 $my_cats = $pdo->query("SELECT categoria_id FROM jogo_categoria WHERE jogo_id=$jogo_id")->fetchAll(PDO::FETCH_COLUMN);
 $my_tags = $pdo->query("SELECT tag_id FROM jogo_tag WHERE jogo_id=$jogo_id")->fetchAll(PDO::FETCH_COLUMN);
 $my_plats = $pdo->query("SELECT plataforma_id FROM jogo_plataforma WHERE jogo_id=$jogo_id")->fetchAll(PDO::FETCH_COLUMN);
 
-// Status labels e cores
 $status_info = [
     'rascunho' => ['label' => 'Rascunho', 'color' => '#6b7280', 'icon' => 'fa-file-alt'],
     'em_revisao' => ['label' => 'Em Revisão', 'color' => '#f59e0b', 'icon' => 'fa-clock'],
@@ -254,6 +359,14 @@ require_once '../includes/header.php';
         margin: 0 auto;
     }
 
+    .publish-grid {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 30px;
+        align-items: start;
+    }
+
+    /* Header */
     .page-header {
         display: flex;
         justify-content: space-between;
@@ -263,13 +376,12 @@ require_once '../includes/header.php';
         gap: 15px;
     }
 
-    .page-header-info h1 {
-        font-size: 26px;
-        font-weight: 700;
-        margin-bottom: 8px;
+    .page-header h1 {
+        font-size: 28px;
         display: flex;
         align-items: center;
         gap: 12px;
+        margin-bottom: 8px;
     }
 
     .page-header-meta {
@@ -290,30 +402,13 @@ require_once '../includes/header.php';
         color: white;
     }
 
-    .page-header-actions {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-    }
-
-    .publish-grid {
-        display: grid;
-        grid-template-columns: 1fr 380px;
-        gap: 30px;
-        align-items: start;
-    }
-
+    /* Form Box */
     .form-box {
         background: var(--bg-secondary);
         border: 1px solid var(--border);
-        border-radius: 16px;
+        border-radius: 12px;
         padding: 25px;
         margin-bottom: 25px;
-        transition: border-color 0.2s;
-    }
-
-    .form-box:hover {
-        border-color: var(--accent);
     }
 
     .box-title {
@@ -324,8 +419,6 @@ require_once '../includes/header.php';
         display: flex;
         align-items: center;
         gap: 10px;
-        padding-bottom: 12px;
-        border-bottom: 1px solid var(--border);
     }
 
     .form-group {
@@ -344,69 +437,25 @@ require_once '../includes/header.php';
         color: var(--text-secondary);
     }
 
-    .form-control {
-        width: 100%;
-        padding: 12px 16px;
-        background: var(--bg-primary);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        color: var(--text-primary);
-        font-size: 14px;
-        transition: all 0.2s;
-    }
-
-    .form-control:focus {
-        outline: none;
-        border-color: var(--accent);
-        box-shadow: 0 0 0 3px var(--accent) opacity(0.2);
-    }
-
-    .form-control::placeholder {
-        color: var(--text-muted);
-    }
-
-    textarea.form-control {
-        resize: vertical;
-        min-height: 100px;
-    }
-
-    .char-counter {
-        text-align: right;
-        font-size: 12px;
-        color: var(--text-muted);
-        margin-top: 5px;
-    }
-
-    .char-counter.warning {
-        color: #f59e0b;
-    }
-
-    .char-counter.error {
-        color: #ef4444;
-    }
-
+    /* Uploads */
     .upload-zone {
         position: relative;
         width: 100%;
         background: var(--bg-primary);
         border: 2px dashed var(--border);
-        border-radius: 12px;
+        border-radius: 10px;
         cursor: pointer;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
+        transition: 0.3s;
         overflow: hidden;
-        transition: all 0.3s;
     }
 
     .upload-zone:hover {
         border-color: var(--accent);
-        background: var(--accent) opacity(0.2);
-    }
-
-    .upload-zone.has-image {
-        border-style: solid;
+        background: rgba(var(--accent-rgb), 0.05);
     }
 
     .upload-zone.capa {
@@ -417,43 +466,59 @@ require_once '../includes/header.php';
         aspect-ratio: 16/9;
     }
 
+    .upload-zone.has-image {
+        border-style: solid;
+        border-color: var(--accent);
+    }
+
     .preview-img {
         width: 100%;
         height: 100%;
         object-fit: cover;
         position: absolute;
+        top: 0;
+        left: 0;
     }
 
     .upload-placeholder {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 10px;
-        color: var(--text-muted);
-        padding: 20px;
-        text-align: center;
+        gap: 8px;
+        color: var(--text-secondary);
     }
 
     .upload-placeholder i {
-        font-size: 32px;
-        opacity: 0.5;
+        font-size: 2rem;
     }
 
     .upload-placeholder span {
-        font-size: 13px;
+        font-size: 12px;
+    }
+
+    .upload-info {
+        font-size: 11px;
+        color: var(--text-secondary);
+        margin-top: 8px;
+        text-align: center;
+    }
+
+    /* Tags & Chips */
+    .multi-select-wrapper {
+        position: relative;
     }
 
     .chips-input {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
-        padding: 12px;
+        padding: 10px;
         border: 1px solid var(--border);
-        border-radius: 10px;
+        border-radius: 8px;
         background: var(--bg-primary);
-        min-height: 50px;
+        min-height: 45px;
         cursor: pointer;
-        transition: all 0.2s;
+        align-items: center;
     }
 
     .chips-input:hover {
@@ -461,38 +526,26 @@ require_once '../includes/header.php';
     }
 
     .chips-placeholder {
-        color: var(--text-muted);
+        color: #888;
+        padding: 5px;
         font-size: 14px;
-        padding: 4px;
     }
 
     .chip {
         background: var(--accent);
         color: white;
-        padding: 6px 12px;
+        padding: 5px 10px;
         border-radius: 20px;
         font-size: 13px;
-        display: flex;
+        display: inline-flex;
         align-items: center;
         gap: 8px;
-        animation: chipIn 0.2s ease;
-    }
-
-    @keyframes chipIn {
-        from {
-            transform: scale(0.8);
-            opacity: 0;
-        }
-        to {
-            transform: scale(1);
-            opacity: 1;
-        }
     }
 
     .chip i {
         cursor: pointer;
         opacity: 0.8;
-        transition: opacity 0.2s;
+        transition: 0.2s;
     }
 
     .chip i:hover {
@@ -502,64 +555,45 @@ require_once '../includes/header.php';
     .popover-list {
         display: none;
         position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
         background: var(--bg-secondary);
         border: 1px solid var(--border);
-        border-radius: 12px;
-        width: 100%;
+        border-radius: 8px;
         z-index: 100;
-        max-height: 280px;
+        max-height: 250px;
         overflow-y: auto;
-        margin-top: 8px;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-        animation: popIn 0.2s ease;
-    }
-
-    @keyframes popIn {
-        from {
-            opacity: 0;
-            transform: translateY(-10px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    .popover-list::-webkit-scrollbar {
-        width: 6px;
-    }
-
-    .popover-list::-webkit-scrollbar-thumb {
-        background: var(--border);
-        border-radius: 3px;
+        margin-top: 5px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
     }
 
     .popover-item {
-        padding: 12px 16px;
+        padding: 10px 15px;
         cursor: pointer;
-        transition: all 0.15s;
+        transition: 0.2s;
+        font-size: 14px;
         display: flex;
         align-items: center;
-        gap: 10px;
+        justify-content: space-between;
     }
 
     .popover-item:hover {
         background: var(--bg-primary);
+        color: var(--accent);
     }
 
     .popover-item.selected {
-        background: var(--accent) opacity(0.2);
+        background: rgba(var(--accent-rgb), 0.1);
         color: var(--accent);
     }
 
     .popover-item.selected::after {
-        content: '\f00c';
-        font-family: 'Font Awesome 6 Free';
-        font-weight: 900;
-        margin-left: auto;
-        color: var(--accent);
+        content: '✓';
+        font-weight: bold;
     }
 
+    /* Plataformas */
     .plat-grid {
         display: flex;
         gap: 10px;
@@ -567,17 +601,16 @@ require_once '../includes/header.php';
     }
 
     .plat-btn {
-        padding: 10px 18px;
-        border: 2px solid var(--border);
-        border-radius: 10px;
+        padding: 8px 16px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
         cursor: pointer;
-        background: var(--bg-primary);
-        user-select: none;
         display: flex;
         align-items: center;
         gap: 8px;
-        transition: all 0.2s;
-        font-size: 14px;
+        transition: 0.2s;
+        background: var(--bg-primary);
+        user-select: none;
     }
 
     .plat-btn:hover {
@@ -587,23 +620,23 @@ require_once '../includes/header.php';
     .plat-btn.active {
         background: var(--accent);
         color: white;
-        border-color: transparent;
+        border-color: var(--accent);
     }
 
     /* Screenshots */
     .shots-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        gap: 12px;
+        gap: 10px;
     }
 
     .shot-item {
         aspect-ratio: 16/9;
         position: relative;
-        border-radius: 10px;
+        border-radius: 6px;
         overflow: hidden;
-        border: 2px solid var(--border);
-        transition: all 0.2s;
+        border: 1px solid var(--border);
+        cursor: pointer;
     }
 
     .shot-item img {
@@ -612,9 +645,8 @@ require_once '../includes/header.php';
         object-fit: cover;
     }
 
-    .shot-item:hover {
-        border-color: var(--accent);
-        transform: scale(1.02);
+    .shot-cb {
+        display: none;
     }
 
     .del-shot-overlay {
@@ -626,15 +658,10 @@ require_once '../includes/header.php';
         justify-content: center;
         opacity: 0;
         transition: 0.2s;
-        cursor: pointer;
     }
 
-    .shot-cb:checked + .del-shot-overlay {
+    .shot-cb:checked+.del-shot-overlay {
         opacity: 1;
-    }
-
-    .shot-cb {
-        display: none;
     }
 
     .add-shot {
@@ -643,18 +670,16 @@ require_once '../includes/header.php';
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 8px;
         cursor: pointer;
         aspect-ratio: 16/9;
-        border-radius: 10px;
-        transition: all 0.2s;
-        color: var(--text-muted);
+        border-radius: 6px;
+        transition: 0.3s;
+        gap: 5px;
     }
 
     .add-shot:hover {
         border-color: var(--accent);
         color: var(--accent);
-        background: var(--accent) opacity(0.05);
     }
 
     .add-shot i {
@@ -662,135 +687,22 @@ require_once '../includes/header.php';
     }
 
     .add-shot span {
-        font-size: 12px;
+        font-size: 10px;
+        color: var(--text-secondary);
     }
 
-    /* Buttons */
-    .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        padding: 12px 24px;
-        border-radius: 10px;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.2s;
-        border: none;
-        text-decoration: none;
-    }
-
-    .btn-primary {
-        background: var(--accent);
-        color: white;
-    }
-
-    .btn-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 20px rgba(46, 213, 255, 0.3);
-    }
-
-    .btn-success {
-        background: linear-gradient(135deg, #10b981, #059669);
-        color: white;
-    }
-
-    .btn-success:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 20px rgba(16, 185, 129, 0.4);
-    }
-
-    .btn-secondary {
-        background: var(--bg-tertiary);
-        color: var(--text-primary);
-        border: 1px solid var(--border);
-    }
-
-    .btn-secondary:hover {
-        background: var(--border);
-    }
-
-    .btn-danger-outline {
-        width: 100%;
-        background: transparent;
-        border: 2px solid #ef4444;
-        color: #ef4444;
-        padding: 12px;
-        border-radius: 10px;
-        margin-top: 15px;
-        cursor: pointer;
-        transition: 0.3s;
-        font-weight: 600;
-    }
-
-    .btn-danger-outline:hover {
-        background: #ef4444;
-        color: white;
-    }
-
-    .btn-lg {
-        padding: 14px 28px;
-        font-size: 15px;
-    }
-
-    /* Alerts */
-    .alert {
-        padding: 16px 20px;
-        border-radius: 12px;
-        margin-bottom: 20px;
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-        animation: slideIn 0.3s ease;
-    }
-
-    @keyframes slideIn {
-        from {
-            opacity: 0;
-            transform: translateY(-10px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    .alert i {
-        font-size: 18px;
-        margin-top: 2px;
-    }
-
-    .alert-success {
-        background: rgba(16, 185, 129, 0.15);
-        border: 1px solid rgba(16, 185, 129, 0.3);
-        color: #10b981;
-    }
-
-    .alert-error {
-        background: rgba(239, 68, 68, 0.15);
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        color: #ef4444;
-    }
-
-    .alert-warning {
-        background: rgba(245, 158, 11, 0.15);
-        border: 1px solid rgba(245, 158, 11, 0.3);
-        color: #f59e0b;
-    }
-
-    .alert-info {
-        background: rgba(59, 130, 246, 0.15);
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        color: #3b82f6;
+    /* Requisitos Grid */
+    .req-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
     }
 
     /* Checklist */
     .checklist {
         display: flex;
         flex-direction: column;
-        gap: 10px;
-        margin-top: 15px;
+        gap: 8px;
     }
 
     .checklist-item {
@@ -815,62 +727,57 @@ require_once '../includes/header.php';
         width: 18px;
     }
 
-    /* Requirements Grid */
-    .req-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-    }
-
-    .req-grid .form-group label {
+    /* Alerts */
+    .alert {
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
         display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    /* Toast Notification */
-    .toast-container {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        z-index: 9999;
-    }
-
-    .toast {
-        background: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 16px 20px;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 12px;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-        animation: toastIn 0.3s ease;
-        min-width: 300px;
     }
 
-    @keyframes toastIn {
-        from {
-            opacity: 0;
-            transform: translateX(100px);
-        }
-        to {
-            opacity: 1;
-            transform: translateX(0);
-        }
+    .alert-success {
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid #10b981;
+        color: #10b981;
     }
 
-    .toast.success {
-        border-left: 4px solid #10b981;
+    .alert-error {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid #ef4444;
+        color: #ef4444;
     }
 
-    .toast.error {
-        border-left: 4px solid #ef4444;
+    .alert-info {
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px solid #3b82f6;
+        color: #3b82f6;
     }
 
-    .toast.warning {
-        border-left: 4px solid #f59e0b;
+    .alert-warning {
+        background: rgba(245, 158, 11, 0.1);
+        border: 1px solid #f59e0b;
+        color: #f59e0b;
+    }
+
+    /* Buttons */
+    .btn-danger-outline {
+        width: 100%;
+        background: transparent;
+        border: 2px solid #ef4444;
+        color: #ef4444;
+        padding: 12px;
+        border-radius: 10px;
+        margin-top: 15px;
+        cursor: pointer;
+        transition: 0.3s;
+        font-weight: 600;
+    }
+
+    .btn-danger-outline:hover {
+        background: #ef4444;
+        color: white;
     }
 
     /* Modal */
@@ -969,20 +876,6 @@ require_once '../includes/header.php';
             grid-template-columns: 1fr;
         }
     }
-
-    @media(max-width: 576px) {
-        .page-header {
-            flex-direction: column;
-        }
-
-        .page-header-actions {
-            width: 100%;
-        }
-
-        .page-header-actions .btn {
-            flex: 1;
-        }
-    }
 </style>
 
 <div class="container">
@@ -993,11 +886,8 @@ require_once '../includes/header.php';
             <div class="publish-wrapper">
                 <!-- Page Header -->
                 <div class="page-header">
-                    <div class="page-header-info">
-                        <h1>
-                            <i class="fas fa-edit"></i>
-                            Editar Jogo
-                        </h1>
+                    <div>
+                        <h1><i class="fas fa-edit"></i> Editar Jogo</h1>
                         <div class="page-header-meta">
                             <span class="status-badge" style="background: <?= $current_status['color'] ?>">
                                 <i class="fas <?= $current_status['icon'] ?>"></i>
@@ -1008,52 +898,31 @@ require_once '../includes/header.php';
                             </span>
                         </div>
                     </div>
-                    <div class="page-header-actions">
-                        <a href="<?= SITE_URL ?>/pages/jogo.php?slug=<?= $jogo['slug'] ?>" target="_blank" class="btn btn-secondary">
-                            <i class="fas fa-external-link-alt"></i> Ver Página
-                        </a>
-                    </div>
+                    <a href="<?= SITE_URL ?>/pages/jogo.php?slug=<?= $jogo['slug'] ?>" target="_blank" class="btn btn-secondary">
+                        <i class="fas fa-external-link-alt"></i> Ver Página
+                    </a>
                 </div>
 
                 <!-- Alerts -->
                 <?php if (isset($_GET['success'])): ?>
-                    <div class="alert alert-success">
-                        <i class="fas fa-check-circle"></i>
-                        <span>Alterações salvas com sucesso!</span>
-                    </div>
+                    <div class="alert alert-success"><i class="fas fa-check-circle"></i> Alterações salvas com sucesso!</div>
                 <?php endif; ?>
-
                 <?php if ($success): ?>
-                    <div class="alert alert-success">
-                        <i class="fas fa-check-circle"></i>
-                        <span><?= $success ?></span>
-                    </div>
+                    <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?= $success ?></div>
                 <?php endif; ?>
-
                 <?php if ($error): ?>
-                    <div class="alert alert-error">
-                        <i class="fas fa-exclamation-circle"></i>
-                        <span><?= $error ?></span>
-                    </div>
+                    <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?= $error ?></div>
                 <?php endif; ?>
-
                 <?php if ($jogo['status'] == 'em_revisao'): ?>
                     <div class="alert alert-info">
                         <i class="fas fa-clock"></i>
-                        <div>
-                            <strong>Jogo em análise</strong><br>
-                            <span style="font-size: 13px;">Seu jogo está sendo revisado pela nossa equipe. Você será notificado quando a análise for concluída.</span>
-                        </div>
+                        <div><strong>Jogo em análise</strong><br><span style="font-size: 13px;">Seu jogo está sendo revisado pela nossa equipe.</span></div>
                     </div>
                 <?php endif; ?>
-
                 <?php if ($jogo['status'] == 'suspenso' && $jogo['motivo_rejeicao']): ?>
                     <div class="alert alert-warning">
                         <i class="fas fa-exclamation-triangle"></i>
-                        <div>
-                            <strong>Jogo suspenso</strong><br>
-                            <span style="font-size: 13px;">Motivo: <?= sanitize($jogo['motivo_rejeicao']) ?></span>
-                        </div>
+                        <div><strong>Jogo suspenso</strong><br><span style="font-size: 13px;">Motivo: <?= sanitize($jogo['motivo_rejeicao']) ?></span></div>
                     </div>
                 <?php endif; ?>
 
@@ -1067,76 +936,80 @@ require_once '../includes/header.php';
                                 <div class="box-title"><i class="fas fa-info-circle"></i> Informações Básicas</div>
                                 <div class="form-group">
                                     <label>Título do Jogo *</label>
-                                    <input type="text" name="titulo" class="form-control" value="<?= sanitize($jogo['titulo']) ?>" required maxlength="200" placeholder="Nome do seu jogo">
+                                    <input type="text" name="titulo" class="form-control" value="<?= sanitize($jogo['titulo']) ?>" required placeholder="Ex: A Lenda do Herói">
                                 </div>
                                 <div class="form-group">
-                                    <label>Descrição Curta *</label>
-                                    <input type="text" name="descricao_curta" id="descCurta" class="form-control" value="<?= sanitize($jogo['descricao_curta']) ?>" required maxlength="500" placeholder="Uma breve descrição que aparece nos cards">
-                                    <div class="char-counter" id="descCurtaCounter"><?= strlen($jogo['descricao_curta']) ?>/500</div>
+                                    <label>Descrição Curta * (150 caracteres)</label>
+                                    <input type="text" name="descricao_curta" class="form-control" maxlength="150" value="<?= sanitize($jogo['descricao_curta']) ?>" required>
                                 </div>
                                 <div class="form-group">
                                     <label>Descrição Completa</label>
-                                    <textarea name="descricao_completa" class="form-control" rows="8" placeholder="Descreva detalhadamente seu jogo, história, mecânicas..."><?= sanitize($jogo['descricao_completa']) ?></textarea>
+                                    <textarea name="descricao_completa" class="form-control" rows="6"><?= sanitize($jogo['descricao_completa']) ?></textarea>
                                 </div>
                                 <div class="form-group">
-                                    <label><i class="fab fa-youtube" style="color: #ff0000;"></i> Trailer (YouTube)</label>
-                                    <input type="url" name="video_trailer" class="form-control" value="<?= sanitize($jogo['video_trailer']) ?>" placeholder="https://www.youtube.com/watch?v=...">
+                                    <label>Trailer (Embed YouTube)</label>
+                                    <input type="url" name="video_trailer" class="form-control" value="<?= sanitize($jogo['video_trailer']) ?>" placeholder="https://youtube.com/...">
                                 </div>
                             </div>
 
-                            <!-- Categorias e Tags -->
+                            <!-- Classificação -->
                             <div class="form-box">
-                                <div class="box-title"><i class="fas fa-tags"></i> Categorias e Tags</div>
+                                <div class="box-title"><i class="fas fa-tags"></i> Classificação</div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                                    <div class="form-group" style="position: relative;">
+                                    <!-- Categorias -->
+                                    <div class="multi-select-wrapper">
                                         <label>Categorias *</label>
-                                        <div class="chips-input" id="triggerCat">
-                                            <span class="chips-placeholder">Clique para selecionar...</span>
+                                        <div class="chips-input" data-target="cat">
+                                            <span class="chips-placeholder">Selecionar categorias...</span>
                                         </div>
-                                        <div class="popover-list" id="popCat">
+                                        <div class="popover-list" id="popover-cat">
                                             <?php foreach ($categorias as $c): ?>
-                                                <div class="popover-item" data-id="<?= $c['id'] ?>" data-name="<?= sanitize($c['nome']) ?>"><?= sanitize($c['nome']) ?></div>
+                                                <div class="popover-item" data-id="<?= $c['id'] ?>" data-name="<?= sanitize($c['nome']) ?>">
+                                                    <?= sanitize($c['nome']) ?>
+                                                </div>
                                             <?php endforeach; ?>
                                         </div>
-                                        <input type="hidden" name="cats_selecionadas" id="inputCat" value="<?= implode(',', $my_cats) ?>">
+                                        <input type="hidden" name="cats_selecionadas" id="input-cat" value="<?= implode(',', $my_cats) ?>">
                                     </div>
-                                    <div class="form-group" style="position: relative;">
+
+                                    <!-- Tags -->
+                                    <div class="multi-select-wrapper">
                                         <label>Tags</label>
-                                        <div class="chips-input" id="triggerTag">
-                                            <span class="chips-placeholder">Clique para selecionar...</span>
+                                        <div class="chips-input" data-target="tag">
+                                            <span class="chips-placeholder">Selecionar tags...</span>
                                         </div>
-                                        <div class="popover-list" id="popTag">
+                                        <div class="popover-list" id="popover-tag">
                                             <?php foreach ($tags as $t): ?>
-                                                <div class="popover-item" data-id="<?= $t['id'] ?>" data-name="<?= sanitize($t['nome']) ?>"><?= sanitize($t['nome']) ?></div>
+                                                <div class="popover-item" data-id="<?= $t['id'] ?>" data-name="<?= sanitize($t['nome']) ?>">
+                                                    <?= sanitize($t['nome']) ?>
+                                                </div>
                                             <?php endforeach; ?>
                                         </div>
-                                        <input type="hidden" name="tags_selecionadas" id="inputTag" value="<?= implode(',', $my_tags) ?>">
+                                        <input type="hidden" name="tags_selecionadas" id="input-tag" value="<?= implode(',', $my_tags) ?>">
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Plataformas e Requisitos -->
+                            <!-- Requisitos e Plataformas -->
                             <div class="form-box">
-                                <div class="box-title"><i class="fas fa-desktop"></i> Plataformas e Requisitos</div>
-                                <div class="form-group">
-                                    <label>Plataformas Suportadas</label>
-                                    <div class="plat-grid">
-                                        <?php foreach ($plataformas as $p): ?>
-                                            <div class="plat-btn <?= in_array($p['id'], $my_plats) ? 'active' : '' ?>" data-id="<?= $p['id'] ?>">
-                                                <i class="<?= $p['icone'] ?>"></i> <?= $p['nome'] ?>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <input type="hidden" name="plats_selecionadas" id="inputPlat" value="<?= implode(',', $my_plats) ?>">
+                                <div class="box-title"><i class="fas fa-desktop"></i> Requisitos e Plataformas</div>
+                                <label style="margin-bottom: 10px; display:block;">Plataformas Suportadas</label>
+                                <div class="plat-grid" style="margin-bottom: 20px;">
+                                    <?php foreach ($plataformas as $p): ?>
+                                        <div class="plat-btn <?= in_array($p['id'], $my_plats) ? 'active' : '' ?>" data-id="<?= $p['id'] ?>">
+                                            <i class="<?= $p['icone'] ?>"></i> <?= $p['nome'] ?>
+                                        </div>
+                                    <?php endforeach; ?>
                                 </div>
+                                <input type="hidden" name="plats_selecionadas" id="input-plat" value="<?= implode(',', $my_plats) ?>">
                                 <div class="req-grid">
-                                    <div class="form-group">
-                                        <label><i class="fas fa-microchip"></i> Requisitos Mínimos</label>
-                                        <textarea name="requisitos_minimos" class="form-control" rows="5" placeholder="SO: Windows 10&#10;Processador: Intel i3&#10;Memória: 4 GB RAM&#10;GPU: GTX 750"><?= sanitize($jogo['requisitos_minimos']) ?></textarea>
+                                    <div>
+                                        <label>Requisitos Mínimos</label>
+                                        <textarea name="requisitos_minimos" class="form-control" rows="4"><?= sanitize($jogo['requisitos_minimos']) ?></textarea>
                                     </div>
-                                    <div class="form-group">
-                                        <label><i class="fas fa-rocket"></i> Requisitos Recomendados</label>
-                                        <textarea name="requisitos_recomendados" class="form-control" rows="5" placeholder="SO: Windows 11&#10;Processador: Intel i5&#10;Memória: 8 GB RAM&#10;GPU: GTX 1060"><?= sanitize($jogo['requisitos_recomendados']) ?></textarea>
+                                    <div>
+                                        <label>Requisitos Recomendados</label>
+                                        <textarea name="requisitos_recomendados" class="form-control" rows="4"><?= sanitize($jogo['requisitos_recomendados']) ?></textarea>
                                     </div>
                                 </div>
                             </div>
@@ -1144,6 +1017,9 @@ require_once '../includes/header.php';
                             <!-- Screenshots -->
                             <div class="form-box">
                                 <div class="box-title"><i class="fas fa-images"></i> Screenshots</div>
+                                <p class="upload-info" style="text-align:left; margin-bottom:15px;">
+                                    <i class="fas fa-info-circle"></i> Clique nas imagens para marcar para exclusão • Imagens serão otimizadas automaticamente
+                                </p>
                                 <div class="shots-grid" id="shotContainer">
                                     <?php foreach ($screenshots as $img): ?>
                                         <label class="shot-item">
@@ -1154,70 +1030,62 @@ require_once '../includes/header.php';
                                             </div>
                                         </label>
                                     <?php endforeach; ?>
-
-                                    <label class="add-shot">
+                                    <label class="add-shot" id="addShotBtn">
                                         <i class="fas fa-plus"></i>
                                         <span>Adicionar</span>
-                                        <input type="file" name="screenshots[]" multiple accept="image/*" style="display:none" id="shotInput">
                                     </label>
                                 </div>
-                                <small style="display:block; margin-top:12px; color:var(--text-muted)">
-                                    <i class="fas fa-info-circle"></i> Clique nas imagens para marcar para exclusão.
-                                </small>
+                                <input type="file" name="screenshots[]" multiple accept="image/jpeg,image/png,image/webp" style="display:none" id="shotInput">
                             </div>
                         </div>
 
-                        <!-- Sidebar -->
                         <div class="side-col">
-                            <!-- Mídia -->
+                            <!-- Mídia Principal -->
                             <div class="form-box">
-                                <div class="box-title"><i class="fas fa-image"></i> Imagens</div>
-                                <div class="form-group">
-                                    <label>Capa do Jogo (1:1) *</label>
-                                    <div class="upload-zone capa <?= $jogo['imagem_capa'] ? 'has-image' : '' ?>" onclick="document.getElementById('capa').click()">
-                                        <?php if ($jogo['imagem_capa']): ?>
-                                            <img src="<?= SITE_URL . $jogo['imagem_capa'] ?>" id="prev-capa" class="preview-img">
-                                        <?php else: ?>
-                                            <div class="upload-placeholder" id="placeholder-capa">
-                                                <i class="fas fa-cloud-upload-alt"></i>
-                                                <span>Clique para enviar</span>
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-                                    <input type="file" name="capa" id="capa" style="display:none" accept="image/*">
-                                </div>
+                                <div class="box-title"><i class="fas fa-image"></i> Mídia Principal</div>
 
-                                <div class="form-group">
-                                    <label>Banner (16:9)</label>
-                                    <div class="upload-zone banner <?= $jogo['imagem_banner'] ? 'has-image' : '' ?>" onclick="document.getElementById('banner').click()">
-                                        <?php if ($jogo['imagem_banner']): ?>
-                                            <img src="<?= SITE_URL . $jogo['imagem_banner'] ?>" id="prev-banner" class="preview-img">
-                                        <?php else: ?>
-                                            <div class="upload-placeholder" id="placeholder-banner">
-                                                <i class="fas fa-panorama"></i>
-                                                <span>Clique para enviar</span>
-                                            </div>
-                                        <?php endif; ?>
+                                <!-- Capa -->
+                                <label>Capa (1:1) *</label>
+                                <div class="upload-zone capa <?= $jogo['imagem_capa'] ? 'has-image' : '' ?>" id="zone-capa">
+                                    <?php if ($jogo['imagem_capa']): ?>
+                                        <img id="prev-capa" class="preview-img" src="<?= SITE_URL . $jogo['imagem_capa'] ?>">
+                                    <?php endif; ?>
+                                    <div class="upload-placeholder" id="place-capa" style="<?= $jogo['imagem_capa'] ? 'display:none' : '' ?>">
+                                        <i class="fas fa-upload"></i>
+                                        <span>Clique para enviar</span>
                                     </div>
-                                    <input type="file" name="banner" id="banner" style="display:none" accept="image/*">
                                 </div>
+                                <input type="file" name="capa" id="input-file-capa" style="display:none" accept="image/jpeg,image/png,image/webp">
+                                <p class="upload-info">JPG, PNG, WebP • Será otimizada automaticamente</p>
+
+                                <!-- Banner -->
+                                <label style="margin-top: 20px; display:block;">Banner (16:9)</label>
+                                <div class="upload-zone banner <?= $jogo['imagem_banner'] ? 'has-image' : '' ?>" id="zone-banner">
+                                    <?php if ($jogo['imagem_banner']): ?>
+                                        <img id="prev-banner" class="preview-img" src="<?= SITE_URL . $jogo['imagem_banner'] ?>">
+                                    <?php endif; ?>
+                                    <div class="upload-placeholder" id="place-banner" style="<?= $jogo['imagem_banner'] ? 'display:none' : '' ?>">
+                                        <i class="fas fa-panorama"></i>
+                                        <span>Clique para enviar</span>
+                                    </div>
+                                </div>
+                                <input type="file" name="banner" id="input-file-banner" style="display:none" accept="image/jpeg,image/png,image/webp">
+                                <p class="upload-info">JPG, PNG, WebP • Será otimizada automaticamente</p>
                             </div>
 
-                            <!-- Preço -->
+                            <!-- Venda -->
                             <div class="form-box">
-                                <div class="box-title"><i class="fas fa-tag"></i> Preço e Classificação</div>
+                                <div class="box-title"><i class="fas fa-dollar-sign"></i> Venda</div>
                                 <div class="form-group">
                                     <label>Preço (R$)</label>
                                     <input type="number" name="preco" class="form-control" step="0.01" min="0" value="<?= number_format($jogo['preco_centavos'] / 100, 2, '.', '') ?>" placeholder="0.00">
-                                    <small style="color: var(--text-muted); display: block; margin-top: 5px;">Deixe 0 para gratuito</small>
                                 </div>
-
                                 <div class="form-group">
-                                    <label>Classificação Etária</label>
+                                    <label>Classificação Indicativa</label>
                                     <select name="classificacao" class="form-control">
-                                        <?php 
-                                        $classificacoes = ['L' => 'Livre', '10' => '10 anos', '12' => '12 anos', '14' => '14 anos', '16' => '16 anos', '18' => '18 anos'];
-                                        foreach ($classificacoes as $val => $label): 
+                                        <?php
+                                        $classificacoes = ['L' => 'Livre', '10' => '10+', '12' => '12+', '14' => '14+', '16' => '16+', '18' => '18+'];
+                                        foreach ($classificacoes as $val => $label):
                                         ?>
                                             <option value="<?= $val ?>" <?= $jogo['classificacao_etaria'] == $val ? 'selected' : '' ?>><?= $label ?></option>
                                         <?php endforeach; ?>
@@ -1227,47 +1095,41 @@ require_once '../includes/header.php';
 
                             <!-- Checklist (apenas para rascunhos) -->
                             <?php if ($jogo['status'] == 'rascunho'): ?>
-                            <div class="form-box">
-                                <div class="box-title"><i class="fas fa-clipboard-check"></i> Checklist</div>
-                                <small style="color: var(--text-muted); display: block; margin-bottom: 10px;">Complete antes de enviar:</small>
-                                <?php
-                                $checks = [
-                                    ['check' => !empty($jogo['titulo']) && strlen($jogo['titulo']) >= 3, 'text' => 'Título (mín. 3 caracteres)'],
-                                    ['check' => !empty($jogo['descricao_curta']) && strlen($jogo['descricao_curta']) >= 20, 'text' => 'Descrição curta (mín. 20)'],
-                                    ['check' => !empty($jogo['descricao_completa']), 'text' => 'Descrição completa'],
-                                    ['check' => !empty($jogo['imagem_capa']), 'text' => 'Imagem de capa'],
-                                    ['check' => !empty($my_cats), 'text' => 'Pelo menos 1 categoria'],
-                                ];
-                                ?>
-                                <div class="checklist">
-                                    <?php foreach ($checks as $item): ?>
-                                    <div class="checklist-item <?= $item['check'] ? 'complete' : 'incomplete' ?>">
-                                        <i class="fas <?= $item['check'] ? 'fa-check-circle' : 'fa-circle' ?>"></i>
-                                        <span><?= $item['text'] ?></span>
+                                <div class="form-box">
+                                    <div class="box-title"><i class="fas fa-clipboard-check"></i> Checklist</div>
+                                    <?php
+                                    $checks = [
+                                        ['check' => !empty($jogo['titulo']) && strlen($jogo['titulo']) >= 3, 'text' => 'Título (mín. 3 caracteres)'],
+                                        ['check' => !empty($jogo['descricao_curta']) && strlen($jogo['descricao_curta']) >= 20, 'text' => 'Descrição curta (mín. 20)'],
+                                        ['check' => !empty($jogo['descricao_completa']), 'text' => 'Descrição completa'],
+                                        ['check' => !empty($jogo['imagem_capa']), 'text' => 'Imagem de capa'],
+                                        ['check' => !empty($my_cats), 'text' => 'Pelo menos 1 categoria'],
+                                    ];
+                                    ?>
+                                    <div class="checklist">
+                                        <?php foreach ($checks as $item): ?>
+                                            <div class="checklist-item <?= $item['check'] ? 'complete' : 'incomplete' ?>">
+                                                <i class="fas <?= $item['check'] ? 'fa-check-circle' : 'fa-circle' ?>"></i>
+                                                <span><?= $item['text'] ?></span>
+                                            </div>
+                                        <?php endforeach; ?>
                                     </div>
-                                    <?php endforeach; ?>
                                 </div>
-                            </div>
                             <?php endif; ?>
 
                             <!-- Ações -->
-                            <div class="form-box" style="background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));">
-                                <button type="submit" class="btn btn-primary btn-lg" style="width:100%">
-                                    <i class="fas fa-save"></i> Salvar Alterações
+                            <button type="submit" class="btn btn-primary btn-lg" style="width:100%">
+                                <i class="fas fa-save"></i> Salvar Alterações
+                            </button>
+
+                            <?php if ($jogo['status'] == 'rascunho'): ?>
+                                <button type="button" id="btnPublish" class="btn btn-success btn-lg" style="width:100%; margin-top: 12px;">
+                                    <i class="fas fa-paper-plane"></i> Enviar para Revisão
                                 </button>
-
-                                <?php if ($jogo['status'] == 'rascunho'): ?>
-                                    <button type="button" id="btnPublish" class="btn btn-success btn-lg" style="width:100%; margin-top: 12px;">
-                                        <i class="fas fa-paper-plane"></i> Enviar para Revisão
-                                    </button>
-                                <?php endif; ?>
-
-                                <?php if ($jogo['status'] == 'rascunho'): ?>
-                                    <button type="button" id="btnDelete" class="btn-danger-outline">
-                                        <i class="fas fa-trash"></i> Deletar Rascunho
-                                    </button>
-                                <?php endif; ?>
-                            </div>
+                                <button type="button" id="btnDelete" class="btn-danger-outline">
+                                    <i class="fas fa-trash"></i> Deletar Rascunho
+                                </button>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </form>
@@ -1276,15 +1138,10 @@ require_once '../includes/header.php';
     </div>
 </div>
 
-<!-- Toast Container -->
-<div class="toast-container" id="toastContainer"></div>
-
 <!-- Modal de Confirmação -->
 <div class="modal-overlay" id="modalOverlay">
     <div class="modal-box">
-        <div class="modal-icon" id="modalIcon">
-            <i class="fas fa-question"></i>
-        </div>
+        <div class="modal-icon" id="modalIcon"><i class="fas fa-question"></i></div>
         <h3 class="modal-title" id="modalTitle">Confirmação</h3>
         <p class="modal-text" id="modalText">Tem certeza?</p>
         <div class="modal-actions">
@@ -1295,263 +1152,301 @@ require_once '../includes/header.php';
 </div>
 
 <script>
-    // Toast notification
-    function showToast(message, type = 'success') {
-        const container = document.getElementById('toastContainer');
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.innerHTML = `
-            <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
-            <span>${message}</span>
-        `;
-        container.appendChild(toast);
-        setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateX(100px)';
-            setTimeout(() => toast.remove(), 300);
-        }, 4000);
-    }
+    document.addEventListener('DOMContentLoaded', function() {
 
-    // Modal
-    function showModal(title, text, iconClass, iconType, onConfirm, confirmText = 'Confirmar', confirmClass = 'btn-primary') {
-        const overlay = document.getElementById('modalOverlay');
-        const modalIcon = document.getElementById('modalIcon');
-        const modalTitle = document.getElementById('modalTitle');
-        const modalText = document.getElementById('modalText');
-        const modalConfirm = document.getElementById('modalConfirm');
-        
-        modalIcon.className = `modal-icon ${iconType}`;
-        modalIcon.innerHTML = `<i class="fas ${iconClass}"></i>`;
-        modalTitle.textContent = title;
-        modalText.innerHTML = text;
-        modalConfirm.textContent = confirmText;
-        modalConfirm.className = `btn ${confirmClass}`;
-        
-        overlay.classList.add('active');
-        
-        // Remove old listeners
-        const newConfirm = modalConfirm.cloneNode(true);
-        modalConfirm.parentNode.replaceChild(newConfirm, modalConfirm);
-        
-        newConfirm.onclick = () => {
-            overlay.classList.remove('active');
-            if (onConfirm) onConfirm();
-        };
-        
-        document.getElementById('modalCancel').onclick = () => overlay.classList.remove('active');
-    }
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
-    document.getElementById('modalOverlay').addEventListener('click', function(e) {
-        if (e.target === this) this.classList.remove('active');
-    });
+        function isValidType(file) {
+            return allowedTypes.includes(file.type);
+        }
 
-    // Character counter
-    const descCurta = document.getElementById('descCurta');
-    const descCurtaCounter = document.getElementById('descCurtaCounter');
-    if (descCurta) {
-        descCurta.addEventListener('input', function() {
-            const len = this.value.length;
-            descCurtaCounter.textContent = `${len}/500`;
-            descCurtaCounter.className = 'char-counter';
-            if (len > 450) descCurtaCounter.classList.add('warning');
-            if (len >= 500) descCurtaCounter.classList.add('error');
+        // ===========================================
+        // MODAL
+        // ===========================================
+        function showModal(title, text, iconClass, iconType, onConfirm, confirmText = 'Confirmar', confirmClass = 'btn-primary') {
+            const overlay = document.getElementById('modalOverlay');
+            const modalIcon = document.getElementById('modalIcon');
+
+            modalIcon.className = `modal-icon ${iconType}`;
+            modalIcon.innerHTML = `<i class="fas ${iconClass}"></i>`;
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalText').innerHTML = text;
+
+            const modalConfirm = document.getElementById('modalConfirm');
+            modalConfirm.textContent = confirmText;
+            modalConfirm.className = `btn ${confirmClass}`;
+
+            overlay.classList.add('active');
+
+            const newConfirm = modalConfirm.cloneNode(true);
+            modalConfirm.parentNode.replaceChild(newConfirm, modalConfirm);
+
+            newConfirm.onclick = () => {
+                overlay.classList.remove('active');
+                if (onConfirm) onConfirm();
+            };
+
+            document.getElementById('modalCancel').onclick = () => overlay.classList.remove('active');
+        }
+
+        document.getElementById('modalOverlay').addEventListener('click', function(e) {
+            if (e.target === this) this.classList.remove('active');
         });
-    }
 
-    // Image Previews
-    function setupPrev(id) {
-        const input = document.getElementById(id);
-        if (!input) return;
-        
-        input.onchange = function() {
-            if (this.files[0]) {
+        // ===========================================
+        // UPLOAD DE CAPA E BANNER
+        // ===========================================
+        function setupImageUpload(type) {
+            const zone = document.getElementById(`zone-${type}`);
+            const input = document.getElementById(`input-file-${type}`);
+            const placeholder = document.getElementById(`place-${type}`);
+
+            zone.addEventListener('click', () => input.click());
+
+            input.addEventListener('change', function() {
+                const file = this.files[0];
+                if (!file) return;
+
+                if (!isValidType(file)) {
+                    alert('Formato inválido. Use JPG, PNG ou WebP.');
+                    this.value = '';
+                    return;
+                }
+
                 const reader = new FileReader();
-                reader.onload = e => {
-                    let img = document.getElementById('prev-' + id);
-                    const zone = this.closest('.form-group').querySelector('.upload-zone');
-                    const placeholder = document.getElementById('placeholder-' + id);
-                    
+                reader.onload = function(e) {
+                    let img = document.getElementById(`prev-${type}`);
                     if (!img) {
                         img = document.createElement('img');
-                        img.id = 'prev-' + id;
+                        img.id = `prev-${type}`;
                         img.className = 'preview-img';
                         zone.appendChild(img);
                     }
-                    
                     img.src = e.target.result;
-                    zone.classList.add('has-image');
                     if (placeholder) placeholder.style.display = 'none';
+                    zone.classList.add('has-image');
                 };
-                reader.readAsDataURL(this.files[0]);
-            }
-        };
-    }
-    setupPrev('capa');
-    setupPrev('banner');
-
-    // New Screenshots Preview
-    document.getElementById('shotInput').onchange = function() {
-        Array.from(this.files).forEach(f => {
-            const reader = new FileReader();
-            reader.onload = e => {
-                const div = document.createElement('div');
-                div.className = 'shot-item';
-                div.style.position = 'relative';
-                div.innerHTML = `
-                    <img src="${e.target.result}" alt="">
-                    <button type="button" style="position:absolute;top:5px;right:5px;background:#ef4444;color:white;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:12px;" onclick="this.parentElement.remove()">
-                        <i class="fas fa-times"></i>
-                    </button>
-                `;
-                const container = document.getElementById('shotContainer');
-                container.insertBefore(div, container.lastElementChild);
-            };
-            reader.readAsDataURL(f);
-        });
-    };
-
-    // MultiSelect with Chips (Categories/Tags)
-    function initEditMulti(trigId, popId, inpId) {
-        const trig = document.getElementById(trigId);
-        const pop = document.getElementById(popId);
-        const inp = document.getElementById(inpId);
-        let selected = [];
-
-        // Initialize from PHP data
-        if (inp.value) {
-            const ids = inp.value.split(',').filter(id => id);
-            pop.querySelectorAll('.popover-item').forEach(item => {
-                if (ids.includes(item.dataset.id)) {
-                    selected.push({ id: item.dataset.id, name: item.dataset.name });
-                }
+                reader.readAsDataURL(file);
             });
-            render();
         }
 
-        trig.onclick = e => {
-            e.stopPropagation();
-            // Close other popovers
-            document.querySelectorAll('.popover-list').forEach(p => {
-                if (p !== pop) p.style.display = 'none';
-            });
-            pop.style.display = pop.style.display === 'block' ? 'none' : 'block';
-        };
+        setupImageUpload('capa');
+        setupImageUpload('banner');
 
-        pop.querySelectorAll('.popover-item').forEach(item => {
-            item.onclick = function(e) {
+        // ===========================================
+        // SCREENSHOTS
+        // ===========================================
+        const shotInput = document.getElementById('shotInput');
+        const shotContainer = document.getElementById('shotContainer');
+        const addShotBtn = document.getElementById('addShotBtn');
+
+        // DataTransfer para acumular arquivos de múltiplas seleções
+        const screenshotFiles = new DataTransfer();
+
+        addShotBtn.addEventListener('click', () => shotInput.click());
+
+        shotInput.addEventListener('change', function() {
+            Array.from(this.files).forEach((file, index) => {
+                if (!isValidType(file)) return;
+
+                // Adiciona ao DataTransfer
+                screenshotFiles.items.add(file);
+                const fileIndex = screenshotFiles.files.length - 1;
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const div = document.createElement('div');
+                    div.className = 'shot-item shot-new';
+                    div.dataset.fileIndex = fileIndex;
+                    div.innerHTML = `
+                <img src="${e.target.result}">
+                <button type="button" class="remove-new-shot" style="position:absolute;top:5px;right:5px;background:#ef4444;color:white;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:12px;">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+                    shotContainer.insertBefore(div, addShotBtn);
+                };
+                reader.readAsDataURL(file);
+            });
+
+            // Atualiza o input com todos os arquivos acumulados
+            this.files = screenshotFiles.files;
+        });
+
+        // Remover screenshot nova (ainda não salva)
+        shotContainer.addEventListener('click', function(e) {
+            const removeBtn = e.target.closest('.remove-new-shot');
+            if (!removeBtn) return;
+
+            const shotItem = removeBtn.closest('.shot-item');
+            const fileIndex = parseInt(shotItem.dataset.fileIndex);
+
+            // Recria o DataTransfer sem o arquivo removido
+            const newDt = new DataTransfer();
+            Array.from(screenshotFiles.files).forEach((file, idx) => {
+                if (idx !== fileIndex) {
+                    newDt.items.add(file);
+                }
+            });
+
+            // Atualiza os índices dos elementos restantes
+            document.querySelectorAll('.shot-new').forEach(item => {
+                const idx = parseInt(item.dataset.fileIndex);
+                if (idx > fileIndex) {
+                    item.dataset.fileIndex = idx - 1;
+                }
+            });
+
+            // Atualiza referências
+            screenshotFiles.items.clear();
+            Array.from(newDt.files).forEach(file => screenshotFiles.items.add(file));
+            shotInput.files = screenshotFiles.files;
+
+            // Remove o elemento visual
+            shotItem.remove();
+        });
+
+        // ===========================================
+        // MULTISELECT (TAGS/CATEGORIAS)
+        // ===========================================
+        function initMultiSelect(type) {
+            const wrapper = document.querySelector(`.chips-input[data-target="${type}"]`).closest('.multi-select-wrapper');
+            const chipsContainer = wrapper.querySelector('.chips-input');
+            const popover = document.getElementById(`popover-${type}`);
+            const hiddenInput = document.getElementById(`input-${type}`);
+
+            let selected = new Map();
+
+            // Carregar valores existentes
+            if (hiddenInput.value) {
+                hiddenInput.value.split(',').forEach(id => {
+                    const item = popover.querySelector(`[data-id="${id}"]`);
+                    if (item) selected.set(id, item.dataset.name);
+                });
+                render();
+            }
+
+            chipsContainer.addEventListener('click', function(e) {
+                if (e.target.closest('.chip i')) return;
                 e.stopPropagation();
-                const id = this.dataset.id;
-                const existing = selected.find(s => s.id === id);
-                
-                if (existing) {
-                    selected = selected.filter(s => s.id !== id);
+                document.querySelectorAll('.popover-list').forEach(p => {
+                    if (p !== popover) p.style.display = 'none';
+                });
+                popover.style.display = popover.style.display === 'block' ? 'none' : 'block';
+            });
+
+            popover.addEventListener('click', function(e) {
+                const item = e.target.closest('.popover-item');
+                if (!item) return;
+                e.stopPropagation();
+
+                const id = item.dataset.id;
+                if (selected.has(id)) {
+                    selected.delete(id);
                 } else {
-                    selected.push({ id, name: this.dataset.name });
+                    selected.set(id, item.dataset.name);
                 }
                 render();
-            };
-        });
+            });
 
-        function render() {
-            if (selected.length === 0) {
-                trig.innerHTML = '<span class="chips-placeholder">Clique para selecionar...</span>';
-            } else {
-                trig.innerHTML = selected.map(s => 
-                    `<div class="chip">${s.name} <i class="fas fa-times" data-id="${s.id}"></i></div>`
-                ).join('');
-                
-                // Add remove handlers
-                trig.querySelectorAll('.chip i').forEach(icon => {
-                    icon.onclick = function(e) {
-                        e.stopPropagation();
-                        selected = selected.filter(s => s.id !== this.dataset.id);
-                        render();
-                    };
+            chipsContainer.addEventListener('click', function(e) {
+                if (e.target.closest('.chip i')) {
+                    e.stopPropagation();
+                    const id = e.target.closest('.chip i').dataset.id;
+                    selected.delete(id);
+                    render();
+                }
+            });
+
+            function render() {
+                if (selected.size === 0) {
+                    chipsContainer.innerHTML = `<span class="chips-placeholder">Selecionar ${type === 'cat' ? 'categorias' : 'tags'}...</span>`;
+                } else {
+                    chipsContainer.innerHTML = Array.from(selected).map(([id, name]) =>
+                        `<div class="chip">${name} <i class="fas fa-times" data-id="${id}"></i></div>`
+                    ).join('');
+                }
+
+                hiddenInput.value = Array.from(selected.keys()).join(',');
+
+                popover.querySelectorAll('.popover-item').forEach(item => {
+                    item.classList.toggle('selected', selected.has(item.dataset.id));
                 });
             }
-            
-            inp.value = selected.map(s => s.id).join(',');
-
-            // Update popover visual
-            pop.querySelectorAll('.popover-item').forEach(item => {
-                const isSelected = selected.find(s => s.id === item.dataset.id);
-                item.classList.toggle('selected', !!isSelected);
-            });
         }
-    }
 
-    // Close popovers on outside click
-    document.addEventListener('click', e => {
-        if (!e.target.closest('.chips-input') && !e.target.closest('.popover-list')) {
+        initMultiSelect('cat');
+        initMultiSelect('tag');
+
+        document.addEventListener('click', function() {
             document.querySelectorAll('.popover-list').forEach(p => p.style.display = 'none');
+        });
+
+        // ===========================================
+        // PLATAFORMAS
+        // ===========================================
+        const platBtns = document.querySelectorAll('.plat-btn');
+        const platInput = document.getElementById('input-plat');
+        let selectedPlats = new Set(platInput.value ? platInput.value.split(',').filter(p => p) : []);
+
+        function updatePlats() {
+            platBtns.forEach(btn => {
+                btn.classList.toggle('active', selectedPlats.has(btn.dataset.id));
+            });
+            platInput.value = Array.from(selectedPlats).join(',');
+        }
+
+        platBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                const id = this.dataset.id;
+                if (selectedPlats.has(id)) {
+                    selectedPlats.delete(id);
+                } else {
+                    selectedPlats.add(id);
+                }
+                updatePlats();
+            });
+        });
+
+        // ===========================================
+        // BOTÕES DE AÇÃO
+        // ===========================================
+        const btnPublish = document.getElementById('btnPublish');
+        if (btnPublish) {
+            btnPublish.onclick = function() {
+                showModal(
+                    'Enviar para Revisão',
+                    'Tem certeza que deseja enviar seu jogo para revisão?<br><br><small style="color:var(--text-muted)">Nossa equipe verificará se o jogo atende às diretrizes da plataforma.</small>',
+                    'fa-paper-plane',
+                    'success',
+                    () => {
+                        document.getElementById('formAction').value = 'publish';
+                        document.getElementById('editForm').submit();
+                    },
+                    'Enviar',
+                    'btn-success'
+                );
+            };
+        }
+
+        const btnDelete = document.getElementById('btnDelete');
+        if (btnDelete) {
+            btnDelete.onclick = function() {
+                showModal(
+                    'Deletar Rascunho',
+                    'Tem certeza que deseja deletar este rascunho?<br><br><strong style="color:#ef4444;">Esta ação não pode ser desfeita!</strong>',
+                    'fa-trash',
+                    'danger',
+                    () => {
+                        document.getElementById('formAction').value = 'delete';
+                        document.getElementById('editForm').submit();
+                    },
+                    'Deletar',
+                    'btn-danger-outline'
+                );
+            };
         }
     });
-
-    initEditMulti('triggerCat', 'popCat', 'inputCat');
-    initEditMulti('triggerTag', 'popTag', 'inputTag');
-
-    // Platforms
-    const platBtns = document.querySelectorAll('.plat-btn');
-    const platInp = document.getElementById('inputPlat');
-    let plats = platInp.value ? platInp.value.split(',').filter(p => p) : [];
-
-    function updatePlats() {
-        platBtns.forEach(btn => {
-            btn.classList.toggle('active', plats.includes(btn.dataset.id));
-        });
-        platInp.value = plats.join(',');
-    }
-    updatePlats();
-
-    platBtns.forEach(btn => {
-        btn.onclick = function() {
-            const id = this.dataset.id;
-            if (plats.includes(id)) {
-                plats = plats.filter(p => p !== id);
-            } else {
-                plats.push(id);
-            }
-            updatePlats();
-        };
-    });
-
-    // Publish Button - Enviar para Revisão
-    const btnPublish = document.getElementById('btnPublish');
-    if (btnPublish) {
-        btnPublish.onclick = function() {
-            showModal(
-                'Enviar para Revisão',
-                'Tem certeza que deseja enviar seu jogo para revisão?<br><br><small style="color:var(--text-muted)">Após enviado, você não poderá editar até a análise ser concluída. Nossa equipe verificará se o jogo atende às diretrizes da plataforma.</small>',
-                'fa-paper-plane',
-                'success',
-                () => {
-                    document.getElementById('formAction').value = 'publish';
-                    document.getElementById('editForm').submit();
-                },
-                'Enviar',
-                'btn-success'
-            );
-        };
-    }
-
-    // Delete Button
-    const btnDelete = document.getElementById('btnDelete');
-    if (btnDelete) {
-        btnDelete.onclick = function() {
-            showModal(
-                'Deletar Rascunho',
-                'Tem certeza que deseja deletar este rascunho?<br><br><strong style="color:#ef4444;">Esta ação não pode ser desfeita!</strong>',
-                'fa-trash',
-                'danger',
-                () => {
-                    document.getElementById('formAction').value = 'delete';
-                    document.getElementById('editForm').submit();
-                },
-                'Deletar',
-                'btn-danger-outline'
-            );
-        };
-    }
 </script>
 
 <?php require_once '../includes/footer.php'; ?>
